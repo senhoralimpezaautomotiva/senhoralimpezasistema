@@ -1,0 +1,6 @@
+{
+  "name": "Senhora Limpeza Estética Automotiva",
+  "description": "Sistema de gestão completo para estética automotiva: clientes, veículos, serviços, agenda, financeiro, relatórios e automações integradas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

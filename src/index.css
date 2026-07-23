@@ -1,0 +1,342 @@
+@import "tailwindcss";
+
+:root {
+  /* ==========================================================================
+     DARK THEME (Default)
+     Customized deep slate blue palette representing the high-end premium brand.
+     ========================================================================== */
+  --slate-50: #f8fafc;   /* Maximum contrast heading (pure white-blue) */
+  --slate-100: #f1f5f9;  /* Primary heading / main highlight text */
+  --slate-200: #e2e8f0;  /* Standard body text / section titles */
+  --slate-300: #cbd5e1;  /* Secondary text / key labels */
+  --slate-400: #94a3b8;  /* Sub-captions / secondary labels */
+  --slate-500: #64748b;  /* Muted metadata / description text */
+  --slate-600: #475569;  /* Muted helper notes / disabled text */
+  --slate-700: #334155;  /* Subtle dividers / lines / borders */
+  --slate-750: #1e293b;  /* Interactive element focus borders / subtle borders */
+  --slate-800: #1e293b;  /* Card subtle borders / secondary active buttons */
+  --slate-850: #0f172a;  /* Sub-container inner dark background */
+  --slate-900: #0f172a;  /* Core card background */
+  --slate-950: #020617;  /* General canvas layout background */
+
+  /* Standard status colors for dark mode */
+  --sky-400: #38bdf8;
+  --sky-500: #0ea5e9;
+  --emerald-400: #34d399;
+  --emerald-500: #10b981;
+  --amber-400: #fbbf24;
+  --amber-500: #f59e0b;
+  --rose-400: #fb7185;
+  --rose-500: #f43f5e;
+}
+
+/* ==========================================================================
+   PREMIUM LIGHT THEME OVERRIDES
+   Fully symmetrical, contrast-optimized palette mirroring the dark theme's personality.
+   No pure white on the canvas background, preserving rich institutional brand tones.
+   ========================================================================== */
+.theme-light {
+  /* Canvas & Containers (Inverted symmetrically) */
+  --slate-950: #f4f6f9;  /* Premium Canvas Background (extremely light cool gray, never pure white) */
+  --slate-900: #ffffff;  /* Primary Surface Card Background (pure white for elevation and cleanliness) */
+  --slate-850: #f8fafc;  /* Nested sub-container background / list item backdrops */
+  --slate-800: #e2e8f0;  /* Standard subtle light border */
+  --slate-750: #cbd5e1;  /* Interactive state hover borders / focus lines */
+  --slate-700: #94a3b8;  /* Secondary line dividers / placeholders */
+
+  /* Symmetrical Typography Scale (AA/AAA WCAG contrast ratios strictly guaranteed) */
+  --slate-600: #57687e;  /* Small helper texts, muted footnotes, inactive icons */
+  --slate-500: #475569;  /* Description labels, paragraph text */
+  --slate-400: #334155;  /* Primary body copy, secondary headers, active sidebar labels */
+  --slate-300: #1e293b;  /* Key details, subheadings, section summaries */
+  --slate-200: #0f172a;  /* Highlight items, card titles, table headers */
+  --slate-100: #090d16;  /* Main visual headlines, brand titles, deep emphasis blocks */
+  --slate-50: #01040a;   /* Maximum contrast dark blue-black titles */
+
+  /* High-Contrast institutional colors for "Senhora Limpeza" (White, Blue, Elegant Grays, Green) */
+  --sky-400: #0284c7;    /* Premium Royal Blue for primary highlights, brand indicators */
+  --sky-500: #0369a1;    /* Deep Royal Blue for hover, press and brand indicators */
+  
+  --emerald-400: #059669; /* Success Green for affirmative feedback */
+  --emerald-500: #047857; /* Dark Success Green */
+  
+  --amber-400: #d97706;  /* Warning Amber */
+  --amber-500: #b45309;  /* Dark Warning Amber */
+  
+  --rose-400: #e11d48;   /* Alert / Danger Rose */
+  --rose-500: #be123c;   /* Dark Danger Rose */
+}
+
+/* ==========================================================================
+   GLOBAL LAYOUT & ELEMENT ADAPTATIONS
+   Guarantees polished transitions and exact light-mode visibility.
+   ========================================================================== */
+
+/* App layout background and text colors */
+.theme-light #app-layout,
+.theme-light body,
+.theme-light html {
+  background-color: #f4f6f9 !important;
+  color: #0f172a !important;
+}
+
+/* Sidebar and Headers structure */
+.theme-light aside,
+.theme-light #main-sidebar {
+  background-color: #ffffff !important;
+  border-right: 1px solid #e2e8f0 !important;
+  box-shadow: 4px 0 24px -4px rgba(15, 23, 42, 0.04) !important;
+}
+
+.theme-light header {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.03) !important;
+}
+
+/* General Card Surfaces elevation & shadow system */
+.theme-light .bg-slate-900,
+.theme-light .bg-slate-900\/60,
+.theme-light .bg-slate-900\/40,
+.theme-light .bg-slate-950\/40,
+.theme-light .bg-slate-950\/20,
+.theme-light .appointment-card,
+.theme-light .calendar-card,
+.theme-light [id*="-module-view"] > div.grid > div {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.04), 
+              0 8px 10px -6px rgba(15, 23, 42, 0.04), 
+              0 0 1px 0 rgba(15, 23, 42, 0.1) !important;
+}
+
+/* Modals & Dialog backdrop blur, overlay and focus card */
+.theme-light div.fixed.inset-0 {
+  background-color: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+.theme-light div.fixed.inset-0 .bg-slate-900 {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 
+              0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+}
+
+.theme-light div.fixed.inset-0 .bg-slate-950 {
+  background-color: #f8fafc !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+/* Form Controls (Inputs, Select fields, textareas) */
+.theme-light input,
+.theme-light select,
+.theme-light textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: inset 0 1px 2px 0 rgba(0, 0, 0, 0.02) !important;
+}
+
+.theme-light input:focus,
+.theme-light select:focus,
+.theme-light textarea:focus {
+  border-color: #0284c7 !important;
+  outline: none !important;
+  box-shadow: 0 0 0 2.5px rgba(2, 132, 199, 0.12) !important;
+}
+
+.theme-light select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* Clean table headers and listings borders */
+.theme-light th {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+}
+
+.theme-light td {
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+/* Buttons with white text inside Light Mode */
+.theme-light .bg-sky-500,
+.theme-light .bg-emerald-500,
+.theme-light .bg-rose-500,
+.theme-light .bg-sky-500\/100,
+.theme-light button[type="submit"] {
+  color: #ffffff !important;
+}
+
+/* Symmetrical status badges pastel color system */
+.theme-light .bg-emerald-500\/10,
+.theme-light [class*="bg-emerald-500/10"] {
+  background-color: rgba(5, 150, 105, 0.08) !important;
+  color: #047857 !important;
+  border-color: rgba(5, 150, 105, 0.16) !important;
+}
+
+.theme-light .bg-blue-500\/10,
+.theme-light .bg-sky-500\/10,
+.theme-light [class*="bg-sky-500/10"] {
+  background-color: rgba(2, 132, 199, 0.08) !important;
+  color: #0369a1 !important;
+  border-color: rgba(2, 132, 199, 0.16) !important;
+}
+
+.theme-light .bg-violet-500\/10,
+.theme-light [class*="bg-violet-500/10"] {
+  background-color: rgba(124, 58, 237, 0.08) !important;
+  color: #6d28d9 !important;
+  border-color: rgba(124, 58, 237, 0.16) !important;
+}
+
+.theme-light .bg-amber-500\/10,
+.theme-light [class*="bg-amber-500/10"] {
+  background-color: rgba(217, 119, 6, 0.08) !important;
+  color: #b45309 !important;
+  border-color: rgba(217, 119, 6, 0.16) !important;
+}
+
+.theme-light .bg-rose-500\/10,
+.theme-light [class*="bg-rose-500/10"] {
+  background-color: rgba(225, 29, 72, 0.08) !important;
+  color: #be123c !important;
+  border-color: rgba(225, 29, 72, 0.16) !important;
+}
+
+/* Calendar component cell elements */
+.theme-light .calendar-card button {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+.theme-light .calendar-card button:hover {
+  background-color: #f1f5f9 !important;
+}
+
+.theme-light .calendar-card button.bg-sky-500\/10 {
+  background-color: rgba(2, 132, 199, 0.08) !important;
+  border-color: #0284c7 !important;
+  color: #0284c7 !important;
+}
+
+.theme-light .calendar-card button.bg-slate-850 {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Symmetrical and readable Recharts visuals */
+.theme-light .recharts-default-tooltip {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 
+              0 4px 6px -2px rgba(0, 0, 0, 0.02) !important;
+}
+
+.theme-light .recharts-tooltip-item {
+  color: #1e293b !important;
+}
+
+.theme-light .recharts-text {
+  fill: #475569 !important;
+}
+
+.theme-light .recharts-cartesian-grid line {
+  stroke: #cbd5e1 !important;
+}
+
+.theme-light .recharts-legend-item-text {
+  color: #1e293b !important;
+}
+
+.theme-light .recharts-tooltip-cursor {
+  stroke: #cbd5e1 !important;
+}
+
+/* Scrollbar styling for both themes */
+.theme-light ::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1 !important;
+  border-radius: 9999px !important;
+}
+
+.theme-light ::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8 !important;
+}
+
+/* ==========================================================================
+   DYNAMIC TEXT-WHITE ADAPTABILITY LAYER
+   Intelligently rewrites standard "text-white" to deep navy/slate on light backgrounds,
+   but leaves them perfectly white on primary/accent badges and action buttons.
+   ========================================================================== */
+.theme-light .text-white:not(
+  .bg-sky-500, .bg-sky-600, .bg-emerald-500, .bg-emerald-600, .bg-rose-500, .bg-rose-600, .bg-amber-500, .bg-violet-500,
+  .bg-sky-500 *, .bg-sky-600 *, .bg-emerald-500 *, .bg-emerald-600 *, .bg-rose-500 *, .bg-rose-600 *, .bg-amber-500 *, .bg-violet-500 *
+) {
+  color: #0f172a !important;
+}
+
+/* Ensure specific headers and sidebar user labels are highly visible */
+.theme-light aside h2.text-white,
+.theme-light aside p.text-white,
+.theme-light aside span.text-white,
+.theme-light header h2.text-white,
+.theme-light header p.text-white,
+.theme-light header span.text-white,
+.theme-light div.fixed.inset-0 h3.text-white,
+.theme-light div.fixed.inset-0 p.text-white,
+.theme-light div.fixed.inset-0 span.text-white {
+  color: #0f172a !important;
+}
+
+/* ==========================================================================
+   TAILWIND THEME VARIABLE ASSIGNMENTS
+   Injects the CSS custom properties into standard utility Tailwind classes.
+   ========================================================================== */
+@theme {
+  --animate-slideLeft: slideLeft 0.25s ease-out;
+  --animate-slideUp: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fadeIn: fadeIn 0.2s ease-out;
+
+  /* Slate colors utility mapping */
+  --color-slate-50: var(--slate-50);
+  --color-slate-100: var(--slate-100);
+  --color-slate-200: var(--slate-200);
+  --color-slate-300: var(--slate-300);
+  --color-slate-400: var(--slate-400);
+  --color-slate-500: var(--slate-500);
+  --color-slate-600: var(--slate-600);
+  --color-slate-700: var(--slate-700);
+  --color-slate-750: var(--slate-750);
+  --color-slate-800: var(--slate-800);
+  --color-slate-850: var(--slate-850);
+  --color-slate-900: var(--slate-900);
+  --color-slate-950: var(--slate-950);
+
+  /* Status and Brand highlights utility mapping */
+  --color-sky-400: var(--sky-400);
+  --color-sky-500: var(--sky-500);
+  --color-emerald-400: var(--emerald-400);
+  --color-emerald-500: var(--emerald-500);
+  --color-amber-400: var(--amber-400);
+  --color-amber-500: var(--amber-500);
+  --color-rose-400: var(--rose-400);
+  --color-rose-500: var(--rose-500);
+
+  @keyframes slideLeft {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
