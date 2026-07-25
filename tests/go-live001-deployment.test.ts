@@ -148,7 +148,7 @@ test('Blueprint do Render usa build validada, health check e segredos externos',
   assert.match(blueprint, /autoDeployTrigger:\s*off/);
   assert.match(blueprint, /npm run build:render/);
   assert.match(blueprint, /healthCheckPath:\s*\/health/);
-  assert.match(blueprint, /maxShutdownDelaySeconds:\s*25/);
+  assert.doesNotMatch(blueprint, /maxShutdownDelaySeconds/);
   for (const key of [
     'SUPABASE_URL',
     'SUPABASE_ANON_KEY',

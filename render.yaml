@@ -10,7 +10,6 @@ services:
     buildCommand: bun install --frozen-lockfile --ignore-scripts && npm run build:render
     startCommand: npm start
     healthCheckPath: /health
-    maxShutdownDelaySeconds: 25
     envVars:
       - key: APP_ENV
         value: production
