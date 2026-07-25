@@ -12,29 +12,16 @@ import {
   TrendingUp, 
   ArrowUpRight, 
   ArrowDownRight,
-  Clock,
-  PlayCircle,
-  CheckCircle2,
   AlertTriangle,
   X,
   Sparkles,
   Plus,
-  UserCheck,
   Smartphone,
   Trash2,
-  Copy,
   Save,
   Printer,
-  FileText,
-  MapPin,
-  MessageSquare,
   History,
   Check,
-  ChevronDown,
-  UserPlus,
-  PlusCircle,
-  XCircle,
-  Send
 } from 'lucide-react';
 import { 
   Customer, 
@@ -44,11 +31,20 @@ import {
   HistoryRecord, 
   CashTransaction, 
   AppointmentStatus,
-  SystemConfig
+  SystemConfig,
+  User as SystemUser
 } from '../types';
-import { dbInstance, renderTemplateText, getServicePrice } from '../db/localDb';
-import { getCurrentDate, getCurrentDateStr, getCurrentMonthPrefix, getCurrentYear } from '../utils/dateUtils';
+import { dbInstance, renderTemplateText, getServicePrice, hasModulePermission } from '../db/localDb';
+import { getCurrentDate, getCurrentDateStr, getCurrentMonthPrefix } from '../utils/dateUtils';
+import { safeLog, setSafeText } from '../security/safeOutput';
 import { AppointmentGridCard, EmptySlotCard } from './AppointmentGridCard';
+import {
+  createAppointmentFormDraft,
+  getServicesDuration,
+  getServicesPrice
+} from '../utils/servicePricing';
+import { useVehicleCatalog } from '../hooks/useVehicleCatalog';
+import { resolveVehiclePorte } from '../utils/vehicleCatalog';
 
 interface DashboardModuleProps {
   customers: Customer[];
@@ -58,6 +54,8 @@ interface DashboardModuleProps {
   history: HistoryRecord[];
   finances: CashTransaction[];
   config?: SystemConfig;
+  currentUser?: SystemUser | null;
+  clientPortalEnabled?: boolean;
   onNavigate: (tab: string) => void;
   onUpdateStatus: (id: string, status: AppointmentStatus) => Promise<any>;
   onAddAppointment: (appointment: Omit<Appointment, 'id'>) => Promise<any>;
@@ -75,6 +73,8 @@ export default function DashboardModule({
   history, 
   finances,
   config,
+  currentUser,
+  clientPortalEnabled = false,
   onNavigate,
   onUpdateStatus,
   onAddAppointment,
@@ -83,14 +83,22 @@ export default function DashboardModule({
   onAddCustomer,
   onAddVehicle
 }: DashboardModuleProps) {
+  const canCreateAppointment = hasModulePermission(currentUser, 'agenda', 'create');
+  const canEditAppointment = hasModulePermission(currentUser, 'agenda', 'edit');
+  const canDeleteAppointment = hasModulePermission(currentUser, 'agenda', 'delete');
+  const canCreateCustomer = hasModulePermission(currentUser, 'clientes', 'create');
   const todayStr = getCurrentDateStr();
   const currentMonthPrefix = getCurrentMonthPrefix();
-
-  // Device & formatting helpers for WhatsApp mobile compatibility
-  const isMobileDevice = () => {
-    if (typeof window === 'undefined') return false;
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 1024;
-  };
+  const currentDate = getCurrentDate();
+  const currentMonthLabel = currentDate.toLocaleDateString('pt-BR', {
+    month: 'long',
+    year: 'numeric'
+  });
+  const currentDayLabel = currentDate.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'long'
+  });
+  const vehicleCatalog = useVehicleCatalog();
 
   const formatPhoneForWhatsApp = (phone: string) => {
     let clean = phone.replace(/\D/g, '');
@@ -211,8 +219,13 @@ export default function DashboardModule({
   const [isAddingVehicle, setIsAddingVehicle] = useState(false);
   const [newVehicleBrand, setNewVehicleBrand] = useState('');
   const [newVehicleModel, setNewVehicleModel] = useState('');
+  const [newVehicleYear, setNewVehicleYear] = useState(String(currentDate.getFullYear()));
   const [newVehiclePlate, setNewVehiclePlate] = useState('');
   const [newVehicleColor, setNewVehicleColor] = useState('');
+  const quickVehicleModels = useMemo(
+    () => vehicleCatalog.models.filter(model => model.brandName === newVehicleBrand),
+    [vehicleCatalog.models, newVehicleBrand]
+  );
 
   // Active appointment object
   const activeAppt = appointments.find(a => a.id === selectedApptId);
@@ -248,23 +261,15 @@ export default function DashboardModule({
 
   // --- Dynamic Pricing & Duration Recalculations ---
   useEffect(() => {
-    // Sum base price and estimated time of all selected service IDs
-    let baseSum = 0;
-    let totalMinutes = 0;
-
-    editServiceIds.forEach(id => {
-      const s = services.find(srv => srv.id === id);
-      if (s) {
-        baseSum += s.basePrice;
-        totalMinutes += s.estimatedTime;
-      }
-    });
+    const selectedVehicle = vehicles.find(vehicle => vehicle.id === editVehicleId);
+    const baseSum = getServicesPrice(services, editServiceIds, selectedVehicle);
+    const totalMinutes = getServicesDuration(services, editServiceIds);
 
     // Final price = Base + Addition - Discount
     const finalPrice = Math.max(0, baseSum + editAddition - editDiscount);
     setEditValue(finalPrice);
     setEditDuration(totalMinutes || 60);
-  }, [editServiceIds, editDiscount, editAddition, services]);
+  }, [editServiceIds, editVehicleId, editDiscount, editAddition, services, vehicles]);
 
   // --- Calculations for core metrics ---
   const revenueToday = finances
@@ -342,7 +347,7 @@ export default function DashboardModule({
       id: 'stat-revenue-month',
       title: 'Faturamento do Mês',
       value: `R$ ${revenueMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      subtitle: 'Acumulado em Julho/2026',
+      subtitle: `Acumulado em ${currentMonthLabel}`,
       icon: DollarSign,
       color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
       trend: { label: '+18.2% vs jun', isUp: true }
@@ -351,7 +356,7 @@ export default function DashboardModule({
       id: 'stat-revenue-today',
       title: 'Faturamento do Dia',
       value: `R$ ${revenueToday.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      subtitle: 'Hoje, 15 de Julho',
+      subtitle: `Hoje, ${currentDayLabel}`,
       icon: TrendingUp,
       color: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
       trend: { label: 'Meta batida', isUp: true }
@@ -401,6 +406,7 @@ export default function DashboardModule({
   // --- Submit quick addition handlers ---
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreateAppointment) return;
     setIsSaving(true);
     setErrorMessage(null);
     try {
@@ -424,30 +430,23 @@ export default function DashboardModule({
       });
       setIsAddOpen(false);
     } catch (err: any) {
-      console.error('Erro ao agendar pela central:', err);
-      setErrorMessage(err.message || 'Erro ao registrar agendamento. Verifique a integridade dos dados.');
+      safeLog('error', 'dashboard.appointment.create', 'error', { error: err });
+      setErrorMessage('Erro ao registrar agendamento. Verifique a integridade dos dados.');
     } finally {
       setIsSaving(false);
     }
   };
 
   const openQuickAppointment = (hourStr: string) => {
+    if (!canCreateAppointment) return;
     setErrorMessage(null);
-    setFormData({
-      customerId: customers[0]?.id || '',
-      vehicleId: vehicles.find(v => v.customerId === customers[0]?.id)?.id || '',
-      serviceId: services[0]?.id || '',
-      time: hourStr,
-      value: services[0]?.basePrice || 0,
-      employeeId: 'Gabriel',
-      notes: ''
-    });
+    setFormData(createAppointmentFormDraft(customers, vehicles, services, hourStr));
     setIsAddOpen(true);
   };
 
   // --- Sub-Form: Quick Client Creation inside Drawer ---
   const handleQuickAddClient = async () => {
-    if (!newClientName.trim() || !newClientPhone.trim()) return;
+    if (!canCreateCustomer || !newClientName.trim() || !newClientPhone.trim()) return;
     setIsSaving(true);
     setErrorMessage(null);
     try {
@@ -471,8 +470,8 @@ export default function DashboardModule({
         setNewClientPhone('');
       }
     } catch (err: any) {
-      console.error('Erro ao adicionar cliente rápido:', err);
-      setErrorMessage(err.message || 'Erro ao adicionar cliente. Tente novamente.');
+      safeLog('error', 'dashboard.customer.quick_create', 'error', { error: err });
+      setErrorMessage('Erro ao adicionar cliente. Tente novamente.');
     } finally {
       setIsSaving(false);
     }
@@ -480,7 +479,14 @@ export default function DashboardModule({
 
   // --- Sub-Form: Quick Vehicle Creation inside Drawer ---
   const handleQuickAddVehicle = async () => {
-    if (!newVehicleBrand.trim() || !newVehicleModel.trim() || !newVehiclePlate.trim()) return;
+    if (
+      !canCreateCustomer
+      || !newVehicleBrand.trim()
+      || !newVehicleModel.trim()
+      || !newVehicleYear.trim()
+      || !newVehiclePlate.trim()
+      || !newVehicleColor.trim()
+    ) return;
     setIsSaving(true);
     setErrorMessage(null);
     try {
@@ -489,22 +495,24 @@ export default function DashboardModule({
         brand: newVehicleBrand,
         model: newVehicleModel,
         version: 'N/A',
-        year: '2020',
+        year: newVehicleYear,
         plate: newVehiclePlate.toUpperCase(),
-        color: newVehicleColor || 'Não informada',
-        mileage: '0'
+        color: newVehicleColor,
+        mileage: '0',
+        porte: resolveVehiclePorte(vehicleCatalog, newVehicleBrand, newVehicleModel)
       });
       if (added) {
         setEditVehicleId(added.id);
         setIsAddingVehicle(false);
         setNewVehicleBrand('');
         setNewVehicleModel('');
+        setNewVehicleYear(String(getCurrentDate().getFullYear()));
         setNewVehiclePlate('');
         setNewVehicleColor('');
       }
     } catch (err: any) {
-      console.error('Erro ao adicionar veículo rápido:', err);
-      setErrorMessage(err.message || 'Erro ao cadastrar veículo. Verifique a placa ou cor.');
+      safeLog('error', 'dashboard.vehicle.quick_create', 'error', { error: err });
+      setErrorMessage('Erro ao cadastrar veículo. Verifique a placa ou cor.');
     } finally {
       setIsSaving(false);
     }
@@ -512,7 +520,7 @@ export default function DashboardModule({
 
   // --- Edit Panel Actions ---
   const handleSaveDrawerEdits = async () => {
-    if (!selectedApptId) return;
+    if (!selectedApptId || !canEditAppointment) return;
     setIsSaving(true);
     setErrorMessage(null);
     try {
@@ -568,8 +576,11 @@ export default function DashboardModule({
       setIsDrawerOpen(false);
       setSelectedApptId(null);
     } catch (err: any) {
-      console.error('Erro ao salvar alterações do agendamento:', err);
-      setErrorMessage(err.message || 'Erro ao atualizar agendamento. Verifique as restrições.');
+      safeLog('error', 'dashboard.appointment.update', 'error', {
+        entityId: selectedApptId || undefined,
+        error: err
+      });
+      setErrorMessage('Erro ao atualizar agendamento. Verifique as restrições.');
     } finally {
       setIsSaving(false);
     }
@@ -577,6 +588,7 @@ export default function DashboardModule({
 
   // Duplicate Appointment
   const handleDuplicateAppointment = async (apptId: string) => {
+    if (!canCreateAppointment) return;
     const toClone = appointments.find(a => a.id === apptId);
     if (!toClone) return;
 
@@ -605,15 +617,19 @@ export default function DashboardModule({
       setIsDrawerOpen(false);
       setSelectedApptId(null);
     } catch (err: any) {
-      console.error('Erro ao clonar agendamento:', err);
-      alert('Erro ao clonar agendamento: ' + (err.message || 'Verifique se há conflito.'));
+      safeLog('error', 'dashboard.appointment.clone', 'error', {
+        entityId: selectedApptId || undefined,
+        error: err
+      });
+      alert('Erro ao clonar agendamento. Verifique se há conflito.');
     } finally {
       setIsSaving(false);
     }
   };
 
   // Reschedule to another visual slot
-  const handleMoveToSlot = (newHour: string) => {
+  const handleMoveToSlot = async (newHour: string) => {
+    if (!canEditAppointment || !selectedApptId) return;
     setEditTime(newHour);
     // Create direct action log
     const updatedChangelog = activeAppt?.changelog ? [...activeAppt.changelog] : [];
@@ -623,10 +639,37 @@ export default function DashboardModule({
       action: `Agendamento reagendado para o horário das ${newHour}`
     });
     
-    onUpdateAppointment(selectedApptId!, {
-      dateTime: `${editDate}T${newHour}`,
-      changelog: updatedChangelog
-    });
+    try {
+      await onUpdateAppointment(selectedApptId, {
+        dateTime: `${editDate}T${newHour}`,
+        changelog: updatedChangelog
+      });
+    } catch (error) {
+      safeLog('error', 'dashboard.appointment.reschedule', 'error', {
+        entityId: selectedApptId,
+        error
+      });
+      setErrorMessage('Erro ao reagendar atendimento.');
+    }
+  };
+
+  const handleDeleteAppointment = async () => {
+    if (!canDeleteAppointment || !selectedApptId) return;
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      await onDeleteAppointment(selectedApptId);
+      setIsDrawerOpen(false);
+      setSelectedApptId(null);
+    } catch (error) {
+      safeLog('error', 'dashboard.appointment.delete', 'error', {
+        entityId: selectedApptId,
+        error
+      });
+      setErrorMessage('Erro ao excluir agendamento.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // WhatsApp Message triggers using active templates
@@ -711,7 +754,7 @@ export default function DashboardModule({
   };
 
   const handleStartServiceInstant = async () => {
-    if (!selectedApptId || !activeAppt) return;
+    if (!selectedApptId || !activeAppt || !canEditAppointment) return;
     setIsSaving(true);
     setErrorMessage(null);
     try {
@@ -745,15 +788,18 @@ export default function DashboardModule({
       setEditStatus('em_andamento');
       setEditStartedAt(nowStr);
     } catch (err: any) {
-      console.error('Erro ao iniciar atendimento:', err);
-      setErrorMessage(err.message || 'Erro ao iniciar atendimento.');
+      safeLog('error', 'dashboard.appointment.start_service', 'error', {
+        entityId: selectedApptId || undefined,
+        error: err
+      });
+      setErrorMessage('Erro ao iniciar atendimento.');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleFinishServiceInstant = async () => {
-    if (!selectedApptId || !activeAppt) return;
+    if (!selectedApptId || !activeAppt || !canEditAppointment) return;
     setIsSaving(true);
     setErrorMessage(null);
     try {
@@ -787,14 +833,17 @@ export default function DashboardModule({
       setEditStatus('finalizado');
       setEditConcludedAt(nowStr);
     } catch (err: any) {
-      console.error('Erro ao finalizar atendimento:', err);
-      setErrorMessage(err.message || 'Erro ao finalizar atendimento.');
+      safeLog('error', 'dashboard.appointment.complete_service', 'error', {
+        entityId: selectedApptId || undefined,
+        error: err
+      });
+      setErrorMessage('Erro ao finalizar atendimento.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Print Service Order (Ordem de Serviço)
+  // Print Service Order using DOM nodes and textContent for all dynamic values.
   const handlePrintOS = () => {
     const client = customers.find(c => c.id === editCustomerId);
     const vehicle = vehicles.find(v => v.id === editVehicleId);
@@ -806,83 +855,142 @@ export default function DashboardModule({
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Ordem de Serviço #${selectedApptId}</title>
-          <style>
-            body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 40px; color: #333; background: #fff; }
-            .header { text-align: center; border-b: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
-            h1 { margin: 0; font-size: 24px; text-transform: uppercase; }
-            .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; background: #f9f9f9; padding: 15px; border-radius: 8px; }
-            .meta p { margin: 5px 0; font-size: 14px; }
-            .label { font-weight: bold; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 12px; text-align: left; font-size: 14px; }
-            th { background: #f2f2f2; font-weight: bold; }
-            .total-section { text-align: right; margin-top: 30px; font-size: 16px; font-weight: bold; }
-            .footer { text-align: center; margin-top: 60px; font-size: 12px; color: #777; border-t: 1px solid #eee; padding-top: 20px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Ordem de Serviço - Senhora Limpeza</h1>
-            <p>Estética Automotiva Premium • OS #${selectedApptId}</p>
-          </div>
-          <div class="meta">
-            <div>
-              <h3>DADOS DO CLIENTE</h3>
-              <p><span class="label">Nome:</span> ${client?.name || 'Não informado'}</p>
-              <p><span class="label">Telefone:</span> ${client?.phone || 'Não informado'}</p>
-              <p><span class="label">E-mail:</span> ${client?.email || 'Não informado'}</p>
-            </div>
-            <div>
-              <h3>DADOS DO VEÍCULO</h3>
-              <p><span class="label">Veículo:</span> ${vehicle ? `${vehicle.brand} ${vehicle.model} (${vehicle.color})` : 'Não cadastrado'}</p>
-              <p><span class="label">Placa:</span> ${vehicle?.plate || 'Não informada'}</p>
-              <p><span class="label">Ano:</span> ${vehicle?.year || 'Não informado'}</p>
-            </div>
-          </div>
-          <div>
-            <h3>SERVIÇOS CONTRATADOS</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Descrição do Serviço</th>
-                  <th>Duração Estimada</th>
-                  <th>Preço Base</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${selectedServicesDetails.map(s => `
-                  <tr>
-                    <td>${s?.name || ''}</td>
-                    <td>${s?.estimatedTime || 60} min</td>
-                    <td>R$ ${s?.basePrice.toFixed(2) || '0.00'}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-          <div class="total-section">
-            <p>Subtotal: R$ ${(editValue + editDiscount - editAddition).toFixed(2)}</p>
-            <p>Descontos: R$ ${editDiscount.toFixed(2)}</p>
-            <p>Acréscimos: R$ ${editAddition.toFixed(2)}</p>
-            <p style="font-size: 20px; color: #10b981;">Valor Final: R$ ${editValue.toFixed(2)}</p>
-          </div>
-          <div style="margin-top: 30px;">
-            <h3>OBSERVAÇÕES OPERACIONAIS</h3>
-            <p style="font-style: italic; background: #fafafa; padding: 10px; border-left: 3px solid #ddd;">${editNotes || 'Nenhuma observação cadastrada.'}</p>
-          </div>
-          <div class="footer">
-            <p>Assinatura do Técnico: ___________________________   Assinatura do Cliente: ___________________________</p>
-            <p style="margin-top: 15px;">Senhora Limpeza Estética Premium - Obrigado pela confiança!</p>
-          </div>
-          <script>window.print();</script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    const printDocument = printWindow.document;
+    printDocument.title = `Ordem de Serviço #${selectedApptId || ''}`;
+    while (printDocument.head.firstChild) {
+      printDocument.head.removeChild(printDocument.head.firstChild);
+    }
+    while (printDocument.body.firstChild) {
+      printDocument.body.removeChild(printDocument.body.firstChild);
+    }
+
+    const style = printDocument.createElement('style');
+    style.textContent = `
+      body { font-family: "Helvetica Neue", Arial, sans-serif; padding: 40px; color: #333; background: #fff; }
+      .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+      h1 { margin: 0; font-size: 24px; text-transform: uppercase; }
+      .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; background: #f9f9f9; padding: 15px; border-radius: 8px; }
+      .meta p { margin: 5px 0; font-size: 14px; }
+      .label { font-weight: bold; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+      th, td { border: 1px solid #ddd; padding: 12px; text-align: left; font-size: 14px; }
+      th { background: #f2f2f2; font-weight: bold; }
+      .total-section { text-align: right; margin-top: 30px; font-size: 16px; font-weight: bold; }
+      .grand-total { font-size: 20px; color: #10b981; }
+      .notes { margin-top: 30px; }
+      .notes-value { font-style: italic; background: #fafafa; padding: 10px; border-left: 3px solid #ddd; }
+      .footer { text-align: center; margin-top: 60px; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 20px; }
+      .footer-note { margin-top: 15px; }
+    `;
+    printDocument.head.appendChild(style);
+
+    const appendTextElement = <K extends keyof HTMLElementTagNameMap>(
+      parent: Node,
+      tagName: K,
+      value: unknown,
+      className?: string
+    ): HTMLElementTagNameMap[K] => {
+      const element = printDocument.createElement(tagName);
+      if (className) element.className = className;
+      setSafeText(element, value);
+      parent.appendChild(element);
+      return element;
+    };
+
+    const appendLabelValue = (parent: Node, label: string, value: unknown): void => {
+      const paragraph = printDocument.createElement('p');
+      appendTextElement(paragraph, 'span', `${label}: `, 'label');
+      paragraph.appendChild(printDocument.createTextNode(String(value ?? '')));
+      parent.appendChild(paragraph);
+    };
+
+    const header = printDocument.createElement('div');
+    header.className = 'header';
+    appendTextElement(header, 'h1', 'Ordem de Serviço - Senhora Limpeza');
+    appendTextElement(header, 'p', `Estética Automotiva Premium • OS #${selectedApptId || ''}`);
+    printDocument.body.appendChild(header);
+
+    const meta = printDocument.createElement('div');
+    meta.className = 'meta';
+    const clientSection = printDocument.createElement('div');
+    appendTextElement(clientSection, 'h3', 'DADOS DO CLIENTE');
+    appendLabelValue(clientSection, 'Nome', client?.name || 'Não informado');
+    appendLabelValue(clientSection, 'Telefone', client?.phone || 'Não informado');
+    appendLabelValue(clientSection, 'E-mail', client?.email || 'Não informado');
+    meta.appendChild(clientSection);
+
+    const vehicleSection = printDocument.createElement('div');
+    appendTextElement(vehicleSection, 'h3', 'DADOS DO VEÍCULO');
+    appendLabelValue(
+      vehicleSection,
+      'Veículo',
+      vehicle ? `${vehicle.brand} ${vehicle.model} (${vehicle.color})` : 'Não cadastrado'
+    );
+    appendLabelValue(vehicleSection, 'Placa', vehicle?.plate || 'Não informada');
+    appendLabelValue(vehicleSection, 'Ano', vehicle?.year || 'Não informado');
+    meta.appendChild(vehicleSection);
+    printDocument.body.appendChild(meta);
+
+    const servicesSection = printDocument.createElement('div');
+    appendTextElement(servicesSection, 'h3', 'SERVIÇOS CONTRATADOS');
+    const table = printDocument.createElement('table');
+    const tableHead = printDocument.createElement('thead');
+    const headerRow = printDocument.createElement('tr');
+    ['Descrição do Serviço', 'Duração Estimada', 'Preço Base'].forEach(label => {
+      appendTextElement(headerRow, 'th', label);
+    });
+    tableHead.appendChild(headerRow);
+    table.appendChild(tableHead);
+
+    const tableBody = printDocument.createElement('tbody');
+    selectedServicesDetails.forEach(service => {
+      if (!service) return;
+      const row = printDocument.createElement('tr');
+      appendTextElement(row, 'td', service.name || '');
+      appendTextElement(row, 'td', `${service.estimatedTime || 60} min`);
+      appendTextElement(row, 'td', `R$ ${getServicePrice(service, vehicle).toFixed(2)}`);
+      tableBody.appendChild(row);
+    });
+    table.appendChild(tableBody);
+    servicesSection.appendChild(table);
+    printDocument.body.appendChild(servicesSection);
+
+    const totals = printDocument.createElement('div');
+    totals.className = 'total-section';
+    appendTextElement(totals, 'p', `Subtotal: R$ ${(editValue + editDiscount - editAddition).toFixed(2)}`);
+    appendTextElement(totals, 'p', `Descontos: R$ ${editDiscount.toFixed(2)}`);
+    appendTextElement(totals, 'p', `Acréscimos: R$ ${editAddition.toFixed(2)}`);
+    appendTextElement(totals, 'p', `Valor Final: R$ ${editValue.toFixed(2)}`, 'grand-total');
+    printDocument.body.appendChild(totals);
+
+    const notes = printDocument.createElement('div');
+    notes.className = 'notes';
+    appendTextElement(notes, 'h3', 'OBSERVAÇÕES OPERACIONAIS');
+    appendTextElement(
+      notes,
+      'p',
+      editNotes || 'Nenhuma observação cadastrada.',
+      'notes-value'
+    );
+    printDocument.body.appendChild(notes);
+
+    const footer = printDocument.createElement('div');
+    footer.className = 'footer';
+    appendTextElement(
+      footer,
+      'p',
+      'Assinatura do Técnico: ___________________________   Assinatura do Cliente: ___________________________'
+    );
+    appendTextElement(
+      footer,
+      'p',
+      'Senhora Limpeza Estética Premium - Obrigado pela confiança!',
+      'footer-note'
+    );
+    printDocument.body.appendChild(footer);
+
+    printWindow.focus();
+    printWindow.setTimeout(() => printWindow.print(), 0);
   };
 
   // Filter clients based on quick search
@@ -927,14 +1035,16 @@ export default function DashboardModule({
           </p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
-          <button 
-            onClick={() => openQuickAppointment(baseHours[0] || '08:00')}
-            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl shadow-[0_0_15px_rgba(14,165,233,0.35)] transition-all cursor-pointer transform hover:scale-[1.02] active:scale-[0.98]"
-            id="btn-global-new-appointment"
-          >
-            <Plus size={15} className="stroke-[3]" />
-            <span>Novo Agendamento</span>
-          </button>
+          {canCreateAppointment && (
+            <button 
+              onClick={() => openQuickAppointment(baseHours[0] || '08:00')}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl shadow-[0_0_15px_rgba(14,165,233,0.35)] transition-all cursor-pointer transform hover:scale-[1.02] active:scale-[0.98]"
+              id="btn-global-new-appointment"
+            >
+              <Plus size={15} className="stroke-[3]" />
+              <span>Novo Agendamento</span>
+            </button>
+          )}
           <div className="hidden sm:flex items-center gap-2 font-mono text-[11px] bg-slate-950 text-sky-400 px-3.5 py-2.5 rounded-xl border border-slate-800 shadow-inner shrink-0">
             <span>
               {(() => {
@@ -950,6 +1060,7 @@ export default function DashboardModule({
       </div>
 
       {/* Customer Portal Action Bar */}
+      {clientPortalEnabled && (
       <div className="flex flex-col sm:flex-row justify-between items-center gap-3 bg-gradient-to-r from-sky-950/20 via-indigo-950/20 to-sky-950/20 border border-sky-900/30 px-5 py-3 rounded-2xl">
         <div className="flex items-center gap-2 text-left">
           <div className="w-2 h-2 rounded-full bg-sky-400 animate-ping shrink-0" />
@@ -981,6 +1092,7 @@ export default function DashboardModule({
           </a>
         </div>
       </div>
+      )}
 
       {/* Main Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -1057,6 +1169,8 @@ export default function DashboardModule({
                       }}
                       onDuplicateClick={handleDuplicateAppointment}
                       onUpdateStatus={onUpdateStatus}
+                      canCreate={canCreateAppointment}
+                      canEdit={canEditAppointment}
                     />
                   );
                 } else {
@@ -1065,6 +1179,7 @@ export default function DashboardModule({
                       key={hour}
                       hour={hour}
                       onBookClick={openQuickAppointment}
+                      canCreate={canCreateAppointment}
                     />
                   );
                 }
@@ -1229,12 +1344,14 @@ export default function DashboardModule({
             ) : (
               <div className="space-y-3">
                 <div className="text-center p-3 text-slate-500 text-[10px] bg-slate-950/45 rounded-xl border border-slate-850 italic">
-                  Nenhum aniversário hoje (15/07).
+                  Nenhum aniversário hoje ({currentDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}).
                 </div>
                 
                 {getBirthdaysThisMonth().length > 0 && (
                   <div className="space-y-2">
-                    <span className="text-[9px] uppercase font-mono tracking-wider text-slate-500 font-bold block">Próximos de Julho:</span>
+                    <span className="text-[9px] uppercase font-mono tracking-wider text-slate-500 font-bold block">
+                      Próximos de {currentDate.toLocaleDateString('pt-BR', { month: 'long' })}:
+                    </span>
                     <div className="space-y-2 max-h-[150px] overflow-y-auto pr-1 scrollbar-thin">
                       {getBirthdaysThisMonth().map(cust => {
                         const [_, month, day] = cust.birthDate.split('-');
@@ -1283,6 +1400,11 @@ export default function DashboardModule({
             </div>
             
             <form onSubmit={handleAddSubmit} className="p-5 space-y-4 text-xs">
+              {errorMessage && (
+                <div className="bg-red-500/10 text-red-400 border border-red-500/20 px-4 py-2.5 rounded-xl font-mono">
+                  {errorMessage}
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Cliente *</label>
                 <select 
@@ -1330,7 +1452,9 @@ export default function DashboardModule({
                 >
                   <option value="" disabled>Selecione o serviço comercial...</option>
                   {services.map(s => (
-                    <option key={s.id} value={s.id}>{s.name} - R$ {s.basePrice.toFixed(2)}</option>
+                    <option key={s.id} value={s.id}>
+                      {s.name} - R$ {getServicePrice(s, vehicles.find(vehicle => vehicle.id === formData.vehicleId)).toFixed(2)}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -1445,6 +1569,11 @@ export default function DashboardModule({
 
             {/* Content Form Scroll Area */}
             <div className="p-6 space-y-6 flex-1 text-xs">
+              {errorMessage && (
+                <div className="bg-red-500/10 text-red-400 border border-red-500/20 px-4 py-2.5 rounded-xl font-mono">
+                  {errorMessage}
+                </div>
+              )}
               
               {/* PAINEL OPERACIONAL DE EXECUÇÃO */}
               <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 shadow-xl">
@@ -1480,7 +1609,11 @@ export default function DashboardModule({
 
                 {/* Execution action buttons */}
                 <div className="pt-2">
-                  {editStatus !== 'em_andamento' && editStatus !== 'finalizado' && editStatus !== 'entregue' && editStatus !== 'cancelado' ? (
+                  {!canEditAppointment ? (
+                    <div className="w-full py-3 bg-slate-900/80 border border-slate-800 text-slate-400 font-bold text-center text-[10px] uppercase tracking-widest rounded-xl">
+                      Modo somente leitura
+                    </div>
+                  ) : editStatus !== 'em_andamento' && editStatus !== 'finalizado' && editStatus !== 'entregue' && editStatus !== 'cancelado' ? (
                     <button
                       type="button"
                       onClick={handleStartServiceInstant}
@@ -1516,7 +1649,8 @@ export default function DashboardModule({
                   <button 
                     type="button"
                     onClick={() => setIsAddingClient(!isAddingClient)}
-                    className="text-[10px] text-sky-400 hover:text-sky-350 font-bold flex items-center gap-1 transition-colors bg-slate-950 px-2 py-1 rounded border border-slate-800"
+                    disabled={!canCreateCustomer}
+                    className="text-[10px] text-sky-400 hover:text-sky-350 disabled:opacity-40 disabled:cursor-not-allowed font-bold flex items-center gap-1 transition-colors bg-slate-950 px-2 py-1 rounded border border-slate-800"
                   >
                     <Plus size={10} />
                     <span>{isAddingClient ? 'Cancelar' : 'Cadastrar Rápido'}</span>
@@ -1629,7 +1763,7 @@ export default function DashboardModule({
                   <button 
                     type="button"
                     onClick={() => setIsAddingVehicle(!isAddingVehicle)}
-                    disabled={!editCustomerId}
+                    disabled={!editCustomerId || !canCreateCustomer}
                     className="text-[10px] text-sky-400 hover:text-sky-350 disabled:opacity-40 disabled:cursor-not-allowed font-bold flex items-center gap-1 transition-colors bg-slate-950 px-2 py-1 rounded border border-slate-800"
                   >
                     <Plus size={10} />
@@ -1641,19 +1775,40 @@ export default function DashboardModule({
                   <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-3 animate-fadeIn">
                     <p className="text-[10px] text-sky-400 font-mono">Adicionar Veículo para Cliente:</p>
                     <div className="grid grid-cols-2 gap-2">
-                      <input 
-                        type="text"
-                        placeholder="Marca (Ex: VW)"
+                      <select
                         value={newVehicleBrand}
-                        onChange={(e) => setNewVehicleBrand(e.target.value)}
+                        onChange={(e) => {
+                          setNewVehicleBrand(e.target.value);
+                          setNewVehicleModel('');
+                        }}
                         className="bg-slate-900 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 rounded-lg px-2.5 py-2 text-white"
-                      />
-                      <input 
-                        type="text"
-                        placeholder="Modelo (Ex: Golf)"
+                        data-testid="dashboard-vehicle-brand"
+                      >
+                        <option value="" disabled>Selecione a marca</option>
+                        {vehicleCatalog.brands.map(brand => (
+                          <option key={brand.id} value={brand.name}>{brand.name}</option>
+                        ))}
+                      </select>
+                      <select
                         value={newVehicleModel}
                         onChange={(e) => setNewVehicleModel(e.target.value)}
+                        disabled={!newVehicleBrand}
                         className="bg-slate-900 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 rounded-lg px-2.5 py-2 text-white"
+                        data-testid="dashboard-vehicle-model"
+                      >
+                        <option value="" disabled>Selecione o modelo</option>
+                        {quickVehicleModels.map(model => (
+                          <option key={model.id} value={model.name}>{model.name}</option>
+                        ))}
+                      </select>
+                      <input 
+                        type="number"
+                        min="1950"
+                        max={currentDate.getFullYear() + 1}
+                        placeholder="Ano"
+                        value={newVehicleYear}
+                        onChange={(e) => setNewVehicleYear(e.target.value)}
+                        className="bg-slate-900 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 rounded-lg px-2.5 py-2 text-white font-mono"
                       />
                       <input 
                         type="text"
@@ -1673,7 +1828,13 @@ export default function DashboardModule({
                     <button
                       type="button"
                       onClick={handleQuickAddVehicle}
-                      disabled={!newVehicleBrand.trim() || !newVehicleModel.trim() || !newVehiclePlate.trim()}
+                      disabled={
+                        !newVehicleBrand.trim()
+                        || !newVehicleModel.trim()
+                        || !newVehicleYear.trim()
+                        || !newVehiclePlate.trim()
+                        || !newVehicleColor.trim()
+                      }
                       className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-lg text-[10px] uppercase tracking-wider transition-colors"
                     >
                       Cadastrar Veículo
@@ -1723,7 +1884,9 @@ export default function DashboardModule({
                     className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white"
                   >
                     {services.map(s => (
-                      <option key={s.id} value={s.id}>{s.name} - R$ {s.basePrice.toFixed(2)}</option>
+                      <option key={s.id} value={s.id}>
+                        {s.name} - R$ {getServicePrice(s, vehicles.find(vehicle => vehicle.id === editVehicleId)).toFixed(2)}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1760,7 +1923,9 @@ export default function DashboardModule({
                         >
                           <div className="truncate max-w-[130px]">
                             <p className="font-bold text-[10px] truncate">{s.name}</p>
-                            <p className="text-[8px] font-mono opacity-80">R$ {s.basePrice.toFixed(2)}</p>
+                            <p className="text-[8px] font-mono opacity-80">
+                              R$ {getServicePrice(s, vehicles.find(vehicle => vehicle.id === editVehicleId)).toFixed(2)}
+                            </p>
                           </div>
                           {isSelected && <Check size={12} className="stroke-[3] text-sky-400 shrink-0" />}
                         </button>
@@ -1925,7 +2090,13 @@ export default function DashboardModule({
 
                 <div className="text-[10px] text-slate-400 font-mono flex justify-between bg-slate-900/50 p-2 rounded border border-slate-850">
                   <span>Base dos Serviços Selecionados:</span>
-                  <span>R$ {editServiceIds.reduce((sum, id) => sum + (services.find(s => s.id === id)?.basePrice || 0), 0).toFixed(2)}</span>
+                  <span>
+                    R$ {getServicesPrice(
+                      services,
+                      editServiceIds,
+                      vehicles.find(vehicle => vehicle.id === editVehicleId)
+                    ).toFixed(2)}
+                  </span>
                 </div>
               </div>
 
@@ -1952,11 +2123,11 @@ export default function DashboardModule({
                 <div className="grid grid-cols-2 gap-4 text-[10px] text-slate-400 border-b border-slate-900 pb-2.5 font-mono">
                   <div>
                     <p className="text-slate-500 text-[9px] uppercase">Data de Cadastro:</p>
-                    <p className="text-slate-300 font-bold">{activeAppt.createdAt ? new Date(activeAppt.createdAt).toLocaleString('pt-BR') : '15/07/2026 às 08:00'}</p>
+                    <p className="text-slate-300 font-bold">{activeAppt.createdAt ? new Date(activeAppt.createdAt).toLocaleString('pt-BR') : 'Não informado'}</p>
                   </div>
                   <div>
                     <p className="text-slate-500 text-[9px] uppercase">Última Alteração:</p>
-                    <p className="text-slate-300 font-bold">{activeAppt.updatedAt ? new Date(activeAppt.updatedAt).toLocaleString('pt-BR') : '15/07/2026 às 08:00'}</p>
+                    <p className="text-slate-300 font-bold">{activeAppt.updatedAt ? new Date(activeAppt.updatedAt).toLocaleString('pt-BR') : 'Não informado'}</p>
                   </div>
                 </div>
 
@@ -2006,21 +2177,21 @@ export default function DashboardModule({
               </div>
 
               {/* Destructive actions */}
-              <div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (window.confirm('Tem certeza de que deseja excluir este agendamento?')) {
-                      onDeleteAppointment(selectedApptId!);
-                      setIsDrawerOpen(false);
-                      setSelectedApptId(null);
-                    }
-                  }}
-                  className="w-full py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/15 rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                >
-                  <Trash2 size={12} /> Excluir OS (Apagar Registro)
-                </button>
-              </div>
+              {canDeleteAppointment && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Tem certeza de que deseja excluir este agendamento?')) {
+                        void handleDeleteAppointment();
+                      }
+                    }}
+                    className="w-full py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/15 rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <Trash2 size={12} /> Excluir OS (Apagar Registro)
+                  </button>
+                </div>
+              )}
 
               {/* Primary submit */}
               <div className="pt-2 border-t border-slate-900 flex justify-end gap-3">
@@ -2034,14 +2205,16 @@ export default function DashboardModule({
                 >
                   Fechar
                 </button>
-                <button 
-                  type="button" 
-                  onClick={handleSaveDrawerEdits}
-                  className="px-6 py-2 bg-sky-500 hover:bg-sky-600 text-slate-950 font-extrabold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-lg shadow-sky-500/10"
-                >
-                  <Save size={14} className="stroke-[2.5]" />
-                  <span>Salvar Alterações</span>
-                </button>
+                {canEditAppointment && (
+                  <button 
+                    type="button" 
+                    onClick={handleSaveDrawerEdits}
+                    className="px-6 py-2 bg-sky-500 hover:bg-sky-600 text-slate-950 font-extrabold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-lg shadow-sky-500/10"
+                  >
+                    <Save size={14} className="stroke-[2.5]" />
+                    <span>Salvar Alterações</span>
+                  </button>
+                )}
               </div>
 
             </div>

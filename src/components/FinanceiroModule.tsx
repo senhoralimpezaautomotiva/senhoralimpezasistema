@@ -12,11 +12,11 @@ import {
   Plus, 
   Search, 
   Trash2, 
-  X,
-  AlertCircle
+  X
 } from 'lucide-react';
 import { CashTransaction, TransactionType } from '../types';
 import { hasModulePermission } from '../db/localDb';
+import { safeLog } from '../security/safeOutput';
 
 interface FinanceiroModuleProps {
   finances: CashTransaction[];
@@ -81,21 +81,22 @@ export default function FinanceiroModule({ finances, currentUser, onAddTransacti
         status: 'pago'
       });
     } catch (err: any) {
-      console.error('Erro ao adicionar transação financeira:', err);
-      setErrorMessage(err.message || 'Erro ao registrar movimentação no Supabase.');
+      safeLog('error', 'finance.transaction.create', 'error', { error: err });
+      setErrorMessage('Erro ao registrar movimentação.');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (!canDelete) return;
     setErrorMessage(null);
     setActiveDeleteTransactionId(id);
     try {
       await onDeleteTransaction(id);
     } catch (err: any) {
-      console.error('Erro ao deletar transação financeira:', err);
-      alert(err.message || 'Erro ao excluir movimentação no Supabase.');
+      safeLog('error', 'finance.transaction.delete', 'error', { error: err });
+      alert('Erro ao excluir movimentação.');
     } finally {
       setActiveDeleteTransactionId(null);
     }
@@ -246,17 +247,19 @@ export default function FinanceiroModule({ finances, currentUser, onAddTransacti
                       {t.type === 'receita' ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="py-4 px-5 text-right">
-                      <button 
-                        disabled={activeDeleteTransactionId === t.id}
-                        onClick={() => {
-                          if (confirm(`Excluir a transação "${t.description}"?`)) {
-                            handleDelete(t.id);
-                          }
-                        }}
-                        className="p-1.5 bg-slate-850 hover:bg-red-500/10 border border-slate-800 rounded-lg text-slate-500 hover:text-red-400 transition-colors disabled:opacity-50"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      {canDelete && (
+                        <button 
+                          disabled={activeDeleteTransactionId === t.id}
+                          onClick={() => {
+                            if (confirm(`Excluir a transação "${t.description}"?`)) {
+                              void handleDelete(t.id);
+                            }
+                          }}
+                          className="p-1.5 bg-slate-850 hover:bg-red-500/10 border border-slate-800 rounded-lg text-slate-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

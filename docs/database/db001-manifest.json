@@ -1,0 +1,430 @@
+{
+  "task": "DB-001",
+  "asOf": "2026-07-24",
+  "remoteState": "linked_and_introspected",
+  "backupState": "logical_backup_verified",
+  "restoreTestState": "pending_isolated_target_due_local_disk_capacity",
+  "catalogAuthority": "remote_schema_dump",
+  "baselineState": "captured_from_remote_schema",
+  "officialMigrationDirectory": "supabase/migrations",
+  "expectedBaselineFilenamePattern": "^[0-9]{14}_baseline\\.sql$",
+  "requestedPreferredFilename": "20260724_000001_baseline.sql",
+  "officialMigrationFiles": [
+    "20260724210000_baseline.sql",
+    "20260724213000_portal001_client_auth_and_isolation.sql",
+    "20260724224500_portal001_email_identity_provider.sql"
+  ],
+  "sqlArtifacts": [
+    {
+      "path": "supabase/migrations/20260724210000_baseline.sql",
+      "category": ["official-migration", "baseline"],
+      "purpose": "Snapshot estrutural do schema public remoto antes da PORTAL-001, sem dados de negócio.",
+      "rerunnable": "no",
+      "idempotent": "no",
+      "risk": "medium",
+      "recommendation": "Marcar como aplicada no projeto de origem; executar somente na criação de um banco vazio."
+    },
+    {
+      "path": "supabase/migrations/20260724213000_portal001_client_auth_and_isolation.sql",
+      "category": ["official-migration", "security", "portal001"],
+      "purpose": "Cria vínculo Auth-cliente, RPCs seguras e RLS para isolamento do Portal do Cliente.",
+      "rerunnable": "no",
+      "idempotent": "partial",
+      "risk": "high",
+      "recommendation": "Aplicar somente após backup, dry-run e validação do vínculo com o projeto correto."
+    },
+    {
+      "path": "supabase/migrations/20260724224500_portal001_email_identity_provider.sql",
+      "category": ["official-migration", "security", "portal001"],
+      "purpose": "Adiciona identidade neutra por provedor e adota e-mail/senha como primeira fase do portal.",
+      "rerunnable": "no",
+      "idempotent": "partial",
+      "risk": "high",
+      "recommendation": "Aplicar após a migração base da PORTAL-001 e manter confirmação de e-mail habilitada."
+    },
+    {
+      "path": "configuracoes_empresa.sql",
+      "category": ["experimental", "partial-baseline"],
+      "purpose": "Cria configuracoes_empresa, política pública, seed e trigger de updated_at.",
+      "rerunnable": "no",
+      "idempotent": "partial",
+      "risk": "high",
+      "recommendation": "Preservar como evidência; não executar. Diverge do contrato atual e recria policy/trigger sem DROP."
+    },
+    {
+      "path": "supabase_sec001_credentials_migration.sql",
+      "category": ["legacy-migration", "dangerous"],
+      "purpose": "Remove credenciais de configuracoes_empresa, refaz grants/policies e exclui fallback legado.",
+      "rerunnable": "conditional",
+      "idempotent": "partial",
+      "risk": "high",
+      "recommendation": "Preservar como evidência da SEC-001; confirmar aplicação remota e absorver o estado final na baseline, sem replay."
+    },
+    {
+      "path": "supabase_usuarios_rls_migration.sql",
+      "category": ["legacy-migration", "dangerous"],
+      "purpose": "Substitui todas as policies de usuarios e cria is_active_usuario_admin.",
+      "rerunnable": "conditional",
+      "idempotent": "partial",
+      "risk": "high",
+      "recommendation": "Preservar como evidência; não executar. Confirmar aplicação e resultado remoto antes de incorporar à baseline."
+    },
+    {
+      "path": "vehicle_models.sql",
+      "category": ["experimental", "partial-baseline", "seed"],
+      "purpose": "Cria e popula vehicle_models com RLS e trigger.",
+      "rerunnable": "no",
+      "idempotent": "partial",
+      "risk": "high",
+      "recommendation": "Não executar. Policies e trigger não são idempotentes e a policy concede escrita ampla a authenticated."
+    },
+    {
+      "path": "src/db/localDb.ts#getPostgresSchemaSql",
+      "category": ["obsolete", "duplicate", "dangerous"],
+      "purpose": "Gera DDL de seis tabelas, índices e RLS de usuarios em tempo de execução.",
+      "rerunnable": "no",
+      "idempotent": "partial",
+      "risk": "critical",
+      "recommendation": "Nunca executar. Os nomes de colunas divergem do contrato que o mesmo arquivo usa no runtime."
+    },
+    {
+      "path": "scripts/database/introspect_schema.sql",
+      "category": ["official-diagnostic"],
+      "purpose": "Cataloga objetos, constraints, policies, grants e histórico sem ler dados de negócio.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Executar somente por conexão controlada e guardar a saída em backups/."
+    },
+    {
+      "path": "scripts/database/validate_restore.sql",
+      "category": ["official-diagnostic", "test"],
+      "purpose": "Compara contagens de objetos, policies, rotinas e linhas entre origem e restore.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Executar na origem e no alvo isolado; a saída contém apenas nomes técnicos e contagens."
+    },
+    {
+      "path": "scripts/database/verify-backup.ts",
+      "category": ["official-diagnostic", "test"],
+      "purpose": "Valida presença, conteúdo mínimo, hashes e ausência de connection string com senha nos dumps.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Executar após cada backup lógico."
+    },
+    {
+      "path": "checkPorte.ts",
+      "category": ["diagnostic", "test", "dangerous"],
+      "purpose": "Sonda constraint de porte por inserções e exclusões remotas.",
+      "rerunnable": "unsafe",
+      "idempotent": "no",
+      "risk": "critical",
+      "recommendation": "Não executar em nenhum banco compartilhado; substituir futuramente por teste transacional isolado."
+    },
+    {
+      "path": "getAgendamentosSchema.ts",
+      "category": ["diagnostic", "obsolete"],
+      "purpose": "Tenta inferir schema via OPTIONS e resposta PostgREST.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "medium",
+      "recommendation": "Não usar como catálogo oficial; pode registrar headers e respostas excessivas."
+    },
+    {
+      "path": "inspectAgendamentos.ts",
+      "category": ["diagnostic"],
+      "purpose": "Lê o OpenAPI PostgREST e imprime definições de três tabelas.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "medium",
+      "recommendation": "Somente evidência complementar; OpenAPI não cobre objetos internos, RLS, triggers ou constraints por completo."
+    },
+    {
+      "path": "listTables.ts",
+      "category": ["diagnostic", "obsolete"],
+      "purpose": "Testa uma tabela e lista candidatos codificados.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Não usar como inventário oficial; não enumera o catálogo real."
+    },
+    {
+      "path": "logInsertErrorDetails.ts",
+      "category": ["diagnostic", "test", "dangerous"],
+      "purpose": "Insere agendamento para obter erro detalhado.",
+      "rerunnable": "unsafe",
+      "idempotent": "no",
+      "risk": "critical",
+      "recommendation": "Não executar; pode criar dado órfão e registra resposta completa."
+    },
+    {
+      "path": "probeAgendamentosColumns.ts",
+      "category": ["diagnostic", "test", "dangerous"],
+      "purpose": "Insere e tenta excluir agendamento usando IDs codificados.",
+      "rerunnable": "unsafe",
+      "idempotent": "no",
+      "risk": "critical",
+      "recommendation": "Não executar; muta dados reais e a limpeza não é garantida."
+    },
+    {
+      "path": "probeCaseSensitive.ts",
+      "category": ["diagnostic", "obsolete"],
+      "purpose": "Sonda nomes alternativos de tabelas.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "medium",
+      "recommendation": "Não usar no fluxo oficial; pode revelar contagens e amostras."
+    },
+    {
+      "path": "probeMoreTables.ts",
+      "category": ["diagnostic", "obsolete"],
+      "purpose": "Sonda tabelas candidatas e imprime amostras.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "high",
+      "recommendation": "Não executar contra produção; pode registrar PII de linhas retornadas."
+    },
+    {
+      "path": "queryPostgresCatalog.ts",
+      "category": ["diagnostic", "obsolete"],
+      "purpose": "Tenta acessar catálogos via PostgREST.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Substituído pelo inventário SQL somente leitura da DB-001."
+    },
+    {
+      "path": "testInsertAgendamentos.ts",
+      "category": ["diagnostic", "test", "dangerous"],
+      "purpose": "Envia insert inválido para extrair detalhes de schema.",
+      "rerunnable": "unsafe",
+      "idempotent": "no",
+      "risk": "high",
+      "recommendation": "Não executar; depende de falha para evitar mutação."
+    },
+    {
+      "path": "testServicosDisponiveis.ts",
+      "category": ["diagnostic", "test"],
+      "purpose": "Lê toda a tabela e imprime registros.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "high",
+      "recommendation": "Não executar em produção; leitura e logs são excessivos."
+    },
+    {
+      "path": "testVehicleModels.ts",
+      "category": ["diagnostic", "test"],
+      "purpose": "Testa leitura de vehicle_models.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Fora do fluxo oficial; manter apenas como artefato classificado."
+    }
+  ],
+  "catalog": [
+    {
+      "name": "public.configuracoes_empresa",
+      "kind": "table",
+      "evidenceStatus": "runtime_contract_and_local_sql",
+      "purpose": "Configuração pública da empresa, agenda e automações.",
+      "columnsObserved": ["id", "company_name", "phone", "email", "cnpj", "address", "hours_of_operation", "logo_url", "primary_color", "accent_color", "referral_active", "referral_discount_percent", "agenda", "automations", "created_at", "updated_at"],
+      "constraintsAndDefaults": "DDL local define UUID PK fixo, defaults de apresentação e timestamps; agenda só aparece no runtime.",
+      "relationships": "Nenhuma FK local declarada.",
+      "rls": "SQL local propõe leitura anon/authenticated e escrita admin; estado remoto não confirmado.",
+      "consumers": ["src/db/localDb.ts", "src/components/ConfiguracoesModule.tsx"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.clientes",
+      "kind": "table",
+      "evidenceStatus": "runtime_contract",
+      "purpose": "Cadastro de clientes e metadados/referrals serializados em nome.",
+      "columnsObserved": ["id", "nome", "telefone", "data_aniversario", "created_at"],
+      "constraintsAndDefaults": "Tipos, PK, nulabilidade, defaults, uniques e checks remotos desconhecidos.",
+      "relationships": "Referenciada por cliente_id/customer_id em outras tabelas segundo contratos divergentes.",
+      "rls": "Desconhecido.",
+      "consumers": ["src/db/localDb.ts", "src/components/ClientesModule.tsx", "src/components/ClientPortal.tsx"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.veiculos",
+      "kind": "table",
+      "evidenceStatus": "runtime_contract",
+      "purpose": "Veículos dos clientes.",
+      "columnsObserved": ["id", "cliente_id", "marca", "modelo", "placa", "cor", "porte"],
+      "constraintsAndDefaults": "Tipos, PK, FK, unique de placa e check de porte remotos desconhecidos.",
+      "relationships": "cliente_id -> clientes.id é esperado pelo runtime, mas não confirmado.",
+      "rls": "Desconhecido.",
+      "consumers": ["src/db/localDb.ts", "src/components/ClientesModule.tsx", "src/components/ClientPortal.tsx"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.servicos_disponiveis",
+      "kind": "table",
+      "evidenceStatus": "runtime_contract",
+      "purpose": "Catálogo de serviços.",
+      "columnsObserved": ["id", "nome_servico", "observacao", "ativo", "categoria"],
+      "constraintsAndDefaults": "Tipos, PK, nulabilidade, defaults e checks remotos desconhecidos.",
+      "relationships": "Referenciada por agendamentos.servico_id e servicos_precos.servico_id segundo o runtime.",
+      "rls": "Desconhecido.",
+      "consumers": ["src/db/localDb.ts", "src/components/ServicosModule.tsx", "src/components/ClientPortal.tsx"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.agendamentos",
+      "kind": "table",
+      "evidenceStatus": "runtime_contract",
+      "purpose": "Agenda e ordens de serviço.",
+      "columnsObserved": ["id", "cliente_id", "veiculo_id", "servico_id", "data_agendamento", "hora_agendamento", "status", "valor_servico", "tempo_real", "observacoes", "created_at", "updated_at"],
+      "constraintsAndDefaults": "Tipos, PK, FKs, ações delete/update, checks de status e defaults remotos desconhecidos.",
+      "relationships": "Espera FKs para clientes, veiculos e servicos_disponiveis; não confirmadas.",
+      "rls": "Desconhecido.",
+      "consumers": ["src/db/localDb.ts", "src/components/AgendaModule.tsx", "src/components/DashboardModule.tsx", "src/components/ClientPortal.tsx"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.automacoes_execucoes",
+      "kind": "table",
+      "evidenceStatus": "runtime_contract_and_embedded_sql",
+      "purpose": "Fila e histórico operacional de automações.",
+      "columnsObserved": ["id", "empresa_id", "automacao", "appointment_id", "customer_id", "telefone", "mensagem", "status", "tentativas", "resposta_api", "data_execucao", "data_proxima_tentativa", "created_at", "updated_at"],
+      "constraintsAndDefaults": "DDL embutido propõe PK varchar, FKs, defaults e índices; estado remoto desconhecido.",
+      "relationships": "appointment_id -> agendamentos.id; customer_id -> clientes.id segundo DDL embutido.",
+      "rls": "Desconhecido.",
+      "consumers": ["src/db/localDb.ts", "src/db/automationEngine.ts", "server.ts"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.vehicle_models",
+      "kind": "table",
+      "evidenceStatus": "runtime_contract_and_local_sql",
+      "purpose": "Referência de fabricante, modelo e porte.",
+      "columnsObserved": ["id", "manufacturer", "model", "size_category", "active", "created_at", "updated_at"],
+      "constraintsAndDefaults": "SQL local propõe UUID PK, unique manufacturer/model e check P/M/G.",
+      "relationships": "Nenhuma FK local declarada.",
+      "rls": "SQL local propõe leitura pública e escrita ampla para authenticated; estado remoto desconhecido.",
+      "consumers": ["src/db/localDb.ts"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.usuarios",
+      "kind": "table",
+      "evidenceStatus": "runtime_contract_and_embedded_sql",
+      "purpose": "Perfil, status, papel, permissões e comissões de usuários autenticados.",
+      "columnsObserved": ["id", "auth_user_id", "nome", "email", "telefone", "status", "perfil", "foto_url", "permissions", "commissions", "default_commission_percent", "created_at", "updated_at"],
+      "constraintsAndDefaults": "DDL embutido propõe UUID PK, unique auth_user_id/email, FK auth.users e defaults JSONB.",
+      "relationships": "auth_user_id -> auth.users.id ON DELETE CASCADE segundo DDL embutido.",
+      "rls": "Migração local propõe leitura própria/admin e escritas apenas admin ativo; estado remoto desconhecido.",
+      "consumers": ["src/App.tsx", "src/db/localDb.ts", "src/server/adminApiSecurity.ts", "supabase/functions/admin-create-user/index.ts"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.marcas_veiculos",
+      "kind": "table",
+      "evidenceStatus": "frontend_runtime_contract_only",
+      "purpose": "Marcas exibidas no portal.",
+      "columnsObserved": ["id", "nome", "ativo", "ordem"],
+      "constraintsAndDefaults": "Todo o DDL remoto é desconhecido; não existe SQL local.",
+      "relationships": "Esperada como origem de modelos_veiculos.marca_id.",
+      "rls": "Desconhecido; o portal requer SELECT com identidade anon/authenticated.",
+      "consumers": ["src/components/ClientPortal.tsx"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.modelos_veiculos",
+      "kind": "table",
+      "evidenceStatus": "frontend_runtime_contract_only",
+      "purpose": "Modelos e portes exibidos no portal.",
+      "columnsObserved": ["id", "marca_id", "nome", "porte", "ativo"],
+      "constraintsAndDefaults": "Todo o DDL remoto é desconhecido; não existe SQL local.",
+      "relationships": "marca_id -> marcas_veiculos.id é esperado, não confirmado.",
+      "rls": "Desconhecido; o portal requer SELECT com identidade anon/authenticated.",
+      "consumers": ["src/components/ClientPortal.tsx"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.servicos_precos",
+      "kind": "table",
+      "evidenceStatus": "frontend_runtime_contract_only",
+      "purpose": "Preço e duração de serviço por porte no portal.",
+      "columnsObserved": ["servico_id", "porte", "preco", "tempo_estimado_minutos"],
+      "constraintsAndDefaults": "ID/PK, tipos, nulabilidade, uniques e checks remotos desconhecidos; não existe SQL local.",
+      "relationships": "servico_id -> servicos_disponiveis.id é esperado, não confirmado.",
+      "rls": "Desconhecido; o portal requer SELECT com identidade anon/authenticated.",
+      "consumers": ["src/components/ClientPortal.tsx"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "auth.users",
+      "kind": "supabase_managed_table",
+      "evidenceStatus": "api_contract_and_local_fk_proposal",
+      "purpose": "Identidades Supabase Auth.",
+      "columnsObserved": ["id"],
+      "constraintsAndDefaults": "Gerenciado pelo Supabase; customizações remotas desconhecidas.",
+      "relationships": "Referenciado por public.usuarios.auth_user_id segundo DDL local.",
+      "rls": "Gerenciado pelo Supabase.",
+      "consumers": ["supabase/functions/admin-create-user/index.ts", "src/db/localDb.ts"],
+      "remoteConfirmation": "pending"
+    }
+  ],
+  "otherRemoteObjects": {
+    "views": "unknown",
+    "materializedViews": "unknown",
+    "sequences": "unknown",
+    "customTypesAndEnums": "unknown",
+    "extensions": "unknown",
+    "functions": [
+      {
+        "name": "public.is_active_usuario_admin",
+        "status": "local_sql_only"
+      },
+      {
+        "name": "public.update_configuracoes_empresa_updated_at",
+        "status": "local_sql_only"
+      },
+      {
+        "name": "public.update_vehicle_models_updated_at",
+        "status": "local_sql_only"
+      },
+      {
+        "name": "public.get_check_constraints",
+        "status": "diagnostic_reference_only"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "trigger_update_configuracoes_empresa_updated_at",
+        "status": "local_sql_only"
+      },
+      {
+        "name": "trigger_update_vehicle_models_updated_at",
+        "status": "local_sql_only"
+      }
+    ],
+    "edgeFunctions": [
+      {
+        "name": "admin-create-user",
+        "status": "present_in_repository"
+      }
+    ]
+  },
+  "browserOnlyStores": [
+    "sl_history",
+    "sl_finances",
+    "sl_logs",
+    "sl_commissions",
+    "sl_config_cache",
+    "sl_automations_cache"
+  ],
+  "knownDivergences": [
+    "localDb runtime usa colunas portuguesas, mas getPostgresSchemaSql usa colunas inglesas para clientes, veiculos, servicos_disponiveis e agendamentos.",
+    "configuracoes_empresa.sql não define agenda, mas o runtime lê e grava agenda.",
+    "marcas_veiculos, modelos_veiculos e servicos_precos são consumidas pelo portal e não possuem DDL local.",
+    "vehicle_models e modelos_veiculos representam catálogos sobrepostos sem relação documentada.",
+    "Histórico, financeiro e comissões possuem tipos de domínio, mas permanecem apenas em cache local.",
+    "Não existe histórico oficial em supabase/migrations nem vínculo local com projeto remoto.",
+    "O estado aplicado de SEC-001 e das policies de usuarios não pode ser confirmado sem acesso remoto."
+  ]
+}

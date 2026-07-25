@@ -1,0 +1,40 @@
+# Plano gratuito evita qualquer contratação automática. Para operação contínua,
+# a mudança para Starter deve ser aprovada no painel do Render.
+services:
+  - type: web
+    name: senhora-limpeza-piloto
+    runtime: node
+    plan: free
+    region: virginia
+    autoDeployTrigger: off
+    buildCommand: bun install --frozen-lockfile --ignore-scripts && npm run build:render
+    startCommand: npm start
+    healthCheckPath: /health
+    maxShutdownDelaySeconds: 25
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 24.18.0
+      - key: BUN_VERSION
+        value: 1.3.14
+      - key: VITE_ENABLE_CLIENT_PORTAL
+        value: "true"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: MAKE_WEBHOOK_URL
+        sync: false
+      - key: ZAPI_INSTANCE_ID
+        sync: false
+      - key: ZAPI_TOKEN
+        sync: false
+      - key: ZAPI_CLIENT_TOKEN
+        sync: false

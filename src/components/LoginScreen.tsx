@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { LogIn, Car, Key, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { dbInstance } from '../db/localDb';
+import { safeLog } from '../security/safeOutput';
 
 interface LoginScreenProps {
   authError?: string;
@@ -63,13 +64,15 @@ export default function LoginScreen({ authError, onGoToPortal }: LoginScreenProp
       });
 
       if (signInError) {
-        setError(`Erro de autenticação: ${signInError.message}`);
+        safeLog('warn', 'authentication.sign_in', 'denied', { error: signInError });
+        setError('E-mail ou senha inválidos.');
         return;
       }
 
       saveRememberedEmail();
     } catch (err: any) {
-      setError(`Erro de conexão com o serviço de autenticação: ${err.message || err}`);
+      safeLog('error', 'authentication.sign_in', 'error', { error: err });
+      setError('Erro de conexão com o serviço de autenticação.');
     } finally {
       setLoading(false);
     }

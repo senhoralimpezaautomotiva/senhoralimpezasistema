@@ -7,7 +7,6 @@ import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
   Users, 
-  Car, 
   Wrench, 
   Calendar, 
   History, 
@@ -20,7 +19,6 @@ import {
   ChevronRight,
   Gift,
   MessageSquare,
-  UserCheck,
   UserCog
 } from 'lucide-react';
 import { SystemConfig, SystemModuleId, User } from '../types';

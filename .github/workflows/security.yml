@@ -1,0 +1,26 @@
+name: Security baseline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install from lockfile without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare artifact required by regression suites
+        run: npm run build
+      - name: Run security baseline
+        run: npm run security:ci

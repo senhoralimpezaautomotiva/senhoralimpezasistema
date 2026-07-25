@@ -1,11 +1,11 @@
 {
-  "projectId": "zippy-setup-66d0h",
-  "appId": "1:817770567651:web:0f89190f74ead75ac072d6",
-  "apiKey": "AIzaSyC4Z1-RdHcJihel3OZuwnRMM4oY1eRMCUI",
-  "authDomain": "zippy-setup-66d0h.firebaseapp.com",
-  "storageBucket": "zippy-setup-66d0h.firebasestorage.app",
-  "messagingSenderId": "817770567651",
+  "projectId": "<firebase-project-id>",
+  "appId": "<firebase-app-id>",
+  "apiKey": "<public-firebase-api-key>",
+  "authDomain": "<firebase-auth-domain>",
+  "storageBucket": "<firebase-storage-bucket>",
+  "messagingSenderId": "<firebase-sender-id>",
   "measurementId": "",
-  "oAuthClientId": "817770567651-pkq078itenpvoc5oo8ks025s2c829njk.apps.googleusercontent.com",
+  "oAuthClientId": "<oauth-client-id>",
   "recaptchaSiteKey": ""
 }

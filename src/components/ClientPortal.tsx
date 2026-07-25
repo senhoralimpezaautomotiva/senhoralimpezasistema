@@ -6,14 +6,28 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Phone, User, Mail, Car, Calendar, Clock, ChevronRight, ChevronLeft, 
-  Plus, Check, Trash2, ShieldAlert, AlertCircle, Sparkles, LogOut,
-  Clock3, DollarSign, CheckCircle2, RefreshCw, X, FileText, FileSignature,
+  Plus, Check, ShieldAlert, AlertCircle, Sparkles, LogOut,
+  Clock3, CheckCircle2, X, FileText, FileSignature,
   Gift, Copy, Share2, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { dbInstance, generateReferralCode } from '../db/localDb';
-import { Customer, Vehicle, Service, Appointment, AppointmentStatus, VehicleModel, SystemConfig } from '../types';
-import { PREFILLED_VEHICLE_MODELS } from '../data/prefilledModels';
+import { dbInstance } from '../db/localDb';
+import { Customer, Vehicle, Service, Appointment, AppointmentStatus, SystemConfig } from '../types';
+import { safeLog } from '../security/safeOutput';
+import { useVehicleCatalog } from '../hooks/useVehicleCatalog';
+import { sizeCategoryToPorte } from '../utils/vehicleCatalog';
+import { useManagedTimeout } from '../hooks/useManagedTimeout';
+import PortalAuthGate from '../portal/PortalAuthGate';
+import {
+  addPortalVehicle,
+  cancelPortalAppointment,
+  createPortalAppointment,
+  createPortalCustomer,
+  loadPortalData,
+  validatePortalReferralCode,
+  type PortalData
+} from '../portal/portalSupabase';
+import { activePortalAuthProvider } from '../portal/auth/emailPasswordAuthProvider';
 
 const BrandLogo = ({ brand }: { brand: string }) => {
   const name = brand.trim().toLowerCase();
@@ -115,9 +129,36 @@ interface ClientPortalProps {
   config?: SystemConfig;
 }
 
-export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: ClientPortalProps) {
+interface AuthenticatedClientPortalProps extends ClientPortalProps {
+  authenticatedEmail: string;
+  authenticatedPhone: string;
+  initialData: PortalData;
+}
+
+export default function ClientPortal(props: ClientPortalProps) {
+  return (
+    <PortalAuthGate onBackToAdmin={props.onBackToAdmin}>
+      {(session, initialData) => (
+        <AuthenticatedClientPortal
+          {...props}
+          authenticatedEmail={session.user.email || ''}
+          authenticatedPhone={session.user.phone || ''}
+          initialData={initialData}
+        />
+      )}
+    </PortalAuthGate>
+  );
+}
+
+function AuthenticatedClientPortal({
+  onBackToAdmin,
+  config,
+  authenticatedEmail,
+  authenticatedPhone,
+  initialData
+}: AuthenticatedClientPortalProps) {
+  const scheduleTimeout = useManagedTimeout();
   // Navigation steps: 
-  // 1 = Identification (WhatsApp)
   // 2 = Client Registration (Name, Email) - if not exists
   // 3 = Vehicle Selection / Creation
   // 4 = Service Selection
@@ -125,19 +166,23 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
   // 6 = Summary & Confirmation
   // 7 = Success screen
   // 'my_bookings' = Manage Bookings screen
-  const [step, setStep] = useState<number | 'my_bookings'>(1);
+  const [step, setStep] = useState<number | 'my_bookings'>(
+    initialData.customer ? 4 : 2
+  );
   const [showSuggestionsScreen, setShowSuggestionsScreen] = useState(false);
-  const [whatsapp, setWhatsapp] = useState('');
+  const [whatsapp, setWhatsapp] = useState(authenticatedPhone.replace(/\D/g, ''));
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [duplicatePlateError, setDuplicatePlateError] = useState(false);
 
   // Core domain states
-  const [customer, setCustomer] = useState<Customer | null>(null);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [customer, setCustomer] = useState<Customer | null>(initialData.customer);
+  const [vehicles, setVehicles] = useState<Vehicle[]>(initialData.vehicles);
+  const [services, setServices] = useState<Service[]>(initialData.services);
+  const [appointments, setAppointments] = useState<Appointment[]>(
+    initialData.appointments
+  );
 
   // Selection states for booking
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
@@ -150,7 +195,7 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
   // Sub-forms
   const [newCustomer, setNewCustomer] = useState({ 
     name: '', 
-    email: '',
+    email: authenticatedEmail,
     birthDate: '',
     origin: '',
     referralCode: ''
@@ -163,17 +208,16 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
     plate: '',
     porte: 'Médio' as 'Pequeno' | 'Médio' | 'Grande'
   });
-  const [isAddingVehicle, setIsAddingVehicle] = useState(false);
+  const [, setIsAddingVehicle] = useState(false);
   const [isCustomColor, setIsCustomColor] = useState(false);
   const [plateError, setPlateError] = useState(false);
 
   // Schema state variables
-  const [servicosPrecos, setServicosPrecos] = useState<any[]>([]);
-  const [marcas, setMarcas] = useState<any[]>([]);
-  const [modelos, setModelos] = useState<any[]>([]);
+  const [servicosPrecos, setServicosPrecos] = useState(initialData.servicePrices);
   const [selectedBrandId, setSelectedBrandId] = useState<string>('');
   const [brandSearch, setBrandSearch] = useState<string>('');
   const [modelSearch, setModelSearch] = useState<string>('');
+  const vehicleCatalog = useVehicleCatalog();
 
   // Success summary details
   const [createdAppointment, setCreatedAppointment] = useState<Appointment | null>(null);
@@ -181,98 +225,34 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
   // View booking detail state
   const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
 
-  // Load baseline services and appointments for slot validation
+  // Consulta somente intervalos agregados da data escolhida. Nenhum cadastro
+  // de outro cliente é retornado ao navegador.
   useEffect(() => {
-    // Make sure we have the latest services & bookings from db
-    setServices([...dbInstance.services]);
-    setAppointments([...dbInstance.appointments]);
-    setErrorMessage(null);
-    setDuplicatePlateError(false);
-    setPlateError(false);
-  }, [step]);
-
-  // Fetch brand list, models, and size-specific prices
-  useEffect(() => {
-    const fetchVehiclesSchemaAndPrices = async () => {
-      if (dbInstance.config.useRealSupabase) {
-        try {
-          const supabase = dbInstance.getSupabaseClient();
-          
-          // Fetch brands ordered by 'ordem'
-          const { data: dbMarcas, error: errMarcas } = await supabase
-            .from('marcas_veiculos')
-            .select('*')
-            .eq('ativo', true)
-            .order('ordem', { ascending: true });
-            
-          if (!errMarcas && dbMarcas) {
-            setMarcas(dbMarcas);
-          }
-          
-          // Fetch models
-          const { data: dbModelos, error: errModelos } = await supabase
-            .from('modelos_veiculos')
-            .select('*')
-            .eq('ativo', true);
-            
-          if (!errModelos && dbModelos) {
-            setModelos(dbModelos);
-          }
-
-          // Fetch size-specific prices
-          const { data: dbPrices, error: errPrices } = await supabase
-            .from('servicos_precos')
-            .select('*');
-
-          if (!errPrices && dbPrices) {
-            setServicosPrecos(dbPrices);
-          }
-        } catch (err) {
-          console.error('Erro ao buscar marcas, modelos ou preços do Supabase:', err);
+    let disposed = false;
+    const refreshAvailability = async () => {
+      if (!selectedDate) return;
+      try {
+        const data = await loadPortalData(selectedDate);
+        if (!disposed) {
+          setCustomer(data.customer);
+          setVehicles(data.vehicles);
+          setServices(data.services);
+          setServicosPrecos(data.servicePrices);
+          setAppointments([...data.appointments, ...data.busyAppointments]);
         }
-      } else {
-        // Fallback using PREFILLED_VEHICLE_MODELS
-        const uniqueMfgs = Array.from(new Set(PREFILLED_VEHICLE_MODELS.map(m => m.manufacturer))).sort();
-        const fallbackBrands = uniqueMfgs.map((mfg, idx) => ({
-          id: `mfg-${idx}`,
-          nome: mfg,
-          ordem: idx + 1,
-          ativo: true
-        }));
-        setMarcas(fallbackBrands);
-        
-        const fallbackModels = PREFILLED_VEHICLE_MODELS.map((m, idx) => {
-          const brandObj = fallbackBrands.find(b => b.nome === m.manufacturer);
-          return {
-            id: m.id || `mod-${idx}`,
-            marca_id: brandObj ? brandObj.id : `mfg-unknown`,
-            nome: m.model,
-            porte: m.size_category,
-            ativo: true
-          };
-        });
-        setModelos(fallbackModels);
+      } catch (err) {
+        safeLog('error', 'client_portal.availability.load', 'error', { error: err });
+        if (!disposed) {
+          setErrorMessage('Não foi possível atualizar os horários disponíveis.');
+        }
       }
     };
-    
-    fetchVehiclesSchemaAndPrices();
-  }, []);
 
-  // Stage 4: Log when the referral card is shown for the customer
-  useEffect(() => {
-    if (customer) {
-      if (customer.referralCode) {
-        console.log(`[Referral Audit] Código exibido na interface: ${customer.referralCode}`);
-      } else {
-        console.log(`[Referral Audit] Cliente "${customer.name}" sem código de indicação no estado atual.`);
-      }
-    }
-  }, [customer]);
-
-  // Clean WhatsApp phone number for searching
-  const cleanPhoneInput = (val: string) => {
-    return val.replace(/\D/g, '');
-  };
+    void refreshAvailability();
+    return () => {
+      disposed = true;
+    };
+  }, [selectedDate]);
 
   const getCleanPhoneForWhatsApp = () => {
     const raw = dbInstance.config.phone || '11999998888';
@@ -283,122 +263,8 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
     return '55' + digits;
   };
 
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Basic formatting: (XX) XXXXX-XXXX
-    const raw = e.target.value;
-    const clean = cleanPhoneInput(raw);
-    setWhatsapp(clean);
-  };
-
-  // Find or trigger signup
-  const handleIdentify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (whatsapp.length < 10) {
-      setErrorMessage('Por favor, informe um número de WhatsApp válido com DDD.');
-      return;
-    }
-
-    setLoading(true);
-    setErrorMessage(null);
-
-    try {
-      console.log('[Portal do Cliente] Iniciando identificação do cliente...');
-      console.log('[Portal do Cliente] Configuração atual:', {
-        useRealSupabase: dbInstance.config.useRealSupabase,
-        supabaseUrl: dbInstance.config.supabaseUrl,
-        referralActive: dbInstance.config.referralActive,
-        referralDiscountPercent: dbInstance.config.referralDiscountPercent
-      });
-
-      // Direct live sync first to ensure we have the absolute latest records
-      if (dbInstance.config.useRealSupabase) {
-        console.log('[Portal do Cliente] Executando sincronização com o Supabase antes da busca...');
-        await dbInstance.syncWithSupabase();
-      } else {
-        console.log('[Portal do Cliente] Sincronização direta ignorada (useRealSupabase está desativado).');
-      }
-
-      console.log(`[Portal do Cliente] Total de clientes carregados na memória local: ${dbInstance.customers.length}`);
-      dbInstance.customers.forEach((c, idx) => {
-        console.log(`  - Cliente [${idx}]: "${c.name}" | Tel/WhatsApp: "${c.phone}" | Código Indicação: "${c.referralCode || 'NENHUM'}"`);
-      });
-
-      // Search customer by phone/whatsapp
-      const cleanPhoneNum = cleanPhoneInput(whatsapp);
-      console.log(`[Portal do Cliente] Buscando por WhatsApp limpo: "${cleanPhoneNum}" (Input original: "${whatsapp}")`);
-      
-      // Try searching both full match or trailing match (common with country codes)
-      const foundCustomer = dbInstance.customers.find(c => {
-        const dbPhone = cleanPhoneInput(c.phone);
-        const isMatch = dbPhone === cleanPhoneNum || dbPhone.endsWith(cleanPhoneNum) || cleanPhoneNum.endsWith(dbPhone);
-        if (isMatch) {
-          console.log(`[Portal do Cliente] Match encontrado! "${c.name}" (Tel DB: "${c.phone}" equivale a "${cleanPhoneNum}")`);
-        }
-        return isMatch;
-      });
-
-      if (foundCustomer) {
-        console.log(`[Portal do Cliente] Cliente identificado com sucesso: "${foundCustomer.name}" (ID: ${foundCustomer.id})`);
-        console.log(`[Portal do Cliente] Código de indicação carregado no cliente: "${foundCustomer.referralCode || 'NENHUM'}"`);
-
-        // Fallback for legacy customers: If they do not have a referral code, generate and save it once
-        if (!foundCustomer.referralCode) {
-          console.log(`[Referral Audit] Cliente antigo/existente "${foundCustomer.name}" sem código de indicação no metadata.`);
-          const generatedCode = generateReferralCode(dbInstance.customers);
-          console.log(`[Referral Audit] Novo código de indicação gerado para o cliente: "${generatedCode}"`);
-          
-          foundCustomer.referralCode = generatedCode;
-          foundCustomer.referralDiscountAvailable = foundCustomer.referralDiscountAvailable ?? false;
-          foundCustomer.referralDiscountUsed = foundCustomer.referralDiscountUsed ?? false;
-          foundCustomer.referralCreatedAt = foundCustomer.referralCreatedAt || new Date().toISOString().split('T')[0];
-          
-          console.log('[Referral Audit] Salvando dados atualizados do cliente no Supabase...');
-          await dbInstance.updateCustomer(foundCustomer.id, {
-            referralCode: generatedCode,
-            referralDiscountAvailable: foundCustomer.referralDiscountAvailable,
-            referralDiscountUsed: foundCustomer.referralDiscountUsed,
-            referralCreatedAt: foundCustomer.referralCreatedAt
-          });
-          console.log(`[Referral Audit] Código "${generatedCode}" gravado com sucesso no Supabase e banco local.`);
-        } else {
-          console.log(`[Referral Audit] Código de indicação existente carregado com sucesso: "${foundCustomer.referralCode}"`);
-        }
-
-        // Use a shallow copy to guarantee React state reactivity
-        setCustomer({ ...foundCustomer });
-        
-        // Load customer's vehicles
-        const customerVehicles = dbInstance.vehicles.filter(v => v.customerId === foundCustomer.id);
-        console.log(`[Portal do Cliente] Veículos carregados para o cliente: ${customerVehicles.length}`);
-        customerVehicles.forEach((v, idx) => {
-          console.log(`  - Veículo [${idx}]: ${v.brand} ${v.model} (${v.plate})`);
-        });
-        setVehicles(customerVehicles);
-        
-        if (customerVehicles.length > 0) {
-          setSelectedVehicleId(customerVehicles[0].id);
-        }
-
-        // Proceed to service choice directly
-        setStep(4);
-      } else {
-        console.log(`[Portal do Cliente] Nenhum cliente encontrado para o WhatsApp "${cleanPhoneNum}". Direcionando para cadastro de novo cliente.`);
-        // Customer does not exist, trigger signup flow
-        setNewCustomer({ 
-          name: '', 
-          email: '',
-          birthDate: '',
-          origin: '',
-          referralCode: ''
-        });
-        setStep(2);
-      }
-    } catch (err: any) {
-      console.error('[Portal do Cliente] Erro crítico no fluxo de identificação do cliente:', err);
-      setErrorMessage('Erro ao consultar o banco de dados. Tente novamente.');
-    } finally {
-      setLoading(false);
-    }
+  const handlePhoneChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setWhatsapp(event.target.value.replace(/\D/g, '').slice(0, 13));
   };
 
   // Register New Customer
@@ -408,8 +274,11 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
       setErrorMessage('Por favor, preencha o seu nome completo.');
       return;
     }
+    if (whatsapp.length < 10) {
+      setErrorMessage('Por favor, informe um número de WhatsApp válido com DDD.');
+      return;
+    }
     
-    console.log(`[Referral Audit] Cadastro iniciado para o cliente: ${newCustomer.name}`);
     if (!newCustomer.birthDate) {
       setErrorMessage('Por favor, informe a sua data de aniversário.');
       return;
@@ -423,68 +292,45 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
     setErrorMessage(null);
 
     try {
-      let referredBy = '';
       const isIndication = newCustomer.origin === 'indicação';
       const hasCode = isIndication && newCustomer.referralCode.trim() !== '';
 
-      let referrerObj = null;
-
       if (hasCode) {
-        const validation = dbInstance.validateReferralCode(newCustomer.referralCode, undefined, whatsapp);
-        if (!validation.valid) {
-          setErrorMessage(validation.error || 'código de indicação inválido.');
+        const validReferral = await validatePortalReferralCode(newCustomer.referralCode);
+        if (!validReferral) {
+          setErrorMessage('Código de indicação inválido.');
           setLoading(false);
           return;
         }
-        referredBy = validation.referrer?.id || '';
-        referrerObj = validation.referrer || null;
       }
 
       const finalOrigin = isIndication 
         ? (hasCode ? 'Indicação' : 'Indicação sem código')
         : newCustomer.origin.charAt(0).toUpperCase() + newCustomer.origin.slice(1);
 
-      const additionalNotes = isIndication
-        ? (newCustomer.referralCode.trim() 
-            ? `Como conheceu: Indicação (Código do amigo: ${newCustomer.referralCode.trim()})`
-            : 'Como conheceu: Indicação sem código')
-        : `Como conheceu: ${finalOrigin}`;
-
-      // Logs with: cliente indicador, código informado, status da indicação e data do cadastro
-      console.log(`[Referral Audit Log] Novo Cadastro de Cliente
-        - Cliente Indicador: ${referrerObj ? `${referrerObj.name} (ID: ${referrerObj.id})` : 'Nulo'}
-        - Código Informado: ${newCustomer.referralCode.trim() || 'Nenhum'}
-        - Status da Indicação: ${hasCode ? 'Indicação Ativa (Com código)' : 'Indicação sem código'}
-        - Data do Cadastro: ${new Date().toISOString().split('T')[0]}
-      `);
-
-      const added = await dbInstance.addCustomer({
+      await createPortalCustomer({
         name: newCustomer.name,
-        phone: whatsapp,
-        whatsapp: whatsapp,
-        email: newCustomer.email || `${newCustomer.name.toLowerCase().replace(/\s+/g, '')}@exemplo.com`,
+        email: newCustomer.email,
         birthDate: newCustomer.birthDate,
-        address: 'Não informado',
-        neighborhood: 'Não informado',
-        city: 'Não informado',
-        notes: `Cadastrado via Portal do Cliente. ${additionalNotes}`,
-        status: 'ativo',
         origin: finalOrigin,
-        referredBy
+        phone: whatsapp,
+        referralCode: hasCode ? newCustomer.referralCode : undefined
       });
 
-      if (added) {
-        setCustomer(added);
-        // Force sync update on main layout
-        if (onSyncNeeded) onSyncNeeded();
-        // Go to vehicle registration step
+      const data = await loadPortalData();
+      if (data.customer) {
+        setCustomer(data.customer);
+        setVehicles(data.vehicles);
+        setServices(data.services);
+        setAppointments(data.appointments);
+        setServicosPrecos(data.servicePrices);
         setStep(3);
       } else {
-        throw new Error('Falha ao registrar cliente.');
+        throw new Error('Cadastro não retornado após a criação.');
       }
     } catch (err: any) {
-      console.error(err);
-      setErrorMessage(err.message || 'Erro ao salvar seu cadastro. Tente novamente.');
+      safeLog('error', 'client_portal.customer.register', 'error', { error: err });
+      setErrorMessage('Erro ao salvar seu cadastro. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -535,7 +381,7 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
     }
 
     // Check duplicate locally using normalized values
-    const isDuplicateLocally = dbInstance.vehicles.some(v => {
+    const isDuplicateLocally = vehicles.some(v => {
       const dbNorm = v.plate.trim().toUpperCase().replace(/\s+/g, '').replace(/-/g, '');
       return dbNorm === normalizedPlate;
     });
@@ -550,8 +396,7 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
     setLoading(true);
 
     try {
-      const added = await dbInstance.addVehicle({
-        customerId: customer.id,
+      const added = await addPortalVehicle(customer.id, {
         brand: newVehicle.brand,
         model: newVehicle.model,
         version: 'N/A',
@@ -563,8 +408,7 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
       });
 
       if (added) {
-        // Refresh local vehicles
-        const updatedVehicles = dbInstance.vehicles.filter(v => v.customerId === customer.id);
+        const updatedVehicles = [...vehicles, added];
         setVehicles(updatedVehicles);
         setSelectedVehicleId(added.id);
         
@@ -575,12 +419,11 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
         setIsCustomColor(false);
         setPlateError(false);
         
-        if (onSyncNeeded) onSyncNeeded();
         // Go to service selection
         setStep(4);
       }
     } catch (err: any) {
-      console.error('🚨 Error registering vehicle:', err);
+      safeLog('error', 'client_portal.vehicle.register', 'error', { error: err });
       const errString = (err.message || '').toLowerCase();
       const isDuplicateDb = errString.includes('duplicate') || errString.includes('already exists') || errString.includes('23505') || errString.includes('unique_constraint') || errString.includes('placa') || errString.includes('plate');
       
@@ -607,16 +450,6 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
       }
       setSelectedMainServiceId(next[0] || '');
       return next;
-    });
-  };
-
-  const handleToggleComplementaryService = (serviceId: string) => {
-    setSelectedServiceIds(prev => {
-      if (prev.includes(serviceId)) {
-        return prev.filter(id => id !== serviceId);
-      } else {
-        return [...prev, serviceId];
-      }
     });
   };
 
@@ -649,7 +482,9 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
       }
 
       // 1. Try finding in servicos_precos table
-      const customPrice = servicosPrecos.find(sp => sp.servico_id === s.id && sp.porte === porteCode);
+      const customPrice = servicosPrecos.find(
+        sp => sp.servico_id === s.id && sp.porte === currentPorte
+      );
       if (customPrice) {
         return {
           ...s,
@@ -677,17 +512,6 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
       };
     });
   }, [selectedVehicleId, vehicles, services, servicosPrecos]);
-
-  const getComplementaryServices = () => {
-    // Retorna apenas serviços marcados como destaque, ordenados por ordem_exibicao (displayOrder)
-    return adjustedServices
-      .filter(s => s.isFeatured)
-      .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
-      .map(s => ({
-        ...s,
-        benefit: s.offerText || s.description || 'Aproveite esta oferta especial para o seu veículo!'
-      }));
-  };
 
   // Computations for Selected Services
   const { totalValue, totalTime } = useMemo(() => {
@@ -867,48 +691,28 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
     setErrorMessage(null);
 
     try {
-      const mainServiceId = selectedServiceIds[0];
-      const dateTimeStr = `${selectedDate}T${selectedTime}`;
-      
       const hasDiscount = dbInstance.config.referralActive && customer.referralDiscountAvailable;
       const discountPercent = dbInstance.config.referralDiscountPercent || 10;
-      const discountValue = hasDiscount ? (totalValue * discountPercent) / 100 : 0;
-      const finalPriceValue = totalValue - discountValue;
       const appointmentNotesWithDiscount = hasDiscount
         ? `${appointmentNotes || 'Agendado pelo Portal do Cliente'} (Desconto de Indicação de ${discountPercent}% aplicado)`
         : appointmentNotes || 'Agendado pelo Portal do Cliente';
 
-      const response = await dbInstance.addAppointment({
-        customerId: customer.id,
+      const response = await createPortalAppointment({
         vehicleId: selectedVehicleId,
-        serviceId: mainServiceId,
         serviceIds: selectedServiceIds,
-        dateTime: dateTimeStr,
-        status: 'agendado',
-        value: finalPriceValue,
-        discount: discountValue,
-        addition: 0,
-        durationTotal: totalTime,
-        employeeId: 'Gabriel', // Default worker alocation
+        date: selectedDate,
+        time: selectedTime,
         notes: appointmentNotesWithDiscount
       });
 
       if (response) {
-        if (hasDiscount) {
-          const updatedCustomer = {
-            ...customer,
-            referralDiscountAvailable: false,
-            referralDiscountUsed: true
-          };
-          setCustomer(updatedCustomer);
-          await dbInstance.updateCustomer(customer.id, {
-            referralDiscountAvailable: false,
-            referralDiscountUsed: true
-          });
-        }
-
         setCreatedAppointment(response);
-        if (onSyncNeeded) onSyncNeeded();
+        const data = await loadPortalData();
+        setCustomer(data.customer);
+        setVehicles(data.vehicles);
+        setServices(data.services);
+        setAppointments(data.appointments);
+        setServicosPrecos(data.servicePrices);
         // Clear booking choices
         setSelectedServiceIds([]);
         setSelectedDate('');
@@ -920,8 +724,8 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
         throw new Error('Não foi possível realizar o agendamento no momento.');
       }
     } catch (err: any) {
-      console.error(err);
-      setErrorMessage(err.message || 'Erro ao registrar seu agendamento no Supabase. Tente outro horário.');
+      safeLog('error', 'client_portal.appointment.create', 'error', { error: err });
+      setErrorMessage('Erro ao registrar seu agendamento. Tente outro horário.');
     } finally {
       setLoading(false);
     }
@@ -956,13 +760,15 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
 
     setLoading(true);
     try {
-      await dbInstance.updateAppointmentStatus(apptId, 'cancelado', 'Cancelado pelo cliente via Portal');
-      if (onSyncNeeded) onSyncNeeded();
-      // Reload bookings
-      setAppointments([...dbInstance.appointments]);
+      await cancelPortalAppointment(apptId);
+      const data = await loadPortalData();
+      setAppointments(data.appointments);
     } catch (err: any) {
-      console.error(err);
-      alert('Erro ao cancelar agendamento: ' + (err.message || 'Tente novamente.'));
+      safeLog('error', 'client_portal.appointment.cancel', 'error', {
+        entityId: apptId,
+        error: err
+      });
+      alert('Erro ao cancelar agendamento. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -1026,6 +832,17 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
     }
   };
 
+  const handlePortalSignOut = async () => {
+    setLoading(true);
+    try {
+      await activePortalAuthProvider.signOut();
+    } catch (error) {
+      safeLog('warn', 'client_portal.auth.logout', 'error', { error });
+      setErrorMessage('Não foi possível sair. Tente novamente.');
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative flex flex-col min-h-[580px] text-xs font-sans text-slate-100" id="client-portal-card">
       
@@ -1063,6 +880,15 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
               <LogOut size={14} />
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => void handlePortalSignOut()}
+            className="px-3 py-1.5 bg-slate-950/80 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-xl border border-slate-800/80 transition-colors flex items-center gap-1.5"
+            title="Sair do Portal do Cliente"
+          >
+            <LogOut size={13} />
+            <span>Sair</span>
+          </button>
         </div>
       </header>
 
@@ -1093,7 +919,7 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
                   onClick={() => {
                     navigator.clipboard.writeText(customer.referralCode || '');
                     setCopyFeedback(true);
-                    setTimeout(() => setCopyFeedback(false), 2000);
+                    scheduleTimeout(() => setCopyFeedback(false), 2000);
                   }}
                   className="p-2.5 bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-white rounded-xl border border-slate-800 transition-all flex items-center gap-1.5 text-[10px] font-bold"
                   title="Copiar Código"
@@ -1110,7 +936,9 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
                         title: 'Indicação - Senhora Limpeza',
                         text: shareText,
                         url: window.location.href
-                      }).catch(console.error);
+                      }).catch(error => {
+                        safeLog('warn', 'client_portal.referral.share', 'ignored', { error });
+                      });
                     } else {
                       const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`;
                       window.open(url, '_blank');
@@ -1127,69 +955,6 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
         )}
 
         <AnimatePresence mode="wait">
-          
-          {/* STEP 1: Identification (WhatsApp input) */}
-          {step === 1 && (
-            <motion.div 
-              key="step-1"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-6"
-            >
-              <div className="text-center space-y-2 py-4">
-                <span className="px-3 py-1 bg-sky-500/10 text-sky-400 border border-sky-500/25 rounded-full text-[10px] font-mono uppercase tracking-wider font-bold">
-                  Agendamento Rápido
-                </span>
-                <h2 className="text-xl font-black text-white tracking-tight pt-2">
-                  Bem-vindo à Senhora Limpeza Estética Automotiva!
-                </h2>
-                <p className="text-slate-400 max-w-md mx-auto leading-relaxed">
-                  Agende os melhores serviços para o seu veículo em menos de 2 minutos de forma totalmente automatizada.
-                </p>
-              </div>
-
-              {errorMessage && (
-                <div className="bg-red-500/10 text-red-400 border border-red-500/20 px-4 py-3 rounded-2xl flex items-start gap-2.5 font-mono">
-                  <AlertCircle size={15} className="shrink-0 mt-0.5" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleIdentify} className="max-w-sm mx-auto space-y-4">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                    Digite o número do seu WhatsApp *
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                      <Phone size={16} />
-                    </div>
-                    <input 
-                      type="text"
-                      required
-                      value={whatsapp}
-                      onChange={handlePhoneChange}
-                      placeholder="Ex: 11999998888"
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 rounded-2xl pl-10 pr-4 py-3.5 text-white font-mono text-sm tracking-wide placeholder-slate-600 transition-all"
-                    />
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-1.5 leading-normal">
-                    Se você já for nosso cliente, carregaremos seus dados e veículos cadastrados automaticamente.
-                  </p>
-                </div>
-
-                <button 
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3.5 bg-sky-500 hover:bg-sky-600 text-slate-950 font-black rounded-2xl transition-all shadow-lg shadow-sky-500/10 hover:shadow-sky-500/20 flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-                >
-                  {loading ? 'Consultando...' : 'Continuar'}
-                  <ChevronRight size={16} />
-                </button>
-              </form>
-            </motion.div>
-          )}
 
           {/* STEP 2: New Customer Registration Form */}
           {step === 2 && (
@@ -1235,17 +1000,21 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
 
                   <div>
                     <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                      WhatsApp (Já Preenchido)
+                      WhatsApp *
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
                         <Phone size={15} />
                       </div>
                       <input 
-                        type="text"
-                        disabled
+                        type="tel"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        required
                         value={whatsapp}
-                        className="w-full bg-slate-950/60 border border-slate-850 rounded-2xl pl-10 pr-4 py-3 text-slate-400 font-mono text-xs"
+                        onChange={handlePhoneChange}
+                        placeholder="Ex: 11999998888"
+                        className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 rounded-2xl pl-10 pr-4 py-3 text-white font-mono text-xs"
                       />
                     </div>
                   </div>
@@ -1254,7 +1023,7 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                      Seu E-mail (Opcional)
+                      E-mail da Conta
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
@@ -1262,10 +1031,9 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
                       </div>
                       <input 
                         type="email"
+                        disabled
                         value={newCustomer.email}
-                        onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
-                        placeholder="Ex: cliente@exemplo.com"
-                        className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 rounded-2xl pl-10 pr-4 py-3 text-white transition-all text-xs"
+                        className="w-full bg-slate-950/60 border border-slate-850 rounded-2xl pl-10 pr-4 py-3 text-slate-400 text-xs"
                       />
                     </div>
                   </div>
@@ -1357,7 +1125,7 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
                 <div className="pt-4 flex gap-3">
                   <button 
                     type="button"
-                    onClick={() => setStep(1)}
+                    onClick={() => void handlePortalSignOut()}
                     className="px-5 py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold rounded-2xl transition-colors flex items-center gap-1 text-xs"
                   >
                     <ChevronLeft size={15} />
@@ -1431,26 +1199,26 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[250px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
-                    {marcas
-                      .filter(m => m.nome.toLowerCase().includes(brandSearch.toLowerCase()))
+                    {vehicleCatalog.brands
+                      .filter(brand => brand.name.toLowerCase().includes(brandSearch.toLowerCase()))
                       .map(b => (
                         <button
                           key={b.id}
                           type="button"
                           onClick={() => {
-                            setNewVehicle(prev => ({ ...prev, brand: b.nome }));
+                            setNewVehicle(prev => ({ ...prev, brand: b.name }));
                             setSelectedBrandId(b.id);
                             setBrandSearch('');
                           }}
                           className="p-4 bg-slate-950 border border-slate-800 hover:border-sky-500 hover:bg-slate-950/80 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all cursor-pointer group"
                         >
                           <div className="h-10 flex items-center justify-center transition-transform group-hover:scale-110">
-                            <BrandLogo brand={b.nome} />
+                            <BrandLogo brand={b.name} />
                           </div>
-                          <span className="text-slate-300 text-[11px] font-bold tracking-wide group-hover:text-white transition-colors">{b.nome}</span>
+                          <span className="text-slate-300 text-[11px] font-bold tracking-wide group-hover:text-white transition-colors">{b.name}</span>
                         </button>
                       ))}
-                    {marcas.filter(m => m.nome.toLowerCase().includes(brandSearch.toLowerCase())).length === 0 && (
+                    {vehicleCatalog.brands.filter(brand => brand.name.toLowerCase().includes(brandSearch.toLowerCase())).length === 0 && (
                       <p className="text-slate-500 text-xs text-center col-span-full py-4 font-mono">Nenhuma marca ativa encontrada.</p>
                     )}
                   </div>
@@ -1508,35 +1276,26 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
                   </div>
 
                   <div className="grid grid-cols-2 gap-2.5 max-h-[250px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
-                    {modelos
-                      .filter(m => m.marca_id === selectedBrandId && m.nome.toLowerCase().includes(modelSearch.toLowerCase()))
+                    {vehicleCatalog.models
+                      .filter(model => model.brandId === selectedBrandId && model.name.toLowerCase().includes(modelSearch.toLowerCase()))
                       .map(m => (
                         <button
                           key={m.id}
                           type="button"
                           onClick={() => {
-                            const modelPorte = m.porte;
-                            let mappedPorte: 'Pequeno' | 'Médio' | 'Grande' = 'Médio';
-                            if (modelPorte === 'P') mappedPorte = 'Pequeno';
-                            if (modelPorte === 'M') mappedPorte = 'Médio';
-                            if (modelPorte === 'G') mappedPorte = 'Grande';
-                            if (modelPorte === 'Pequeno' || modelPorte === 'Médio' || modelPorte === 'Grande') {
-                              mappedPorte = modelPorte;
-                            }
-                            
                             setNewVehicle(prev => ({ 
                               ...prev, 
-                              model: m.nome,
-                              porte: mappedPorte
+                              model: m.name,
+                              porte: sizeCategoryToPorte(m.sizeCategory)
                             }));
                             setModelSearch('');
                           }}
                           className="p-3 bg-slate-950 border border-slate-800 hover:border-sky-500 hover:bg-slate-950/80 rounded-2xl text-left font-bold text-slate-300 hover:text-white text-xs transition-all cursor-pointer"
                         >
-                          {m.nome}
+                          {m.name}
                         </button>
                       ))}
-                    {modelos.filter(m => m.marca_id === selectedBrandId && m.nome.toLowerCase().includes(modelSearch.toLowerCase())).length === 0 && (
+                    {vehicleCatalog.models.filter(model => model.brandId === selectedBrandId && model.name.toLowerCase().includes(modelSearch.toLowerCase())).length === 0 && (
                       <p className="text-slate-500 text-xs text-center col-span-full py-4 font-mono">Nenhum modelo cadastrado para esta marca.</p>
                     )}
                   </div>
@@ -2376,9 +2135,7 @@ export default function ClientPortal({ onBackToAdmin, onSyncNeeded, config }: Cl
               <div className="max-w-md mx-auto flex gap-3 pt-4 border-t border-slate-850">
                 <button 
                   onClick={() => {
-                    setStep(1);
-                    setCustomer(null);
-                    setVehicles([]);
+                    setStep(4);
                     setSelectedMainServiceId('');
                     setSelectedServiceIds([]);
                     setShowSuggestionsScreen(false);

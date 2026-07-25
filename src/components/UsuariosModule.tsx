@@ -11,54 +11,44 @@ import {
   Percent, 
   DollarSign, 
   Search, 
-  Filter, 
   Edit, 
   Trash2, 
   Check, 
   X, 
   CheckCircle2, 
   Clock, 
-  AlertCircle,
-  Eye,
   Plus,
-  Lock,
-  Calendar,
-  Key,
   Phone,
   Mail,
-  User as UserIcon,
-  Sparkles,
   Award,
-  Layers,
   Save,
   CheckSquare,
   Square
 } from 'lucide-react';
 import { 
   User, 
+  CreateUserInput,
   UserRole, 
   SystemModuleId, 
   ModulePermission, 
   ServiceCommissionRule, 
   CommissionRecord, 
-  CommissionStatus, 
-  Service, 
-  Appointment 
+  Service
 } from '../types';
 import { DEFAULT_ROLE_PERMISSIONS, hasModulePermission } from '../db/localDb';
+import { safeLog } from '../security/safeOutput';
+import { useManagedTimeout } from '../hooks/useManagedTimeout';
 
 interface UsuariosModuleProps {
   users: User[];
   services: Service[];
-  appointments: Appointment[];
   commissions: CommissionRecord[];
   currentUser?: any;
-  onAddUser: (user: Omit<User, 'id' | 'createdAt' | 'updatedAt'>) => Promise<User>;
+  onAddUser: (user: CreateUserInput) => Promise<User>;
   onUpdateUser: (id: string, updated: Partial<User>) => Promise<void>;
   onDeleteUser: (id: string) => Promise<void>;
   onMarkCommissionAsPaid: (commissionId: string, notes?: string) => void;
   onMarkBulkCommissionsAsPaid: (commissionIds: string[], notes?: string) => void;
-  currentUserPermissions?: Record<SystemModuleId, ModulePermission>;
 }
 
 const MODULE_LABELS: Record<SystemModuleId, { name: string; description: string }> = {
@@ -88,19 +78,18 @@ const AVATAR_PRESETS = [
 export default function UsuariosModule({
   users,
   services,
-  appointments,
   commissions,
   currentUser,
   onAddUser,
   onUpdateUser,
   onDeleteUser,
   onMarkCommissionAsPaid,
-  onMarkBulkCommissionsAsPaid,
-  currentUserPermissions
+  onMarkBulkCommissionsAsPaid
 }: UsuariosModuleProps) {
   const canCreate = hasModulePermission(currentUser, 'usuarios', 'create');
   const canEdit = hasModulePermission(currentUser, 'usuarios', 'edit');
   const canDelete = hasModulePermission(currentUser, 'usuarios', 'delete');
+  const scheduleTimeout = useManagedTimeout();
   const [activeTab, setActiveTab] = useState<'usuarios' | 'permissoes' | 'comissoes' | 'relatorio_comissoes'>('usuarios');
 
   // Search & Filter State for Users
@@ -113,6 +102,7 @@ export default function UsuariosModule({
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [savingUser, setSavingUser] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [userSaveSuccess, setUserSaveSuccess] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<{
     name: string;
@@ -202,6 +192,7 @@ export default function UsuariosModule({
   const handleOpenCreateModal = () => {
     setEditingUserId(null);
     setFormError(null);
+    setUserSaveSuccess(null);
     setFormData({
       name: '',
       phone: '',
@@ -217,13 +208,14 @@ export default function UsuariosModule({
 
   // Open Edit Modal
   const handleOpenEditModal = (user: User) => {
+    if (!canEdit) return;
     setEditingUserId(user.id);
     setFormError(null);
     setFormData({
       name: user.name,
       phone: user.phone,
       email: user.email,
-      password: user.password || '',
+      password: '',
       photoUrl: user.photoUrl || AVATAR_PRESETS[0],
       status: user.status,
       role: user.role,
@@ -235,6 +227,7 @@ export default function UsuariosModule({
   // Submit User Form
   const handleSubmitUserForm = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (editingUserId ? !canEdit : !canCreate) return;
     setFormError(null);
 
     if (!formData.name.trim()) {
@@ -245,7 +238,7 @@ export default function UsuariosModule({
       setFormError('Por favor, informe o e-mail do usuário.');
       return;
     }
-    if (!editingUserId && formData.password && formData.password.length < 6) {
+    if (!editingUserId && formData.password.length < 6) {
       setFormError('A senha deve conter no mínimo 6 caracteres para autenticação no Supabase.');
       return;
     }
@@ -257,7 +250,6 @@ export default function UsuariosModule({
           name: formData.name,
           phone: formData.phone,
           email: formData.email,
-          password: formData.password,
           photoUrl: formData.photoUrl,
           status: formData.status,
           role: formData.role,
@@ -265,11 +257,11 @@ export default function UsuariosModule({
         });
       } else {
         const initialPermissions = DEFAULT_ROLE_PERMISSIONS[formData.role] || DEFAULT_ROLE_PERMISSIONS.tecnico;
-        await onAddUser({
+        const createdUser = await onAddUser({
           name: formData.name,
           phone: formData.phone,
           email: formData.email,
-          password: formData.password || '123456',
+          password: formData.password,
           photoUrl: formData.photoUrl,
           status: formData.status,
           role: formData.role,
@@ -277,10 +269,15 @@ export default function UsuariosModule({
           commissions: [],
           defaultCommissionPercent: formData.defaultCommissionPercent
         });
+        setUserSaveSuccess(
+          `Usuário ${createdUser.name} criado no Authentication e em public.usuarios com sucesso.`
+        );
+        scheduleTimeout(() => setUserSaveSuccess(null), 5000);
       }
       setIsModalOpen(false);
     } catch (err: any) {
-      setFormError(err.message || 'Erro ao salvar usuário.');
+      safeLog('error', 'users.user.save', 'error', { error: err });
+      setFormError('Erro ao salvar usuário.');
     } finally {
       setSavingUser(false);
     }
@@ -288,21 +285,21 @@ export default function UsuariosModule({
 
   // Save Permissions Matrix Changes
   const handleSavePermissions = async () => {
-    if (!selectedUserIdForPermissions) return;
+    if (!selectedUserIdForPermissions || !canEdit) return;
     try {
       await onUpdateUser(selectedUserIdForPermissions, {
         permissions: tempPermissions
       });
       setPermissionsSaveSuccess(true);
-      setTimeout(() => setPermissionsSaveSuccess(false), 3000);
+      scheduleTimeout(() => setPermissionsSaveSuccess(false), 3000);
     } catch (err) {
-      console.error('Erro ao salvar permissões:', err);
+      safeLog('error', 'users.permissions.save', 'error', { error: err });
     }
   };
 
   // Save Commission Rules
   const handleSaveCommissionRules = async () => {
-    if (!selectedUserIdForCommissions) return;
+    if (!selectedUserIdForCommissions || !canEdit) return;
     const rulesList: ServiceCommissionRule[] = Object.entries(userCommissionRules)
       .filter(([_, percent]) => typeof percent === 'number' && !isNaN(percent) && percent > 0)
       .map(([serviceId, percentage]) => ({ serviceId, percentage: Number(percentage) }));
@@ -313,9 +310,23 @@ export default function UsuariosModule({
         commissions: rulesList
       });
       setCommissionsSaveSuccess(true);
-      setTimeout(() => setCommissionsSaveSuccess(false), 3000);
+      scheduleTimeout(() => setCommissionsSaveSuccess(false), 3000);
     } catch (err) {
-      console.error('Erro ao salvar regras de comissão:', err);
+      safeLog('error', 'users.commissions.save', 'error', { error: err });
+    }
+  };
+
+  const handleDeleteUser = async (user: User) => {
+    if (!canDelete || user.role === 'admin') return;
+    if (!confirm(`Tem certeza que deseja excluir o usuário ${user.name}?`)) return;
+    try {
+      await onDeleteUser(user.id);
+    } catch (error) {
+      safeLog('error', 'users.user.delete', 'error', {
+        entityId: user.id,
+        error
+      });
+      setFormError('Erro ao excluir usuário.');
     }
   };
 
@@ -506,6 +517,13 @@ export default function UsuariosModule({
       {/* TAB 1: USER LIST & CRUD */}
       {activeTab === 'usuarios' && (
         <div className="space-y-5">
+          {userSaveSuccess && (
+            <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">
+              <CheckCircle2 size={16} />
+              <span>{userSaveSuccess}</span>
+            </div>
+          )}
+
           {/* Filters Bar */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-900/40 p-4 rounded-xl border border-slate-800">
             <div className="relative">
@@ -575,8 +593,11 @@ export default function UsuariosModule({
 
                     {/* Status badge */}
                     <button
-                      onClick={() => onUpdateUser(user.id, { status: user.status === 'ativo' ? 'inativo' : 'ativo' })}
-                      className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-all cursor-pointer ${
+                      onClick={() => {
+                        if (canEdit) void onUpdateUser(user.id, { status: user.status === 'ativo' ? 'inativo' : 'ativo' });
+                      }}
+                      disabled={!canEdit}
+                      className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-all disabled:cursor-default disabled:opacity-60 ${
                         user.status === 'ativo'
                           ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
                           : 'bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20'
@@ -607,43 +628,45 @@ export default function UsuariosModule({
                 {/* User Actions */}
                 <div className="border-t border-slate-800/80 pt-3 mt-4 flex items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => {
-                        handleSelectUserPermissions(user.id);
-                        setActiveTab('permissoes');
-                      }}
-                      className="p-1.5 bg-slate-800 hover:bg-sky-500/20 hover:text-sky-400 text-slate-300 rounded-lg transition-colors cursor-pointer"
-                      title="Configurar Permissões"
-                    >
-                      <ShieldCheck size={14} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        handleSelectUserCommissions(user.id);
-                        setActiveTab('comissoes');
-                      }}
-                      className="p-1.5 bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-400 text-slate-300 rounded-lg transition-colors cursor-pointer"
-                      title="Configurar Regras de Comissão"
-                    >
-                      <Percent size={14} />
-                    </button>
+                    {canEdit && (
+                      <>
+                        <button
+                          onClick={() => {
+                            handleSelectUserPermissions(user.id);
+                            setActiveTab('permissoes');
+                          }}
+                          className="p-1.5 bg-slate-800 hover:bg-sky-500/20 hover:text-sky-400 text-slate-300 rounded-lg transition-colors cursor-pointer"
+                          title="Configurar Permissões"
+                        >
+                          <ShieldCheck size={14} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleSelectUserCommissions(user.id);
+                            setActiveTab('comissoes');
+                          }}
+                          className="p-1.5 bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-400 text-slate-300 rounded-lg transition-colors cursor-pointer"
+                          title="Configurar Regras de Comissão"
+                        >
+                          <Percent size={14} />
+                        </button>
+                      </>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleOpenEditModal(user)}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors text-xs cursor-pointer"
-                    >
-                      <Edit size={13} />
-                      <span>Editar</span>
-                    </button>
-                    {user.role !== 'admin' && (
+                    {canEdit && (
                       <button
-                        onClick={() => {
-                          if (confirm(`Tem certeza que deseja excluir o usuário ${user.name}?`)) {
-                            onDeleteUser(user.id);
-                          }
-                        }}
+                        onClick={() => handleOpenEditModal(user)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors text-xs cursor-pointer"
+                      >
+                        <Edit size={13} />
+                        <span>Editar</span>
+                      </button>
+                    )}
+                    {canDelete && user.role !== 'admin' && (
+                      <button
+                        onClick={() => void handleDeleteUser(user)}
                         className="p-1.5 bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-lg transition-colors cursor-pointer"
                         title="Excluir Usuário"
                       >
@@ -1231,6 +1254,7 @@ export default function UsuariosModule({
               </div>
 
               <div className="grid grid-cols-2 gap-3">
+                {!editingUserId && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">
                     Senha de Acesso *
@@ -1244,6 +1268,7 @@ export default function UsuariosModule({
                     className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white"
                   />
                 </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">

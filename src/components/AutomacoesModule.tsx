@@ -5,17 +5,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Zap, 
   MessageSquare, 
   ToggleLeft, 
   ToggleRight, 
   Play, 
-  Code, 
   Check, 
-  AlertCircle, 
   Server, 
   RefreshCw,
-  Send,
   Database,
   Copy,
   Search,
@@ -23,29 +19,25 @@ import {
   AlertTriangle,
   FileText
 } from 'lucide-react';
-import { AutomationTrigger, AutomationLog, SystemConfig } from '../types';
+import { AutomationTrigger } from '../types';
 import { dbInstance, hasModulePermission } from '../db/localDb';
+import { adminApiFetch } from '../utils/adminApiClient';
+import { safeLog } from '../security/safeOutput';
+import { useManagedTimeout } from '../hooks/useManagedTimeout';
 
 interface AutomacoesModuleProps {
   automations: AutomationTrigger[];
-  logs: AutomationLog[];
-  config: SystemConfig;
   currentUser?: any;
   onUpdateTrigger: (id: string, updated: Partial<AutomationTrigger>) => void;
-  onTestTrigger: (id: string) => void;
-  onResetLogs: () => void;
 }
 
 export default function AutomacoesModule({ 
   automations, 
-  logs, 
-  config, 
   currentUser,
-  onUpdateTrigger, 
-  onTestTrigger,
-  onResetLogs
+  onUpdateTrigger
 }: AutomacoesModuleProps) {
   const canEdit = hasModulePermission(currentUser, 'mensagens', 'edit');
+  const scheduleTimeout = useManagedTimeout();
   const [activeSubTab, setActiveSubTab] = useState<'gatilhos' | 'logs' | 'make' | 'sql'>('gatilhos');
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [tempTemplateText, setTempTemplateText] = useState('');
@@ -74,7 +66,7 @@ export default function AutomacoesModule({
   const fetchDashboardData = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/automations/dashboard');
+      const res = await adminApiFetch('/api/automations/dashboard');
       if (res.ok) {
         const data = await res.json();
         setStats(data.stats);
@@ -152,7 +144,7 @@ export default function AutomacoesModule({
     setIsRunningCheck(true);
     setTestLog('Disparando teste manual de envio no backend...');
     try {
-      const res = await fetch(`/api/automations/test/${eventId}`, { method: 'POST' });
+      const res = await adminApiFetch(`/api/automations/test/${encodeURIComponent(eventId)}`, { method: 'POST' });
       if (res.ok) {
         const result = await res.json();
         setTestLog(`Sucesso no Envio!\nResposta API:\n${result.log}`);
@@ -161,19 +153,25 @@ export default function AutomacoesModule({
         throw new Error('Falha na resposta do servidor.');
       }
     } catch (e: any) {
-      setTestLog(`Erro ao testar gatilho: ${e.message || e}`);
+      safeLog('error', 'automation.manual_test', 'error', {
+        entityId: eventId,
+        error: e
+      });
+      setTestLog('Erro ao testar gatilho. Consulte o correlation ID do log.');
     } finally {
       setIsRunningCheck(false);
-      setTimeout(() => setTestLog(null), 8000);
+      scheduleTimeout(() => setTestLog(null), 8000);
     }
   };
 
   const handleStartEdit = (trigger: AutomationTrigger) => {
+    if (!canEdit) return;
     setEditingTemplateId(trigger.id);
     setTempTemplateText(trigger.template);
   };
 
   const handleSaveEdit = (id: string) => {
+    if (!canEdit) return;
     onUpdateTrigger(id, { template: tempTemplateText });
     setEditingTemplateId(null);
   };
@@ -181,7 +179,7 @@ export default function AutomacoesModule({
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    scheduleTimeout(() => setCopied(false), 2000);
   };
 
   // Sample payload sent to Make
@@ -333,7 +331,8 @@ export default function AutomacoesModule({
                     await dbInstance.restoreDefaultAutomations();
                     alert('Automações padrão restauradas com sucesso!');
                   } catch (e: any) {
-                    alert('Erro ao restaurar: ' + e.message);
+                    safeLog('error', 'automation.restore_defaults', 'error', { error: e });
+                    alert('Erro ao restaurar as automações padrão.');
                   } finally {
                     setIsLoading(false);
                   }
@@ -369,6 +368,7 @@ export default function AutomacoesModule({
                             <input
                               type="number"
                               min="1"
+                              disabled={!canEdit}
                               value={trigger.inactiveDays ?? 30}
                               onChange={(e) => {
                                 const val = Math.max(1, parseInt(e.target.value) || 0);
@@ -383,6 +383,7 @@ export default function AutomacoesModule({
                             <input
                               type="number"
                               min="0"
+                              disabled={!canEdit}
                               value={trigger.minServices ?? 1}
                               onChange={(e) => {
                                 const val = Math.max(0, parseInt(e.target.value) || 0);
@@ -399,7 +400,7 @@ export default function AutomacoesModule({
                     <div className="flex items-center gap-4 shrink-0">
                       <button 
                         onClick={() => handleTestTriggerDirect(trigger.id)}
-                        disabled={isRunningCheck}
+                        disabled={isRunningCheck || !canEdit}
                         className="px-3 py-1.5 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-[10px] font-bold text-sky-400 rounded-lg transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
                       >
                         <Play size={10} />
@@ -407,8 +408,11 @@ export default function AutomacoesModule({
                       </button>
 
                       <button 
-                        onClick={() => onUpdateTrigger(trigger.id, { isActive: !trigger.isActive })}
-                        className="transition-all"
+                        onClick={() => {
+                          if (canEdit) onUpdateTrigger(trigger.id, { isActive: !trigger.isActive });
+                        }}
+                        disabled={!canEdit}
+                        className="transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {trigger.isActive ? (
                           <ToggleRight size={34} className="text-sky-400 cursor-pointer" />

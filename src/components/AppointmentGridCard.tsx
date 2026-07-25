@@ -2,7 +2,6 @@ import React from 'react';
 import { Appointment, Customer, Vehicle, Service, AppointmentStatus } from '../types';
 import { Clock } from 'lucide-react';
 import { dbInstance, renderTemplateText } from '../db/localDb';
-import { getCurrentDate } from '../utils/dateUtils';
 
 // Format phone for WhatsApp compatibility
 const formatPhoneForWhatsApp = (phone: string) => {
@@ -58,6 +57,8 @@ interface AppointmentGridCardProps {
   onEditClick: (id: string) => void;
   onDuplicateClick: (id: string) => void;
   onUpdateStatus: (id: string, status: AppointmentStatus) => void;
+  canCreate?: boolean;
+  canEdit?: boolean;
 }
 
 export const AppointmentGridCard: React.FC<AppointmentGridCardProps> = ({
@@ -68,7 +69,9 @@ export const AppointmentGridCard: React.FC<AppointmentGridCardProps> = ({
   nextApptId,
   onEditClick,
   onDuplicateClick,
-  onUpdateStatus
+  onUpdateStatus,
+  canCreate = true,
+  canEdit = true
 }) => {
   const client = customers.find(c => c.id === appt.customerId);
   const vehicle = vehicles.find(v => v.id === appt.vehicleId);
@@ -129,8 +132,12 @@ export const AppointmentGridCard: React.FC<AppointmentGridCardProps> = ({
 
   return (
     <div 
-      onClick={() => onEditClick(appt.id)}
-      className={`relative group rounded-xl p-4 bg-slate-950 border transition-all flex flex-col justify-between h-[165px] cursor-pointer ${
+      onClick={() => {
+        if (canEdit) onEditClick(appt.id);
+      }}
+      className={`relative group rounded-xl p-4 bg-slate-950 border transition-all flex flex-col justify-between h-[165px] ${
+        canEdit ? 'cursor-pointer' : 'cursor-default'
+      } ${
         isEmAndamento 
           ? 'border-amber-500/50 bg-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.15)] ring-1 ring-amber-500/20' 
           : isNext 
@@ -166,26 +173,30 @@ export const AppointmentGridCard: React.FC<AppointmentGridCardProps> = ({
 
       {/* Hover action icons layer (Editar, Duplicar, WhatsApp, Finalizar) */}
       <div className="absolute inset-x-0 bottom-12 flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent pt-3 pb-1 z-10">
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            onEditClick(appt.id);
-          }}
-          title="Editar"
-          className="p-1.5 bg-slate-800 hover:bg-sky-500 hover:text-slate-950 text-sky-400 border border-slate-700/80 rounded-md transition-all text-[10px] font-bold flex items-center gap-1"
-        >
-          ✏️ <span className="text-[9px]">Editar</span>
-        </button>
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            onDuplicateClick(appt.id);
-          }}
-          title="Duplicar"
-          className="p-1.5 bg-slate-800 hover:bg-violet-500 hover:text-white text-violet-400 border border-slate-700/80 rounded-md transition-all text-[10px] font-bold flex items-center gap-1"
-        >
-          📋 <span className="text-[9px]">Clonar</span>
-        </button>
+        {canEdit && (
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditClick(appt.id);
+            }}
+            title="Editar"
+            className="p-1.5 bg-slate-800 hover:bg-sky-500 hover:text-slate-950 text-sky-400 border border-slate-700/80 rounded-md transition-all text-[10px] font-bold flex items-center gap-1"
+          >
+            ✏️ <span className="text-[9px]">Editar</span>
+          </button>
+        )}
+        {canCreate && (
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onDuplicateClick(appt.id);
+            }}
+            title="Duplicar"
+            className="p-1.5 bg-slate-800 hover:bg-violet-500 hover:text-white text-violet-400 border border-slate-700/80 rounded-md transition-all text-[10px] font-bold flex items-center gap-1"
+          >
+            📋 <span className="text-[9px]">Clonar</span>
+          </button>
+        )}
         <a 
           onClick={(e) => {
             e.stopPropagation();
@@ -198,7 +209,7 @@ export const AppointmentGridCard: React.FC<AppointmentGridCardProps> = ({
         >
           📲 <span className="text-[9px]">Whats</span>
         </a>
-        {appt.status !== 'finalizado' && (
+        {canEdit && appt.status !== 'finalizado' && (
           <button 
             onClick={(e) => {
               e.stopPropagation();
@@ -252,13 +263,18 @@ export const AppointmentGridCard: React.FC<AppointmentGridCardProps> = ({
 interface EmptySlotCardProps {
   hour: string;
   onBookClick: (hour: string) => void;
+  canCreate?: boolean;
 }
 
-export const EmptySlotCard: React.FC<EmptySlotCardProps> = ({ hour, onBookClick }) => {
+export const EmptySlotCard: React.FC<EmptySlotCardProps> = ({ hour, onBookClick, canCreate = true }) => {
   return (
     <div 
-      onClick={() => onBookClick(hour)}
-      className="group cursor-pointer rounded-xl p-4 bg-slate-950/40 border border-dashed border-slate-800 hover:border-sky-500/50 hover:bg-slate-950/80 transition-all flex flex-col justify-between h-[165px]"
+      onClick={() => {
+        if (canCreate) onBookClick(hour);
+      }}
+      className={`group rounded-xl p-4 bg-slate-950/40 border border-dashed border-slate-800 hover:border-sky-500/50 hover:bg-slate-950/80 transition-all flex flex-col justify-between h-[165px] ${
+        canCreate ? 'cursor-pointer' : 'cursor-default'
+      }`}
     >
       <div className="flex justify-between items-center">
         <span className="font-mono text-xs font-bold text-slate-500 group-hover:text-sky-400 transition-colors">
@@ -278,16 +294,18 @@ export const EmptySlotCard: React.FC<EmptySlotCardProps> = ({ hour, onBookClick 
         </p>
       </div>
 
-      <button 
-        onClick={(e) => {
-          e.stopPropagation();
-          onBookClick(hour);
-        }}
-        className="w-full py-1.5 bg-slate-900 hover:bg-sky-500 text-slate-400 hover:text-slate-950 group-hover:border-sky-500/30 group-hover:bg-slate-900 font-bold text-[10px] uppercase tracking-wider rounded-lg border border-slate-850/80 transition-all flex items-center justify-center gap-1.5"
-      >
-        <Clock size={11} className="stroke-[3]" />
-        <span>Agendar Cliente</span>
-      </button>
+      {canCreate && (
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            onBookClick(hour);
+          }}
+          className="w-full py-1.5 bg-slate-900 hover:bg-sky-500 text-slate-400 hover:text-slate-950 group-hover:border-sky-500/30 group-hover:bg-slate-900 font-bold text-[10px] uppercase tracking-wider rounded-lg border border-slate-850/80 transition-all flex items-center justify-center gap-1.5"
+        >
+          <Clock size={11} className="stroke-[3]" />
+          <span>Agendar Cliente</span>
+        </button>
+      )}
     </div>
   );
 };

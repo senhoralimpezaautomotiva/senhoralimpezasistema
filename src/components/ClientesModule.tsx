@@ -22,12 +22,13 @@ import {
   Tag,
   Star,
   ChevronLeft,
-  ChevronRight,
-  Info,
-  Sparkles
+  ChevronRight
 } from 'lucide-react';
 import { Customer, Vehicle, HistoryRecord } from '../types';
 import { hasModulePermission } from '../db/localDb';
+import { safeLog } from '../security/safeOutput';
+import { useVehicleCatalog } from '../hooks/useVehicleCatalog';
+import { resolveVehiclePorte } from '../utils/vehicleCatalog';
 
 interface ClientesModuleProps {
   customers: Customer[];
@@ -57,6 +58,7 @@ export default function ClientesModule({
   const canCreate = hasModulePermission(currentUser, 'clientes', 'create');
   const canEdit = hasModulePermission(currentUser, 'clientes', 'edit');
   const canDelete = hasModulePermission(currentUser, 'clientes', 'delete');
+  const vehicleCatalog = useVehicleCatalog();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -102,6 +104,35 @@ export default function ClientesModule({
   });
 
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+  const availableBrandNames = useMemo(() => {
+    const names = vehicleCatalog.brands.map(brand => brand.name);
+    if (vehicleData.brand && !names.includes(vehicleData.brand)) names.push(vehicleData.brand);
+    return names;
+  }, [vehicleCatalog.brands, vehicleData.brand]);
+  const availableModels = useMemo(() => {
+    const models = vehicleCatalog.models
+      .filter(model => model.brandName === vehicleData.brand)
+      .map(model => model.name);
+    if (vehicleData.model && !models.includes(vehicleData.model)) models.push(vehicleData.model);
+    return models;
+  }, [vehicleCatalog.models, vehicleData.brand, vehicleData.model]);
+
+  const handleVehicleBrandChange = (brand: string) => {
+    setVehicleData(previous => ({
+      ...previous,
+      brand,
+      model: '',
+      porte: 'Médio'
+    }));
+  };
+
+  const handleVehicleModelChange = (model: string) => {
+    setVehicleData(previous => ({
+      ...previous,
+      model,
+      porte: resolveVehiclePorte(vehicleCatalog, previous.brand, model, previous.porte)
+    }));
+  };
 
   // Reset page when search term changes
   useEffect(() => {
@@ -175,6 +206,7 @@ export default function ClientesModule({
   };
 
   const handleOpenEditModal = (c: Customer) => {
+    if (!canEdit) return;
     setErrorMessage(null);
     setEditId(c.id);
     setFormData({
@@ -196,6 +228,7 @@ export default function ClientesModule({
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreate) return;
     setErrorMessage(null);
     setIsSaving(true);
     try {
@@ -208,8 +241,8 @@ export default function ClientesModule({
         setSelectedCustomer(added);
       }
     } catch (err: any) {
-      console.error('Erro ao adicionar cliente:', err);
-      setErrorMessage(err.message || 'Erro ao salvar cliente. Verifique se o telefone já está cadastrado.');
+      safeLog('error', 'customers.customer.create', 'error', { error: err });
+      setErrorMessage('Erro ao salvar cliente. Verifique se o telefone já está cadastrado.');
     } finally {
       setIsSaving(false);
     }
@@ -217,6 +250,7 @@ export default function ClientesModule({
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit) return;
     setErrorMessage(null);
     setIsSaving(true);
     try {
@@ -232,8 +266,8 @@ export default function ClientesModule({
         });
       }
     } catch (err: any) {
-      console.error('Erro ao editar cliente:', err);
-      setErrorMessage(err.message || 'Erro ao atualizar dados. Verifique os campos.');
+      safeLog('error', 'customers.customer.update', 'error', { error: err });
+      setErrorMessage('Erro ao atualizar dados. Verifique os campos.');
     } finally {
       setIsSaving(false);
     }
@@ -241,6 +275,7 @@ export default function ClientesModule({
 
   // VEHICLE METHODS
   const handleOpenAddVehicle = () => {
+    if (!canCreate) return;
     setErrorMessage(null);
     setVehicleData({
       brand: '',
@@ -257,6 +292,7 @@ export default function ClientesModule({
   };
 
   const handleOpenEditVehicle = (v: Vehicle) => {
+    if (!canEdit) return;
     setErrorMessage(null);
     setEditingVehicleId(v.id);
     setVehicleData({
@@ -275,7 +311,7 @@ export default function ClientesModule({
 
   const handleAddVehicleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCustomer) return;
+    if (!selectedCustomer || !canCreate) return;
     setErrorMessage(null);
     setIsSaving(true);
     try {
@@ -307,8 +343,8 @@ export default function ClientesModule({
 
       setIsAddVehicleOpen(false);
     } catch (err: any) {
-      console.error('Erro ao cadastrar veículo:', err);
-      setErrorMessage(err.message || 'Erro ao cadastrar veículo. Verifique se a placa é única.');
+      safeLog('error', 'customers.vehicle.create', 'error', { error: err });
+      setErrorMessage('Erro ao cadastrar veículo. Verifique se a placa é única.');
     } finally {
       setIsSaving(false);
     }
@@ -316,7 +352,7 @@ export default function ClientesModule({
 
   const handleEditVehicleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCustomer || !editingVehicleId) return;
+    if (!selectedCustomer || !editingVehicleId || !canEdit) return;
     setErrorMessage(null);
     setIsSaving(true);
     try {
@@ -344,15 +380,15 @@ export default function ClientesModule({
       setIsEditVehicleOpen(false);
       setEditingVehicleId(null);
     } catch (err: any) {
-      console.error('Erro ao atualizar veículo:', err);
-      setErrorMessage(err.message || 'Erro ao atualizar veículo.');
+      safeLog('error', 'customers.vehicle.update', 'error', { error: err });
+      setErrorMessage('Erro ao atualizar veículo.');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleSetPrincipalVehicle = async (vehicleId: string) => {
-    if (!selectedCustomer) return;
+    if (!selectedCustomer || !canEdit) return;
     setIsSaving(true);
     try {
       const customerVehicles = vehicles.filter(v => v.customerId === selectedCustomer.id);
@@ -360,19 +396,40 @@ export default function ClientesModule({
         await onUpdateVehicle(v.id, { isPrincipal: v.id === vehicleId });
       }
     } catch (err) {
-      console.error('Erro ao definir veículo principal:', err);
+      safeLog('error', 'customers.vehicle.set_primary', 'error', { error: err });
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDeleteVehicleClick = async (vehicleId: string) => {
+    if (!canDelete) return;
     if (!confirm('Deseja realmente remover este veículo do cadastro do cliente? Todos os agendamentos dele também serão removidos.')) return;
     setIsSaving(true);
     try {
       await onDeleteVehicle(vehicleId);
     } catch (err) {
-      console.error('Erro ao excluir veículo:', err);
+      safeLog('error', 'customers.vehicle.delete', 'error', { error: err });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteCustomerClick = async (customer: Customer) => {
+    if (!canDelete) return;
+    if (!confirm(`Tem certeza que deseja excluir o cliente ${customer.name} e todos os seus veículos e agendamentos?`)) return;
+
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      await onDeleteCustomer(customer.id);
+      if (selectedCustomer?.id === customer.id) setSelectedCustomer(null);
+    } catch (error) {
+      safeLog('error', 'customers.customer.delete', 'error', {
+        entityId: customer.id,
+        error
+      });
+      setErrorMessage('Erro ao excluir cliente.');
     } finally {
       setIsSaving(false);
     }
@@ -513,25 +570,24 @@ export default function ClientesModule({
                               >
                                 <Eye size={13} />
                               </button>
-                              <button 
-                                onClick={() => handleOpenEditModal(c)}
-                                title="Editar Dados"
-                                className="p-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 rounded-lg text-amber-400 transition-colors"
-                              >
-                                <Edit size={13} />
-                              </button>
-                              <button 
-                                onClick={() => {
-                                  if (confirm(`Tem certeza que deseja excluir o cliente ${c.name} e todos os seus veículos e agendamentos?`)) {
-                                    onDeleteCustomer(c.id);
-                                    if (selectedCustomer?.id === c.id) setSelectedCustomer(null);
-                                  }
-                                }}
-                                title="Excluir"
-                                className="p-1.5 bg-slate-800 hover:bg-red-500/10 border border-slate-700/60 hover:border-red-500/30 rounded-lg text-red-400 transition-all"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              {canEdit && (
+                                <button 
+                                  onClick={() => handleOpenEditModal(c)}
+                                  title="Editar Dados"
+                                  className="p-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 rounded-lg text-amber-400 transition-colors"
+                                >
+                                  <Edit size={13} />
+                                </button>
+                              )}
+                              {canDelete && (
+                                <button 
+                                  onClick={() => void handleDeleteCustomerClick(c)}
+                                  title="Excluir"
+                                  className="p-1.5 bg-slate-800 hover:bg-red-500/10 border border-slate-700/60 hover:border-red-500/30 rounded-lg text-red-400 transition-all"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -654,13 +710,15 @@ export default function ClientesModule({
                     <Car size={13} className="text-sky-400" />
                     VEÍCULOS ({customerVehicles.length})
                   </h4>
-                  <button 
-                    onClick={handleOpenAddVehicle}
-                    className="px-2 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-[10px] flex items-center gap-1 font-bold shadow-md shadow-sky-500/10 cursor-pointer"
-                  >
-                    <Plus size={10} />
-                    <span>Novo Veículo</span>
-                  </button>
+                  {canCreate && (
+                    <button 
+                      onClick={handleOpenAddVehicle}
+                      className="px-2 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-[10px] flex items-center gap-1 font-bold shadow-md shadow-sky-500/10 cursor-pointer"
+                    >
+                      <Plus size={10} />
+                      <span>Novo Veículo</span>
+                    </button>
+                  )}
                 </div>
 
                 {customerVehicles.length === 0 ? (
@@ -704,7 +762,7 @@ export default function ClientesModule({
                           {/* Actions Bar for individual vehicle */}
                           <div className="mt-3.5 pt-2 border-t border-slate-900 flex justify-between items-center text-[10px]">
                             <div className="flex gap-2">
-                              {!v.isPrincipal && (
+                              {canEdit && !v.isPrincipal && (
                                 <button
                                   onClick={() => handleSetPrincipalVehicle(v.id)}
                                   className="text-slate-400 hover:text-sky-400 transition-colors flex items-center gap-1 font-semibold"
@@ -716,20 +774,24 @@ export default function ClientesModule({
                               )}
                             </div>
                             <div className="flex gap-3">
-                              <button
-                                onClick={() => handleOpenEditVehicle(v)}
-                                className="text-slate-400 hover:text-amber-400 transition-colors flex items-center gap-1 font-semibold"
-                              >
-                                <Edit size={11} />
-                                <span>Editar</span>
-                              </button>
-                              <button
-                                onClick={() => handleDeleteVehicleClick(v.id)}
-                                className="text-slate-500 hover:text-red-400 transition-colors flex items-center gap-1 font-semibold"
-                              >
-                                <Trash2 size={11} />
-                                <span>Excluir</span>
-                              </button>
+                              {canEdit && (
+                                <button
+                                  onClick={() => handleOpenEditVehicle(v)}
+                                  className="text-slate-400 hover:text-amber-400 transition-colors flex items-center gap-1 font-semibold"
+                                >
+                                  <Edit size={11} />
+                                  <span>Editar</span>
+                                </button>
+                              )}
+                              {canDelete && (
+                                <button
+                                  onClick={() => void handleDeleteVehicleClick(v.id)}
+                                  className="text-slate-500 hover:text-red-400 transition-colors flex items-center gap-1 font-semibold"
+                                >
+                                  <Trash2 size={11} />
+                                  <span>Excluir</span>
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -1126,27 +1188,35 @@ export default function ClientesModule({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Fabricante (Marca) *</label>
-                  <input 
-                    type="text" 
+                  <select
                     required
                     disabled={isSaving}
                     value={vehicleData.brand}
-                    onChange={(e) => setVehicleData({ ...vehicleData, brand: e.target.value })}
+                    onChange={(e) => handleVehicleBrandChange(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white disabled:opacity-50"
-                    placeholder="Ex: Honda"
-                  />
+                    data-testid="admin-vehicle-brand"
+                  >
+                    <option value="" disabled>Selecione...</option>
+                    {availableBrandNames.map(brand => (
+                      <option key={brand} value={brand}>{brand}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Modelo *</label>
-                  <input 
-                    type="text" 
+                  <select
                     required
-                    disabled={isSaving}
+                    disabled={isSaving || !vehicleData.brand}
                     value={vehicleData.model}
-                    onChange={(e) => setVehicleData({ ...vehicleData, model: e.target.value })}
+                    onChange={(e) => handleVehicleModelChange(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white disabled:opacity-50"
-                    placeholder="Ex: Civic"
-                  />
+                    data-testid="admin-vehicle-model"
+                  >
+                    <option value="" disabled>Selecione...</option>
+                    {availableModels.map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Ano *</label>
@@ -1188,8 +1258,9 @@ export default function ClientesModule({
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Porte do Veículo *</label>
                   <select
                     value={vehicleData.porte}
-                    onChange={(e) => setVehicleData({ ...vehicleData, porte: e.target.value as 'Pequeno' | 'Médio' | 'Grande' })}
-                    className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white"
+                    disabled
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white disabled:opacity-70"
+                    data-testid="admin-vehicle-porte"
                   >
                     <option value="Pequeno">Pequeno (P)</option>
                     <option value="Médio">Médio (M)</option>
@@ -1255,25 +1326,35 @@ export default function ClientesModule({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Fabricante (Marca) *</label>
-                  <input 
-                    type="text" 
+                  <select
                     required
                     disabled={isSaving}
                     value={vehicleData.brand}
-                    onChange={(e) => setVehicleData({ ...vehicleData, brand: e.target.value })}
+                    onChange={(e) => handleVehicleBrandChange(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white disabled:opacity-50"
-                  />
+                    data-testid="admin-vehicle-brand"
+                  >
+                    <option value="" disabled>Selecione...</option>
+                    {availableBrandNames.map(brand => (
+                      <option key={brand} value={brand}>{brand}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Modelo *</label>
-                  <input 
-                    type="text" 
+                  <select
                     required
-                    disabled={isSaving}
+                    disabled={isSaving || !vehicleData.brand}
                     value={vehicleData.model}
-                    onChange={(e) => setVehicleData({ ...vehicleData, model: e.target.value })}
+                    onChange={(e) => handleVehicleModelChange(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white disabled:opacity-50"
-                  />
+                    data-testid="admin-vehicle-model"
+                  >
+                    <option value="" disabled>Selecione...</option>
+                    {availableModels.map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Ano *</label>
@@ -1312,8 +1393,9 @@ export default function ClientesModule({
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Porte do Veículo *</label>
                   <select
                     value={vehicleData.porte}
-                    onChange={(e) => setVehicleData({ ...vehicleData, porte: e.target.value as 'Pequeno' | 'Médio' | 'Grande' })}
-                    className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white"
+                    disabled
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white disabled:opacity-70"
+                    data-testid="admin-vehicle-porte"
                   >
                     <option value="Pequeno">Pequeno (P)</option>
                     <option value="Médio">Médio (M)</option>

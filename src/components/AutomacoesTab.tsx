@@ -8,23 +8,21 @@ import {
   Zap, 
   Clock, 
   Check, 
-  AlertCircle, 
   Play, 
-  MessageSquare, 
   ToggleLeft, 
   ToggleRight,
   RefreshCw,
   Calendar,
-  Send,
-  Sparkles,
-  Info,
   Search,
   AlertTriangle,
   Activity,
   FileText
 } from 'lucide-react';
-import { Appointment, AutomationTrigger, AutomationLog, Customer, Vehicle, Service } from '../types';
+import { Appointment, AutomationTrigger, Customer, Vehicle, Service } from '../types';
 import { dbInstance, hasModulePermission } from '../db/localDb';
+import { adminApiFetch } from '../utils/adminApiClient';
+import { safeLog } from '../security/safeOutput';
+import { useManagedTimeout } from '../hooks/useManagedTimeout';
 
 interface AutomacoesTabProps {
   automations: AutomationTrigger[];
@@ -32,7 +30,6 @@ interface AutomacoesTabProps {
   customers: Customer[];
   vehicles: Vehicle[];
   services: Service[];
-  logs: AutomationLog[];
   currentUser?: any;
   onUpdateTrigger: (id: string, updated: Partial<AutomationTrigger>) => void;
   onSyncNeeded: () => void;
@@ -44,12 +41,12 @@ export default function AutomacoesTab({
   customers,
   vehicles,
   services,
-  logs,
   currentUser,
   onUpdateTrigger,
   onSyncNeeded
 }: AutomacoesTabProps) {
   const canEdit = hasModulePermission(currentUser, 'automacoes', 'edit');
+  const scheduleTimeout = useManagedTimeout();
   // Original UI states
   const [isRunningCheck, setIsRunningCheck] = useState(false);
   const [engineLogs, setEngineLogs] = useState<string[]>([]);
@@ -92,7 +89,7 @@ export default function AutomacoesTab({
   const loadDashboardData = async () => {
     setIsLoadingStats(true);
     try {
-      const res = await fetch('/api/automations/dashboard');
+      const res = await adminApiFetch('/api/automations/dashboard');
       if (res.ok) {
         const data = await res.json();
         setStats(data.stats);
@@ -168,7 +165,7 @@ export default function AutomacoesTab({
     setEngineLogs([`[Console] Iniciando varredura da fila no backend...`]);
     
     try {
-      const res = await fetch('/api/automations/run-cycle', { method: 'POST' });
+      const res = await adminApiFetch('/api/automations/run-cycle', { method: 'POST' });
       if (res.ok) {
         const result = await res.json();
         const timeStr = new Date().toLocaleTimeString('pt-BR');
@@ -186,7 +183,8 @@ export default function AutomacoesTab({
         throw new Error('Erro na resposta do servidor.');
       }
     } catch (e: any) {
-      setEngineLogs(prev => [...prev, `[Erro] Falha ao acionar processador de fila no backend: ${e.message || e}`]);
+      safeLog('error', 'automation.queue.process', 'error', { error: e });
+      setEngineLogs(prev => [...prev, '[Erro] Falha ao acionar o processador. Consulte o correlation ID do log.']);
     } finally {
       setIsRunningCheck(false);
     }
@@ -197,7 +195,7 @@ export default function AutomacoesTab({
     setIsRunningCheck(true);
     setEngineLogs([`[Console] Executando envio forçado de teste para o gatilho...`]);
     try {
-      const res = await fetch(`/api/automations/test/${id}`, { method: 'POST' });
+      const res = await adminApiFetch(`/api/automations/test/${encodeURIComponent(id)}`, { method: 'POST' });
       if (res.ok) {
         const result = await res.json();
         const timeStr = new Date().toLocaleTimeString('pt-BR');
@@ -212,7 +210,8 @@ export default function AutomacoesTab({
         throw new Error('Falha de resposta do servidor.');
       }
     } catch (e: any) {
-      setEngineLogs(prev => [...prev, `[Erro] Falha no disparo forçado: ${e.message || e}`]);
+      safeLog('error', 'automation.queue.force_trigger', 'error', { error: e });
+      setEngineLogs(prev => [...prev, '[Erro] Falha no disparo forçado. Consulte o correlation ID do log.']);
     } finally {
       setIsRunningCheck(false);
     }
@@ -231,22 +230,22 @@ export default function AutomacoesTab({
       }
       
       setSaveHoursSuccess(true);
-      setTimeout(() => setSaveHoursSuccess(false), 3000);
+      scheduleTimeout(() => setSaveHoursSuccess(false), 3000);
       loadDashboardData();
     } catch (err) {
-      console.error(err);
+      safeLog('error', 'automation.dashboard.load', 'error', { error: err });
     } finally {
       setIsSavingHours(false);
     }
   };
 
   const handleToggleActive = () => {
-    if (!reminderAutomation) return;
+    if (!reminderAutomation || !canEdit) return;
     onUpdateTrigger(reminderAutomation.id, { isActive: !reminderAutomation.isActive });
   };
 
   const handleSaveTemplate = () => {
-    if (!reminderAutomation) return;
+    if (!reminderAutomation || !canEdit) return;
     onUpdateTrigger(reminderAutomation.id, { template: templateText });
     setIsEditingTemplate(false);
   };
@@ -443,12 +442,14 @@ export default function AutomacoesTab({
                   <p className="text-slate-300 font-medium text-xs leading-relaxed whitespace-pre-line">
                     {reminderAutomation?.template || 'Nenhum template cadastrado.'}
                   </p>
-                  <button 
-                    onClick={() => setIsEditingTemplate(true)}
-                    className="absolute right-3 top-3 px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] text-slate-300 hover:text-white rounded-lg opacity-0 group-hover/rembox:opacity-100 transition-opacity cursor-pointer"
-                  >
-                    Editar Template
-                  </button>
+                  {canEdit && (
+                    <button 
+                      onClick={() => setIsEditingTemplate(true)}
+                      className="absolute right-3 top-3 px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] text-slate-300 hover:text-white rounded-lg opacity-0 group-hover/rembox:opacity-100 transition-opacity cursor-pointer"
+                    >
+                      Editar Template
+                    </button>
+                  )}
                 </div>
               )}
             </div>

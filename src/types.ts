@@ -128,7 +128,7 @@ export interface AutomationTrigger {
   minServices?: number;
 }
 
-export interface SystemConfig {
+export interface PublicSystemConfig {
   companyName: string;
   phone: string;
   email: string;
@@ -141,10 +141,6 @@ export interface SystemConfig {
   supabaseUrl: string;
   supabaseAnonKey: string;
   useRealSupabase: boolean;
-  zapiInstanceId: string;
-  zapiToken: string;
-  zapiClientToken?: string;
-  makeWebhookUrl: string;
   
   // Referral Program Config
   referralActive?: boolean;
@@ -158,6 +154,10 @@ export interface SystemConfig {
   agenda?: AgendaConfig;
   theme?: 'light' | 'dark';
 }
+
+// Compatibility alias while the application migrates to the explicit public name.
+// This type must never receive backend-only integration credentials.
+export type SystemConfig = PublicSystemConfig;
 
 export interface AgendaDayConfig {
   dayOfWeek: number; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
@@ -256,16 +256,19 @@ export interface User {
   name: string;
   phone: string;
   email: string;
-  password?: string;
   photoUrl?: string;
   status: 'ativo' | 'inativo';
-  role: UserRole;
+  role: UserRole; // Modelo interno; corresponde à coluna public.usuarios.perfil.
   permissions: Record<SystemModuleId, ModulePermission>;
   commissions: ServiceCommissionRule[];
   defaultCommissionPercent: number;
   createdAt?: string;
   updatedAt?: string;
 }
+
+export type CreateUserInput = Omit<User, 'id' | 'authUserId' | 'createdAt' | 'updatedAt'> & {
+  password: string;
+};
 
 export type CommissionStatus = 'pendente' | 'paga';
 
@@ -285,4 +288,3 @@ export interface CommissionRecord {
   notes?: string;
   createdAt?: string;
 }
-

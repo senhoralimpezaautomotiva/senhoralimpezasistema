@@ -7,26 +7,18 @@ import React, { useState, useMemo } from 'react';
 import { 
   BarChart3, 
   Users, 
-  UserCheck,
-  UserX, 
   TrendingUp, 
   DollarSign, 
   Layers, 
   Award,
-  Calendar,
   Filter,
   Download,
   Printer,
   ChevronDown,
   ChevronUp,
-  Tag,
   Car,
   Wrench,
   Clock,
-  Sparkles,
-  RefreshCw,
-  Gift,
-  HelpCircle,
   FileText
 } from 'lucide-react';
 import { 
@@ -37,16 +29,14 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip,
-  BarChart,
-  Bar,
   Cell,
   PieChart,
-  Pie,
-  Legend
+  Pie
 } from 'recharts';
 import { Customer, HistoryRecord, CashTransaction, Appointment, Vehicle, SystemConfig } from '../types';
 import { dbInstance } from '../db/localDb';
-import { getCurrentDate, getCurrentDateStr, getCurrentMonthPrefix, getCurrentYear } from '../utils/dateUtils';
+import { getCurrentDate, getCurrentDateStr, getCurrentYear } from '../utils/dateUtils';
+import { toCsvCell } from '../security/safeOutput';
 
 interface RelatoriosModuleProps {
   customers: Customer[];
@@ -223,37 +213,6 @@ export default function RelatoriosModule({
     };
   }, [filteredFinances]);
 
-  // Static reference metrics for dashboard comparison cards (unfiltered for accurate context)
-  const kpisOverall = useMemo(() => {
-    // Faturamento do dia
-    const revenueToday = finances
-      .filter(t => t.type === 'receita' && t.date === TODAY_STR)
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    // Faturamento do mês (Julho 2026)
-    const revenueMonth = finances
-      .filter(t => t.type === 'receita' && t.date.startsWith(TODAY_STR.substring(0, 7)))
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    // Faturamento do ano (2026)
-    const revenueYear = finances
-      .filter(t => t.type === 'receita' && t.date.startsWith(TODAY_STR.substring(0, 4)))
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    // Tickets
-    const totalServices = history.length;
-    const totalRevenue = history.reduce((sum, h) => sum + h.value, 0);
-    const globalTicket = totalServices > 0 ? totalRevenue / totalServices : 0;
-
-    return {
-      revenueToday,
-      revenueMonth,
-      revenueYear,
-      globalTicket,
-      totalServices
-    };
-  }, [finances, history]);
-
   // Filtered specific KPIs
   const filteredKpis = useMemo(() => {
     const totalCount = filteredHistory.length;
@@ -273,8 +232,8 @@ export default function RelatoriosModule({
     // Let's compute average hours booked for the selected period
     let bookedHours = 0;
     filteredAppointments.forEach(a => {
-      if (a.status === 'confirmado' || a.status === 'concluido') {
-        bookedHours += a.duration || 120; // default 120min (2h) if undefined
+      if (a.status === 'confirmado' || a.status === 'finalizado') {
+        bookedHours += a.durationTotal || 120; // default 120min (2h) if undefined
       }
     });
     const bookedHoursTotal = bookedHours / 60; // convert to decimal hours
@@ -387,37 +346,45 @@ export default function RelatoriosModule({
 
   // --- EXPORT TO CSV FUNCTION ---
   const handleExportCSV = () => {
-    let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
-    csvContent += 'Filtros BI: Periodo: ' + filterPeriod + '; Cliente: ' + filterClientType + '; Porte: ' + filterPorte + '\n\n';
-    
-    csvContent += 'HISTORICO DE SERVICOS FILTRADOS\n';
-    csvContent += 'Data,Cliente,Veiculo,Placa,Servico,Valor,Responsavel,Notas\n';
-    
+    const csvRows = [
+      [
+        `Filtros BI: Período: ${filterPeriod}`,
+        `Cliente: ${filterClientType}`,
+        `Porte: ${filterPorte}`
+      ].map(toCsvCell).join(','),
+      '',
+      toCsvCell('HISTÓRICO DE SERVIÇOS FILTRADOS'),
+      ['Data', 'Cliente', 'Veículo', 'Placa', 'Serviço', 'Valor', 'Responsável', 'Notas']
+        .map(toCsvCell)
+        .join(',')
+    ];
+
     filteredHistory.forEach(h => {
       const v = vehicles.find(veh => veh.id === h.vehicleId);
       const vehicleDesc = v ? `${v.brand} ${v.model} (${v.year})` : 'N/A';
-      
-      const line = [
+
+      csvRows.push([
         h.date,
-        `"${h.customerName.replace(/"/g, '""')}"`,
-        `"${vehicleDesc.replace(/"/g, '""')}"`,
+        h.customerName,
+        vehicleDesc,
         h.vehiclePlate,
-        `"${h.serviceName.replace(/"/g, '""')}"`,
+        h.serviceName,
         h.value.toFixed(2),
-        `"${h.employeeResponsible.replace(/"/g, '""')}"`,
-        `"${(h.notes || '').replace(/"/g, '""')}"`
-      ].join(',');
-      
-      csvContent += line + '\n';
+        h.employeeResponsible,
+        h.notes || ''
+      ].map(toCsvCell).join(','));
     });
 
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = `\uFEFF${csvRows.join('\r\n')}\r\n`;
+    const csvBlob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+    const objectUrl = URL.createObjectURL(csvBlob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', objectUrl);
     link.setAttribute('download', `relatorio_bi_estetica_automotiva_${filterPeriod}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(objectUrl);
   };
 
   const handlePrint = () => {
@@ -779,7 +746,7 @@ export default function RelatoriosModule({
                     paddingAngle={3}
                     dataKey="value"
                   >
-                    {rankOrigins.map((entry, index) => (
+                    {rankOrigins.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>

@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://ansrnnydksrjwefnntaw.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_vbMMkzHsGfSd5Gyg_7zogg_YUIBB7gg';
+const SUPABASE_URL = process.env.SUPABASE_URL?.trim() || '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY?.trim() || '';
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error('Configuração Supabase ausente.');
 
 async function main() {
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -10,6 +11,7 @@ async function main() {
 
   // Query to get the check constraints in postgres
   const { data, error } = await supabase.rpc('get_check_constraints', {});
+  void data;
   
   if (error) {
     console.log('RPC check failed, executing standard query on pg_constraint...');

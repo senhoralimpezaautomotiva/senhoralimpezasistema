@@ -6,17 +6,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Settings, 
-  Globe, 
-  MessageSquare, 
   Check, 
   Save, 
   Key, 
-  Layout, 
   Smartphone,
-  Phone,
   Building,
   Mail,
-  Zap,
   Gift,
   Lock,
   Shield,
@@ -35,6 +30,8 @@ import {
 } from 'lucide-react';
 import { SystemConfig } from '../types';
 import { dbInstance, hasModulePermission } from '../db/localDb';
+import { safeLog } from '../security/safeOutput';
+import { useManagedTimeout } from '../hooks/useManagedTimeout';
 
 interface ConfiguracoesModuleProps {
   config: SystemConfig;
@@ -43,12 +40,13 @@ interface ConfiguracoesModuleProps {
   onUpdateCurrentUser?: (user: { name: string; email: string; role: string; authProvider?: 'supabase' | 'local' }) => void;
 }
 
-export default function ConfiguracoesModule({ 
+export default function ConfiguracoesModule({
   config, 
   onUpdateConfig, 
   currentUser, 
   onUpdateCurrentUser 
 }: ConfiguracoesModuleProps) {
+  const scheduleTimeout = useManagedTimeout();
   const canEdit = hasModulePermission(currentUser as any, 'configuracoes', 'edit');
   // Navigation active sub-tab
   const [activeSubTab, setActiveSubTab] = useState<'gerais' | 'acesso' | 'agenda'>('gerais');
@@ -163,7 +161,7 @@ export default function ConfiguracoesModule({
     e.preventDefault();
     onUpdateConfig({ agenda: agendaData });
     setAgendaSuccess(true);
-    setTimeout(() => {
+    scheduleTimeout(() => {
       setAgendaSuccess(false);
     }, 3000);
   };
@@ -202,7 +200,7 @@ export default function ConfiguracoesModule({
     e.preventDefault();
     onUpdateConfig(formData);
     setShowSuccess(true);
-    setTimeout(() => {
+    scheduleTimeout(() => {
       setShowSuccess(false);
     }, 3000);
   };
@@ -242,125 +240,69 @@ export default function ConfiguracoesModule({
       }
       setNewEmail('');
     } catch (err: any) {
-      setAccessError(err.message || 'Ocorreu um erro ao atualizar o e-mail de login.');
+      safeLog('error', 'settings.authentication.email_update', 'error', { error: err });
+      setAccessError('Ocorreu um erro ao atualizar o e-mail de login.');
     } finally {
       setAccessLoading(false);
     }
   };
 
-  // Handle Password Change Update (Supabase / Local)
+  // Passwords are managed only by the identity provider and are never cached locally.
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setAccessError('');
     setAccessSuccess('');
     setAccessLoading(true);
 
-    console.group('🔐 [Auth Investigative] Processo de Alteração de Senha do Administrador');
-    
     const emailToAuth = currentUser?.email || 'contato@senhoralimpeza.com.br';
-    const authProvider = currentUser?.authProvider || 'local';
     const isSupabaseConfigured = !!(config.useRealSupabase && config.supabaseUrl && config.supabaseAnonKey);
 
-    console.log('📌 Email do Administrador:', emailToAuth);
-    console.log('📌 Provedor de Login:', authProvider);
-    console.log('📌 Supabase Configurado no Painel:', isSupabaseConfigured);
-    console.log('📌 Comprimento da Senha Atual:', currentPassword?.length || 0);
-    console.log('📌 Comprimento da Nova Senha:', newPassword?.length || 0);
-
     if (!currentPassword) {
-      console.warn('❌ Erro: Senha atual vazia.');
       setAccessError('Insira a sua senha atual para confirmar a alteração.');
       setAccessLoading(false);
-      console.groupEnd();
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      console.warn('❌ Erro: Confirmação de senha incorreta.');
       setAccessError('A nova senha e a confirmação não correspondem.');
       setAccessLoading(false);
-      console.groupEnd();
       return;
     }
 
     if (newPassword.length < 6) {
-      console.warn('❌ Erro: Comprimento da nova senha inferior a 6 caracteres.');
       setAccessError('A nova senha deve ter no mínimo 6 caracteres.');
       setAccessLoading(false);
-      console.groupEnd();
       return;
     }
 
     try {
-      // Determine if we should use real Supabase Auth
-      let useSupabaseAuthFlow = false;
-      if (isSupabaseConfigured && authProvider === 'supabase') {
-        useSupabaseAuthFlow = true;
+      if (!isSupabaseConfigured || currentUser?.authProvider !== 'supabase') {
+        throw new Error('A alteração de senha exige uma sessão autenticada pelo Supabase Auth.');
       }
 
-      console.log('⚡ Fluxo de alteração selecionado:', useSupabaseAuthFlow ? 'SUPABASE AUTH' : 'LOCAL CACHE / LOCAL STORAGE');
-
-      if (useSupabaseAuthFlow) {
-        console.log('🔄 Iniciando reautenticação no Supabase...');
-        const supabase = dbInstance.getSupabaseClient();
-        
-        // 1. Reauthenticate by attempting sign-in with current credentials
-        const { error: reauthError } = await supabase.auth.signInWithPassword({
-          email: emailToAuth,
-          password: currentPassword
-        });
-
-        if (reauthError) {
-          console.error('❌ Erro de Reautenticação no Supabase:', reauthError.message);
-          throw new Error('A senha atual inserida está incorreta no Supabase Auth. Não foi possível confirmar a alteração.');
-        }
-        console.log('✅ Reautenticação efetuada com sucesso no Supabase.');
-
-        // 2. Perform password update
-        console.log('🔄 Atualizando senha no Supabase Auth...');
-        const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
-        if (updateError) {
-          console.error('❌ Erro ao atualizar senha no Supabase:', updateError.message);
-          throw new Error(`Erro Supabase Auth ao definir nova senha: ${updateError.message}`);
-        }
-        
-        console.log('✅ Senha atualizada com sucesso no Supabase Auth!');
-        
-        // Synchronize local fallback password too, so they match in case of offline login
-        localStorage.setItem('sl_admin_password', newPassword);
-        console.log('💾 Sincronizado backup de segurança de login local (sl_admin_password) com a nova senha.');
-        
-        setAccessSuccess('Senha alterada com sucesso no Supabase Auth e sincronizada localmente!');
-      } else {
-        // Offline / Cache simulation
-        console.log('🔄 Buscando senha atual no cache local...');
-        const savedPassword = localStorage.getItem('sl_admin_password') || 'admin123';
-        
-        console.log('🔄 Validando senha atual contra o cache...');
-        if (currentPassword !== savedPassword) {
-          console.error('❌ Erro: Senha atual inserida não corresponde ao cache local.');
-          throw new Error('A senha atual inserida está incorreta. Não foi possível confirmar a alteração.');
-        }
-
-        console.log('🔄 Gravando nova senha no cache local (sl_admin_password)...');
-        localStorage.setItem('sl_admin_password', newPassword);
-        console.log('✅ Senha gravada com sucesso no cache local!');
-        
-        setAccessSuccess('Senha de login administrativa alterada com sucesso no cache local!');
+      const supabase = dbInstance.getSupabaseClient();
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: emailToAuth,
+        password: currentPassword
+      });
+      if (reauthError) {
+        throw new Error('A senha atual está incorreta. Não foi possível confirmar a alteração.');
       }
 
-      // Reset fields
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) {
+        throw new Error('O provedor de identidade recusou a atualização da senha.');
+      }
+
+      localStorage.removeItem('sl_admin_password');
+      setAccessSuccess('Senha alterada com sucesso no Supabase Auth.');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      console.log('🧹 Campos do formulário redefinidos.');
-      
     } catch (err: any) {
-      console.error('🚨 Falha no processo de alteração de senha:', err.message || err);
       setAccessError(err.message || 'Ocorreu um erro ao atualizar a senha.');
     } finally {
       setAccessLoading(false);
-      console.groupEnd();
     }
   };
 
@@ -384,7 +326,8 @@ export default function ConfiguracoesModule({
         setAccessSuccess('Todas as outras sessões de dispositivos foram encerradas com sucesso!');
       }
     } catch (err: any) {
-      setAccessError(err.message || 'Ocorreu um erro ao encerrar sessões ativas.');
+      safeLog('error', 'settings.authentication.sessions_revoke', 'error', { error: err });
+      setAccessError('Ocorreu um erro ao encerrar sessões ativas.');
     } finally {
       setAccessLoading(false);
     }
@@ -406,7 +349,7 @@ export default function ConfiguracoesModule({
           <Settings className="text-sky-500 shrink-0" size={24} />
           <div>
             <h2 className="text-base font-bold text-white tracking-tight">Configurações Gerais do Sistema</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Customize dados corporativos, credenciais Z-API, webhooks, parâmetros do Make e segurança.</p>
+            <p className="text-xs text-slate-400 mt-0.5">Customize dados corporativos e parâmetros públicos. Credenciais de integração permanecem protegidas no servidor.</p>
           </div>
         </div>
 
@@ -588,79 +531,21 @@ export default function ConfiguracoesModule({
             </div>
           </div>
 
-          {/* SECTION 2: INTEGRACAO WHATSAPP (Z-API) */}
+          {/* SECTION 2: SERVER-MANAGED INTEGRATIONS */}
           <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-850 pb-2.5">
               <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-white flex items-center gap-2">
-                <MessageSquare size={14} className="text-slate-400" />
-                Integração WhatsApp (Z-API)
+                <Shield size={14} className="text-emerald-400" />
+                Integrações protegidas
               </h3>
-              <span className="px-2.5 py-0.5 bg-sky-500/10 text-sky-400 border border-sky-500/15 text-[9px] font-bold rounded-md font-mono uppercase">
-                Pronto para Conexão
+              <span className="px-2.5 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/15 text-[9px] font-bold rounded-md font-mono uppercase">
+                Gerenciadas no servidor
               </span>
             </div>
 
             <p className="text-slate-400 text-xs font-medium leading-relaxed">
-              Insira suas credenciais da API de WhatsApp comercial <strong>Z-API</strong> para disparar as mensagens automáticas reais. O sistema já está arquitetado para converter a fila simulada em disparos http reais a cada finalização.
+              As credenciais da Z-API e a URL do webhook Make.com não são exibidas nem armazenadas no navegador. A configuração e a rotação desses segredos devem ser feitas exclusivamente no ambiente seguro do servidor.
             </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">ID da Instância Z-API</label>
-                <input 
-                  type="text" 
-                  value={formData.zapiInstanceId || ''}
-                  onChange={(e) => setFormData({ ...formData, zapiInstanceId: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white font-mono"
-                  placeholder="Ex: 3B2D6C5E37F9A0"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Token de Segurança Z-API</label>
-                <input 
-                  type="password" 
-                  value={formData.zapiToken || ''}
-                  onChange={(e) => setFormData({ ...formData, zapiToken: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white font-mono"
-                  placeholder="••••••••••••••••••••••••••••••••"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Client Token de Segurança</label>
-                <input 
-                  type="text" 
-                  value={formData.zapiClientToken || ''}
-                  onChange={(e) => setFormData({ ...formData, zapiClientToken: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white font-mono"
-                  placeholder="Ex: F9C4E0A1D3B2"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION 3: WEBHOOK DO MAKE.COM */}
-          <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 space-y-4">
-            <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-white border-b border-slate-850 pb-2.5 flex items-center gap-2">
-              <Globe size={14} className="text-slate-400" />
-              Automações Make.com (Integromat)
-            </h3>
-
-            <p className="text-slate-400 text-xs font-medium leading-relaxed">
-              Configure a URL de Webhook criada no seu cenário do Make para receber relatórios de status em tempo real a cada atendimento concluído.
-            </p>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">URL de Webhook Ativa</label>
-              <input 
-                type="url" 
-                value={formData.makeWebhookUrl || ''}
-                onChange={(e) => setFormData({ ...formData, makeWebhookUrl: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white font-mono text-[11px]"
-                placeholder="https://hook.us1.make.com/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-              />
-            </div>
           </div>
 
           {/* SECTION 3.5: JANELA DE FUNCIONAMENTO */}
@@ -714,7 +599,7 @@ export default function ConfiguracoesModule({
             </div>
 
             <p className="text-slate-400 text-xs font-medium leading-relaxed">
-              Configure a integração com o banco de dados oficial do Supabase. Quando ativa, todas as operações de clientes, veículos, serviços e agendamentos serão sincronizadas automaticamente com a nuvem em tempo real.
+              A URL do projeto e a chave publicável são definidas no ambiente de implantação. Chaves administrativas e de serviço nunca devem ser informadas nesta tela.
             </p>
 
             <div className="flex items-center gap-3 bg-slate-950 p-4 rounded-xl border border-slate-800/60">
@@ -730,30 +615,8 @@ export default function ConfiguracoesModule({
               </label>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Project URL</label>
-                <input 
-                  type="text" 
-                  required={formData.useRealSupabase}
-                  value={formData.supabaseUrl || ''}
-                  onChange={(e) => setFormData({ ...formData, supabaseUrl: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white font-mono text-[11px]"
-                  placeholder="https://your-project.supabase.co"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">API Key (Anon Key)</label>
-                <input 
-                  type="password" 
-                  required={formData.useRealSupabase}
-                  value={formData.supabaseAnonKey || ''}
-                  onChange={(e) => setFormData({ ...formData, supabaseAnonKey: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white font-mono text-[11px]"
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                />
-              </div>
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/60 text-xs text-slate-400">
+              Identificadores públicos carregados pelo ambiente. Valores ocultos para impedir a inserção acidental de credenciais privilegiadas.
             </div>
           </div>
 

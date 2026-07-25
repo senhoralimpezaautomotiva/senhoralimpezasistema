@@ -7,12 +7,9 @@ import React, { useState } from 'react';
 import { 
   History, 
   Search, 
-  Calendar, 
   Clock, 
-  DollarSign, 
   User, 
   Car, 
-  ChevronDown, 
   FileText 
 } from 'lucide-react';
 import { HistoryRecord } from '../types';

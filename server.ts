@@ -1,21 +1,120 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { dbInstance } from './src/db/localDb';
 import { automationEngineInstance } from './src/db/automationEngine';
+import {
+  apiSecurityContext,
+  auditAdministrativeAction,
+  auditSecurityEvent,
+  createRateLimit,
+  createSupabaseAuthentication,
+  requireAccess,
+  validateAutomationId,
+  validateNoInput
+} from './src/server/adminApiSecurity';
+import {
+  maskPhone,
+  redactExternalResponse,
+  safeLog
+} from './src/security/safeOutput';
+import { loadServerEnvironment } from './src/server/environment';
+import { createSecurityHeaders } from './src/server/securityHeaders';
+
+const apiError = (
+  req: express.Request,
+  message: string,
+  extra: Record<string, string | boolean> = {}
+) => ({
+  ...extra,
+  error: message,
+  correlationId: req.securityRequestId || 'unassigned'
+});
 
 async function startServer() {
-  const app = express();
-  const PORT = 3000;
+  const environment = loadServerEnvironment();
+  dbInstance.config = {
+    ...dbInstance.config,
+    supabaseUrl: environment.supabaseUrl,
+    supabaseAnonKey: environment.supabaseAnonKey,
+    useRealSupabase: Boolean(environment.supabaseUrl && environment.supabaseAnonKey)
+  };
 
-  // Body parsers
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  const app = express();
+  const PORT = environment.port;
+
+  app.disable('x-powered-by');
+  app.use(createSecurityHeaders({
+    environment: environment.appEnvironment,
+    supabaseUrl: environment.supabaseUrl
+  }));
+  app.get('/health', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(200).json({ status: 'ok' });
+  });
+  app.use('/api', apiSecurityContext);
+  app.use(express.json({ limit: '32kb', strict: true }));
+  app.use(express.urlencoded({ extended: true, limit: '32kb', parameterLimit: 50 }));
+
+  app.use('/api', (error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (error?.type === 'entity.too.large') {
+      auditSecurityEvent(req, 'request_validation', 'denied', { reason: 'payload_too_large' });
+      res.status(413).json(apiError(req, 'Corpo da requisição excede o limite permitido.'));
+      return;
+    }
+    if (error instanceof SyntaxError) {
+      auditSecurityEvent(req, 'request_validation', 'denied', { reason: 'invalid_json' });
+      res.status(400).json(apiError(req, 'Corpo JSON inválido.'));
+      return;
+    }
+    next(error);
+  });
+
+  const authenticateAdministrativeApi = createSupabaseAuthentication(() => ({
+    url: dbInstance.config.supabaseUrl,
+    anonKey: dbInstance.config.supabaseAnonKey
+  }));
+  const authenticationRateLimit = createRateLimit('administrative_authentication', {
+    windowMs: 60_000,
+    maxRequests: 60
+  });
+  const readRateLimit = createRateLimit('administrative_read', {
+    windowMs: 60_000,
+    maxRequests: 60,
+    keyByUser: true
+  });
+  const sensitiveActionRateLimit = createRateLimit('administrative_action', {
+    windowMs: 60_000,
+    maxRequests: 10,
+    keyByUser: true
+  });
+  const synchronizationRateLimit = createRateLimit('database_synchronization', {
+    windowMs: 60_000,
+    maxRequests: 5,
+    keyByUser: true
+  });
+
+  app.use(
+    ['/api/automations', '/api/database'],
+    authenticationRateLimit,
+    authenticateAdministrativeApi
+  );
 
   // --- AUTOMATIONS API ENDPOINTS ---
 
   // Get automation stats & full history (Dashboard data)
-  app.get('/api/automations/dashboard', async (req, res) => {
+  app.get(
+    '/api/automations/dashboard',
+    readRateLimit,
+    requireAccess({
+      module: 'automacoes',
+      action: 'view',
+      allowedRoles: ['admin', 'gerente']
+    }),
+    auditAdministrativeAction('automations.dashboard.read'),
+    validateNoInput,
+    async (req, res) => {
     try {
       // If using real Supabase, ensure we have the absolute latest state
       if (dbInstance.config.useRealSupabase) {
@@ -65,50 +164,89 @@ async function startServer() {
           return {
             id: e.id,
             horario: e.updated_at,
-            cliente: customer ? customer.name : 'Cliente',
-            telefone: e.telefone,
+            cliente: customer ? 'Cliente protegido' : 'Cliente',
+            telefone: maskPhone(e.telefone),
             automacao: automationTrigger ? automationTrigger.name : e.automacao,
-            mensagem: e.mensagem,
+            mensagem: 'Conteúdo da mensagem redigido.',
             status: e.status,
             tentativas: e.tentativas,
-            resposta_api: e.resposta_api,
+            resposta_api: redactExternalResponse(e.resposta_api),
             data_execucao: e.data_execucao
           };
         })
       });
-    } catch (error: any) {
-      console.error('[API Error] Falha ao carregar dashboard de automações:', error);
-      res.status(500).json({ error: 'Erro ao carregar dashboard de automações', details: error.message });
+    } catch (error) {
+      safeLog('error', 'api.automations.dashboard', 'error', {
+        correlationId: req.securityRequestId,
+        error
+      });
+      res.status(500).json(apiError(req, 'Erro interno ao carregar dashboard de automações.'));
     }
   });
 
   // Run manual test for specific automation
-  app.post('/api/automations/test/:id', async (req, res) => {
+  app.post(
+    '/api/automations/test/:id',
+    sensitiveActionRateLimit,
+    requireAccess({
+      module: 'automacoes',
+      action: 'create',
+      allowedRoles: ['admin', 'gerente']
+    }),
+    auditAdministrativeAction('automations.manual_test.execute'),
+    validateAutomationId,
+    validateNoInput,
+    async (req, res) => {
     const { id } = req.params;
     try {
-      console.log(`[API] Teste manual acionado para ID: ${id}`);
       const result = await automationEngineInstance.executeManualTest(id);
       res.json(result);
-    } catch (error: any) {
-      console.error('[API Error] Falha no teste manual:', error);
-      res.status(500).json({ success: false, log: `Erro interno: ${error.message}` });
+    } catch (error) {
+      safeLog('error', 'api.automations.manual_test', 'error', {
+        correlationId: req.securityRequestId,
+        entityId: req.params.id,
+        error
+      });
+      res.status(500).json(apiError(req, 'Erro interno ao executar teste.', { success: false }));
     }
   });
 
   // Run a manual queue scan and process cycle immediately
-  app.post('/api/automations/run-cycle', async (req, res) => {
+  app.post(
+    '/api/automations/run-cycle',
+    sensitiveActionRateLimit,
+    requireAccess({
+      module: 'automacoes',
+      action: 'edit',
+      allowedRoles: ['admin', 'gerente']
+    }),
+    auditAdministrativeAction('automations.queue_cycle.execute'),
+    validateNoInput,
+    async (req, res) => {
     try {
-      console.log('[API] Varredura manual da fila acionada.');
       const result = await automationEngineInstance.runCycle();
       res.json({ success: true, ...result });
-    } catch (error: any) {
-      console.error('[API Error] Falha na execução manual do ciclo:', error);
-      res.status(500).json({ success: false, error: error.message });
+    } catch (error) {
+      safeLog('error', 'api.automations.run_cycle', 'error', {
+        correlationId: req.securityRequestId,
+        error
+      });
+      res.status(500).json(apiError(req, 'Erro interno ao executar ciclo.', { success: false }));
     }
   });
 
   // Trigger Supabase database synchronization
-  app.post('/api/database/sync', async (req, res) => {
+  app.post(
+    '/api/database/sync',
+    synchronizationRateLimit,
+    requireAccess({
+      module: 'configuracoes',
+      action: 'edit',
+      allowedRoles: ['admin', 'gerente']
+    }),
+    auditAdministrativeAction('database.synchronization.execute'),
+    validateNoInput,
+    async (req, res) => {
     try {
       if (dbInstance.config.useRealSupabase) {
         await dbInstance.syncWithSupabase();
@@ -116,45 +254,113 @@ async function startServer() {
       } else {
         res.json({ success: false, message: 'Supabase não está ativado.' });
       }
-    } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
+    } catch (error) {
+      safeLog('error', 'api.database.sync', 'error', {
+        correlationId: req.securityRequestId,
+        error
+      });
+      res.status(500).json(apiError(req, 'Erro interno ao sincronizar banco de dados.', { success: false }));
     }
   });
 
+  app.all(['/api/automations/*', '/api/database/*'], (req, res) => {
+    auditSecurityEvent(req, 'administrative_route', 'denied', { reason: 'route_not_found' });
+    res.status(404).json(apiError(req, 'Endpoint administrativo não encontrado.'));
+  });
+
   // Serve static files / Vite middleware
-  if (process.env.NODE_ENV !== 'production') {
+  if (environment.nodeEnvironment !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-    console.log('[Vite] Middleware de desenvolvimento acoplado com sucesso.');
+    safeLog('info', 'server.vite_middleware', 'success', { operation: 'development' });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.use(express.static(distPath, {
+      index: false,
+      setHeaders: (response, filePath) => {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          return;
+        }
+        response.setHeader('Cache-Control', 'no-cache');
+      }
+    }));
+    app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(distPath, 'index.html'));
     });
-    console.log('[Vite] Servindo arquivos estáticos de produção.');
+    safeLog('info', 'server.static_assets', 'success', {
+      operation: environment.appEnvironment
+    });
   }
 
   // Bind to port 3000 and host 0.0.0.0
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Backend Server] Servidor rodando com sucesso em http://localhost:${PORT}`);
+  const httpServer = app.listen(PORT, '0.0.0.0', () => {
+    safeLog('info', 'server.listen', 'success', { operation: `port_${PORT}` });
   });
 
+  // Prevent overlapping cycles when a provider or database operation takes
+  // longer than the worker interval.
+  let backgroundCycleRunning = false;
+
   // --- BACKGROUND Persist Job (runs every 60 seconds) ---
-  setInterval(async () => {
-    console.log('[Background Worker] Executando ciclo automático da fila...');
+  const backgroundCycle = setInterval(async () => {
+    if (backgroundCycleRunning) {
+      safeLog('warn', 'background_worker.cycle', 'ignored', {
+        reason: 'previous_cycle_still_running'
+      });
+      return;
+    }
+
+    backgroundCycleRunning = true;
     try {
       const result = await automationEngineInstance.runCycle();
       if (result.generated > 0 || result.processed > 0) {
-        console.log(`[Background Worker] Ciclo concluído. Gerados: ${result.generated} | Processados: ${result.processed}`);
+        safeLog('info', 'background_worker.cycle', 'success', {
+          count: result.processed,
+          attempt: result.generated
+        });
       }
     } catch (err: any) {
-      console.error('[Background Worker Error] Erro ao executar ciclo automático:', err.message || err);
+      safeLog('error', 'background_worker.cycle', 'error', { error: err });
+    } finally {
+      backgroundCycleRunning = false;
     }
   }, 60 * 1000);
+
+  let shutdownStarted = false;
+  const shutdown = (signal: 'SIGTERM' | 'SIGINT') => {
+    if (shutdownStarted) return;
+    shutdownStarted = true;
+    clearInterval(backgroundCycle);
+    safeLog('info', 'server.shutdown', 'started', { operation: signal });
+
+    const forcedShutdown = setTimeout(() => {
+      safeLog('error', 'server.shutdown', 'error', {
+        operation: signal,
+        reason: 'shutdown_timeout'
+      });
+      process.exit(1);
+    }, 20_000);
+    forcedShutdown.unref();
+
+    httpServer.close(error => {
+      clearTimeout(forcedShutdown);
+      safeLog(
+        error ? 'error' : 'info',
+        'server.shutdown',
+        error ? 'error' : 'success',
+        { operation: signal, error }
+      );
+      process.exit(error ? 1 : 0);
+    });
+  };
+
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 }
 
 function executionTimeFormatted(isoStr: string): string {
@@ -171,5 +377,5 @@ function executionTimeFormatted(isoStr: string): string {
 }
 
 startServer().catch(err => {
-  console.error('[Backend Crítico] Falha ao iniciar servidor:', err);
+  safeLog('error', 'server.start', 'error', { error: err });
 });

@@ -9,13 +9,13 @@ import {
   Search, 
   Plus, 
   Edit, 
-  Trash2, 
   X, 
   Clock, 
   DollarSign 
 } from 'lucide-react';
 import { Service } from '../types';
 import { hasModulePermission } from '../db/localDb';
+import { safeLog } from '../security/safeOutput';
 
 interface ServicosModuleProps {
   services: Service[];
@@ -63,6 +63,7 @@ export default function ServicosModule({
   );
 
   const handleOpenAdd = () => {
+    if (!canCreate) return;
     setErrorMessage(null);
     setFormData({
       name: '',
@@ -82,6 +83,7 @@ export default function ServicosModule({
   };
 
   const handleOpenEdit = (s: Service) => {
+    if (!canEdit) return;
     setErrorMessage(null);
     setEditId(s.id);
     setFormData({
@@ -103,6 +105,7 @@ export default function ServicosModule({
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreate) return;
     setErrorMessage(null);
     setIsSaving(true);
     try {
@@ -116,8 +119,8 @@ export default function ServicosModule({
       await onAddService(dataToSubmit);
       setIsOpenAdd(false);
     } catch (err: any) {
-      console.error('Erro ao adicionar serviço:', err);
-      setErrorMessage(err.message || 'Erro ao cadastrar serviço no Supabase.');
+      safeLog('error', 'services.service.create', 'error', { error: err });
+      setErrorMessage('Erro ao cadastrar serviço.');
     } finally {
       setIsSaving(false);
     }
@@ -125,6 +128,7 @@ export default function ServicosModule({
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit) return;
     setErrorMessage(null);
     setIsSaving(true);
     try {
@@ -137,10 +141,25 @@ export default function ServicosModule({
       await onUpdateService(editId, dataToSubmit);
       setIsOpenEdit(false);
     } catch (err: any) {
-      console.error('Erro ao editar serviço:', err);
-      setErrorMessage(err.message || 'Erro ao atualizar dados do serviço no Supabase.');
+      safeLog('error', 'services.service.update', 'error', { error: err });
+      setErrorMessage('Erro ao atualizar dados do serviço.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDeleteService = async (service: Service) => {
+    if (!canDelete) return;
+    if (!confirm(`Excluir o serviço "${service.name}"? Agendamentos que usam este serviço não serão apagados.`)) return;
+    setErrorMessage(null);
+    try {
+      await onDeleteService(service.id);
+    } catch (error) {
+      safeLog('error', 'services.service.delete', 'error', {
+        entityId: service.id,
+        error
+      });
+      setErrorMessage('Erro ao excluir serviço.');
     }
   };
 
@@ -261,23 +280,23 @@ export default function ServicosModule({
 
                 {/* Card action footer */}
                 <div className="mt-5 pt-3 border-t border-slate-800/60 flex justify-end gap-2 text-xs">
-                  <button 
-                    onClick={() => handleOpenEdit(s)}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg font-semibold transition-colors flex items-center gap-1"
-                  >
-                    <Edit size={12} className="text-amber-400" />
-                    <span>Editar</span>
-                  </button>
-                  <button 
-                    onClick={() => {
-                      if (confirm(`Excluir o serviço "${s.name}"? Agendamentos que usam este serviço não serão apagados.`)) {
-                        onDeleteService(s.id);
-                      }
-                    }}
-                    className="px-3 py-1.5 bg-slate-800/40 hover:bg-red-500/10 hover:text-red-400 border border-slate-850 hover:border-red-500/20 text-slate-400 rounded-lg transition-all"
-                  >
-                    Excluir
-                  </button>
+                  {canEdit && (
+                    <button 
+                      onClick={() => handleOpenEdit(s)}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg font-semibold transition-colors flex items-center gap-1"
+                    >
+                      <Edit size={12} className="text-amber-400" />
+                      <span>Editar</span>
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button 
+                      onClick={() => void handleDeleteService(s)}
+                      className="px-3 py-1.5 bg-slate-800/40 hover:bg-red-500/10 hover:text-red-400 border border-slate-850 hover:border-red-500/20 text-slate-400 rounded-lg transition-all"
+                    >
+                      Excluir
+                    </button>
+                  )}
                 </div>
               </div>
             );

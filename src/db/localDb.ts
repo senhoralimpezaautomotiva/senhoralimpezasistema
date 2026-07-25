@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createClient } from '@supabase/supabase-js';
 import { getSharedSupabaseClient } from './supabaseClient';
 import { 
   Customer, 
@@ -18,17 +17,20 @@ import {
   AutomationTrigger,
   VehicleModel,
   AutomationExecution,
-  AgendaConfig,
   User,
+  CreateUserInput,
   UserRole,
   SystemModuleId,
   ModulePermission,
   ServiceCommissionRule,
-  CommissionStatus,
   CommissionRecord
 } from '../types';
 import { PREFILLED_VEHICLE_MODELS } from '../data/prefilledModels';
 import { getCurrentDateStr } from '../utils/dateUtils';
+import { sanitizeLegacyConfigStorage, toPublicSystemConfig } from '../security/publicConfig';
+import { maskPhone, safeLog } from '../security/safeOutput';
+import { getPublicSupabaseEnvironment } from '../config/publicEnvironment';
+export { getServicePrice } from '../utils/servicePricing';
 
 // Constants for Local Storage Keys
 const KEYS = {
@@ -45,6 +47,18 @@ const KEYS = {
   USERS: 'sl_users',
   COMMISSIONS: 'sl_commissions'
 };
+
+const SENSITIVE_BROWSER_STORAGE_KEYS = new Set<string>([
+  KEYS.CUSTOMERS,
+  KEYS.VEHICLES,
+  KEYS.APPOINTMENTS,
+  KEYS.HISTORY,
+  KEYS.FINANCES,
+  KEYS.LOGS,
+  KEYS.USERS,
+  KEYS.COMMISSIONS,
+  'sl_executions'
+]);
 
 // Default Role Permissions Matrix
 export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Record<SystemModuleId, ModulePermission>> = {
@@ -127,7 +141,6 @@ export const DEFAULT_USERS: User[] = [
     name: 'Administrador Master',
     phone: '(11) 99999-8888',
     email: 'contato@senhoralimpeza.com.br',
-    password: 'admin123',
     photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     status: 'ativo',
     role: 'admin',
@@ -141,7 +154,6 @@ export const DEFAULT_USERS: User[] = [
     name: 'Gabriel Silva',
     phone: '(11) 98888-7777',
     email: 'gabriel@senhoralimpeza.com.br',
-    password: '123',
     photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
     status: 'ativo',
     role: 'tecnico',
@@ -158,7 +170,6 @@ export const DEFAULT_USERS: User[] = [
     name: 'Matheus Oliveira',
     phone: '(11) 97777-6666',
     email: 'matheus@senhoralimpeza.com.br',
-    password: '123',
     photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
     status: 'ativo',
     role: 'atendente',
@@ -170,7 +181,9 @@ export const DEFAULT_USERS: User[] = [
 ];
 
 
-// Initial Config Seed (Pre-configured with real Supabase credentials and active by default)
+const publicSupabaseEnvironment = getPublicSupabaseEnvironment();
+
+// Initial Config Seed. Environment-specific connection values are injected at build/runtime.
 const DEFAULT_CONFIG: SystemConfig = {
   companyName: 'Senhora Limpeza Estética Automotiva',
   phone: '(11) 99999-8888',
@@ -181,12 +194,9 @@ const DEFAULT_CONFIG: SystemConfig = {
   logoUrl: 'https://images.unsplash.com/photo-1607860108855-64acf2078ed9?w=150&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
   primaryColor: '#0F172A', // Slate 900
   accentColor: '#0EA5E9',  // Sky 500
-  supabaseUrl: 'https://ansrnnydksrjwefnntaw.supabase.co',
-  supabaseAnonKey: 'sb_publishable_vbMMkzHsGfSd5Gyg_7zogg_YUIBB7gg',
-  useRealSupabase: true,
-  zapiInstanceId: '',
-  zapiToken: '',
-  makeWebhookUrl: '',
+  supabaseUrl: publicSupabaseEnvironment.supabaseUrl,
+  supabaseAnonKey: publicSupabaseEnvironment.supabaseAnonKey,
+  useRealSupabase: publicSupabaseEnvironment.isConfigured,
   referralActive: true,
   referralDiscountPercent: 10,
   automationStartHour: '08:00',
@@ -348,10 +358,14 @@ const memStore: Record<string, string> = {};
 
 const getLocalData = <T>(key: string, defaultValue: T): T => {
   try {
+    if (!isServer && SENSITIVE_BROWSER_STORAGE_KEYS.has(key)) {
+      localStorage.removeItem(key);
+      return defaultValue;
+    }
     const data = isServer ? memStore[key] : localStorage.getItem(key);
     return data ? JSON.parse(data) : defaultValue;
   } catch (error) {
-    console.error(`Error reading ${key} from storage`, error);
+    safeLog('error', 'local_storage.read', 'error', { operation: key, error });
     return defaultValue;
   }
 };
@@ -359,6 +373,10 @@ const getLocalData = <T>(key: string, defaultValue: T): T => {
 // Helper to save to localStorage or memory store
 const setLocalData = <T>(key: string, data: T): void => {
   try {
+    if (!isServer && SENSITIVE_BROWSER_STORAGE_KEYS.has(key)) {
+      localStorage.removeItem(key);
+      return;
+    }
     const str = JSON.stringify(data);
     if (isServer) {
       memStore[key] = str;
@@ -366,7 +384,15 @@ const setLocalData = <T>(key: string, data: T): void => {
       localStorage.setItem(key, str);
     }
   } catch (error) {
-    console.error(`Error saving ${key} to storage`, error);
+    safeLog('error', 'local_storage.write', 'error', { operation: key, error });
+  }
+};
+
+const migrateLegacySensitiveBrowserStorage = (): void => {
+  if (isServer) return;
+  sanitizeLegacyConfigStorage(localStorage, true);
+  if (typeof sessionStorage !== 'undefined') {
+    sanitizeLegacyConfigStorage(sessionStorage, false);
   }
 };
 
@@ -397,17 +423,17 @@ export function generateReferralCode(existingCustomers: Customer[]): string {
     }
     const isDup = existingCustomers.some(c => c.referralCode === code);
     if (!isDup) {
-      console.log(`[Referral Audit] Stage 1 (Geração): Código de indicação único gerado com sucesso: ${code}`);
+      safeLog('info', 'referral.code.generate', 'success');
       return code;
     }
     attempts++;
   }
   const fallback = 'SL-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-  console.log(`[Referral Audit] Stage 1 (Geração): Código de indicação único gerado com sucesso (fallback): ${fallback}`);
+  safeLog('warn', 'referral.code.generate', 'success', { reason: 'fallback_used' });
   return fallback;
 }
 
-function mapDbCustomerToFrontend(row: any): Customer {
+export function mapDbCustomerToFrontend(row: any): Customer {
   let name = row.nome || 'Sem Nome';
   let email = '';
   let cpf = '';
@@ -452,15 +478,17 @@ function mapDbCustomerToFrontend(row: any): Customer {
       
       name = name.replace(metaRegex, '').trim();
     } catch (e) {
-      console.error('Erro ao fazer o parse do metadata do cliente:', e);
+      safeLog('error', 'customer.metadata.parse', 'error', {
+        entityId: String(row.id || 'unknown'),
+        error: e
+      });
     }
   }
 
-  if (referralCode) {
-    console.log(`[Referral Audit] Stage 3 (Leitura): Código ${referralCode} decodificado do banco para o cliente: ${name}`);
-  } else {
-    console.log(`[Referral Audit] Stage 3 (Leitura): Cliente ${name} carregado do banco, mas ainda não possui código de indicação no metadata.`);
-  }
+  safeLog('info', 'referral.code.load', 'success', {
+    entityId: String(row.id || 'unknown'),
+    reason: referralCode ? 'code_present' : 'code_absent'
+  });
 
   return {
     id: row.id,
@@ -489,7 +517,7 @@ function mapDbCustomerToFrontend(row: any): Customer {
   };
 }
 
-function mapFrontendCustomerToDb(c: Partial<Customer>): any {
+export function mapFrontendCustomerToDb(c: Partial<Customer>): any {
   const row: any = {};
   if (c.id) row.id = c.id;
   
@@ -536,12 +564,15 @@ export function mapDbUserToFrontend(row: any): User {
         permissions = parsed;
       }
     } catch (e) {
-      console.warn('Erro ao ler JSON de permissões:', e);
+      safeLog('warn', 'user.permissions.parse', 'error', {
+        entityId: String(row.id || 'unknown'),
+        error: e
+      });
     }
   }
 
   if (permissions === undefined) {
-    const roleKey = (row.role as UserRole) || 'tecnico';
+    const roleKey = (row.perfil as UserRole) || 'tecnico';
     permissions = DEFAULT_ROLE_PERMISSIONS[roleKey] || DEFAULT_ROLE_PERMISSIONS.tecnico;
   }
 
@@ -550,18 +581,21 @@ export function mapDbUserToFrontend(row: any): User {
     try {
       commissions = typeof row.commissions === 'string' ? JSON.parse(row.commissions) : row.commissions;
     } catch (e) {
-      console.warn('Erro ao ler JSON de comissões:', e);
+      safeLog('warn', 'user.commissions.parse', 'error', {
+        entityId: String(row.id || 'unknown'),
+        error: e
+      });
     }
   }
 
   return {
     id: row.id,
-    authUserId: row.auth_user_id || row.user_id,
+    authUserId: row.auth_user_id || undefined,
     name: row.nome || row.name || 'Usuário',
     phone: row.telefone || row.phone || '',
     email: row.email || '',
     status: row.status || 'ativo',
-    role: (row.role as UserRole) || 'tecnico',
+    role: (row.perfil as UserRole) || 'tecnico',
     photoUrl: row.foto_url || row.photo_url || '',
     permissions,
     commissions,
@@ -608,7 +642,7 @@ export function mapFrontendUserToDb(user: Partial<User> & { authUserId?: string 
     email: user.email,
     telefone: user.phone || '',
     status: user.status || 'ativo',
-    role: user.role || 'tecnico',
+    perfil: user.role || 'tecnico',
     foto_url: user.photoUrl || '',
     permissions: user.permissions || DEFAULT_ROLE_PERMISSIONS.tecnico,
     commissions: user.commissions || [],
@@ -649,7 +683,7 @@ function getVehiclePorte(brand: string, model: string): 'Pequeno' | 'Médio' | '
   return 'Médio';
 }
 
-function mapDbVehicleToFrontend(row: any): Vehicle {
+export function mapDbVehicleToFrontend(row: any): Vehicle {
   let model = row.modelo || 'Sem Modelo';
   let version = '';
   let year = '';
@@ -667,7 +701,10 @@ function mapDbVehicleToFrontend(row: any): Vehicle {
       if (meta.isPrincipal !== undefined) isPrincipal = !!meta.isPrincipal;
       model = model.replace(metaRegex, '').trim();
     } catch (e) {
-      console.error('Erro ao fazer o parse do metadata do veículo:', e);
+      safeLog('error', 'vehicle.metadata.parse', 'error', {
+        entityId: String(row.id || 'unknown'),
+        error: e
+      });
     }
   }
 
@@ -694,7 +731,7 @@ function mapDbVehicleToFrontend(row: any): Vehicle {
   };
 }
 
-function mapFrontendVehicleToDb(v: Partial<Vehicle>): any {
+export function mapFrontendVehicleToDb(v: Partial<Vehicle>): any {
   const row: any = {};
   if (v.id) row.id = v.id;
   if (v.customerId) row.cliente_id = v.customerId;
@@ -720,25 +757,7 @@ function mapFrontendVehicleToDb(v: Partial<Vehicle>): any {
   return row;
 }
 
-export function getServicePrice(service: Service, vehicleOrPorte?: Vehicle | string | null): number {
-  if (!service) return 0;
-  const porteStr = typeof vehicleOrPorte === 'string' 
-    ? vehicleOrPorte.toLowerCase() 
-    : vehicleOrPorte?.porte?.toLowerCase();
-
-  if (service.pricingType === 'porte' && porteStr) {
-    if (porteStr.includes('pequeno') || porteStr === 'p') {
-      return service.priceP ?? service.basePrice;
-    } else if (porteStr.includes('médio') || porteStr.includes('medio') || porteStr === 'm') {
-      return service.priceM ?? service.basePrice;
-    } else if (porteStr.includes('grande') || porteStr === 'g') {
-      return service.priceG ?? service.basePrice;
-    }
-  }
-  return service.basePrice;
-}
-
-function mapDbServiceToFrontend(row: any): Service {
+export function mapDbServiceToFrontend(row: any): Service {
   let basePrice = 150.00;
   let estimatedTime = 120;
   let description = row.observacao || '';
@@ -772,7 +791,10 @@ function mapDbServiceToFrontend(row: any): Service {
       }
       description = description.replace(metaRegex, '').trim();
     } catch (e) {
-      console.error('Erro ao fazer o parse do metadata do serviço:', e);
+      safeLog('error', 'service.metadata.parse', 'error', {
+        entityId: String(row.id || 'unknown'),
+        error: e
+      });
     }
   }
 
@@ -819,7 +841,7 @@ function mapFrontendServiceToDb(s: Partial<Service>): any {
   return row;
 }
 
-function mapDbAppointmentToFrontend(row: any): Appointment {
+export function mapDbAppointmentToFrontend(row: any): Appointment {
   let status: AppointmentStatus = 'agendado';
   const dbStatus = (row.status || '').toLowerCase();
   
@@ -866,7 +888,10 @@ function mapDbAppointmentToFrontend(row: any): Appointment {
       if (meta.reminderSent !== undefined) reminderSent = !!meta.reminderSent;
       notes = notes.replace(metaRegex, '').trim();
     } catch (e) {
-      console.error('Erro ao fazer o parse do metadata do agendamento:', e);
+      safeLog('error', 'appointment.metadata.parse', 'error', {
+        entityId: String(row.id || 'unknown'),
+        error: e
+      });
     }
   }
 
@@ -962,30 +987,30 @@ class LocalDatabase {
   }
 
   init() {
-    this.customers = getLocalData<Customer[]>(KEYS.CUSTOMERS, DEFAULT_CUSTOMERS);
-    this.vehicles = getLocalData<Vehicle[]>(KEYS.VEHICLES, DEFAULT_VEHICLES);
+    migrateLegacySensitiveBrowserStorage();
+
+    this.customers = getLocalData<Customer[]>(KEYS.CUSTOMERS, isServer ? DEFAULT_CUSTOMERS : []);
+    this.vehicles = getLocalData<Vehicle[]>(KEYS.VEHICLES, isServer ? DEFAULT_VEHICLES : []);
     this.services = getLocalData<Service[]>(KEYS.SERVICES, DEFAULT_SERVICES);
-    this.appointments = getLocalData<Appointment[]>(KEYS.APPOINTMENTS, DEFAULT_APPOINTMENTS);
+    this.appointments = getLocalData<Appointment[]>(KEYS.APPOINTMENTS, isServer ? DEFAULT_APPOINTMENTS : []);
     this.history = getLocalData<HistoryRecord[]>(KEYS.HISTORY, []);
     this.finances = getLocalData<CashTransaction[]>(KEYS.FINANCES, []);
-    this.executions = getLocalData<AutomationExecution[]>('sl_executions', []);
-    this.users = getLocalData<User[]>(KEYS.USERS, DEFAULT_USERS);
+    this.executions = isServer ? getLocalData<AutomationExecution[]>('sl_executions', []) : [];
+    this.users = getLocalData<Array<User & { password?: string }>>(
+      KEYS.USERS,
+      isServer ? DEFAULT_USERS : []
+    )
+      .map(({ password: _legacyPassword, ...user }) => user);
+    // Remove imediatamente qualquer senha deixada por versões antigas do cache.
+    setLocalData(KEYS.USERS, this.users);
     this.commissions = getLocalData<CommissionRecord[]>(KEYS.COMMISSIONS, []);
     
-    // Check old keys first for migration, but prioritize the non-critical cache/offline backup
-    const legacyConfig = typeof localStorage !== 'undefined' ? localStorage.getItem(KEYS.CONFIG) : null;
+    // Only public interface configuration may be cached in the browser.
     const legacyAutomations = typeof localStorage !== 'undefined' ? localStorage.getItem(KEYS.AUTOMATIONS) : null;
     
-    let savedConfig: Partial<SystemConfig> = DEFAULT_CONFIG;
-    if (legacyConfig) {
-      try {
-        savedConfig = JSON.parse(legacyConfig);
-      } catch (e) {
-        // ignore
-      }
-    } else {
-      savedConfig = getLocalData<Partial<SystemConfig>>('sl_config_cache', DEFAULT_CONFIG);
-    }
+    const savedConfig = toPublicSystemConfig(
+      getLocalData<Partial<SystemConfig>>('sl_config_cache', DEFAULT_CONFIG)
+    );
     this.config = { ...DEFAULT_CONFIG, ...savedConfig };
     
     let savedAutomations = DEFAULT_AUTOMATIONS;
@@ -1001,13 +1026,13 @@ class LocalDatabase {
     
     this.automations = savedAutomations;
     this.ensureAllDefaultAutomationsExist();
-    this.logs = getLocalData<AutomationLog[]>(KEYS.LOGS, []);
+    this.logs = isServer ? getLocalData<AutomationLog[]>(KEYS.LOGS, []) : [];
     this.vehicleModels = getLocalData<VehicleModel[]>(KEYS.VEHICLE_MODELS, PREFILLED_VEHICLE_MODELS);
     
     this.recalculateCommissions();
 
     // Automatically trigger initial fetch on load if Supabase is active
-    if (this.config.useRealSupabase) {
+    if (isServer && this.config.useRealSupabase) {
       this.syncWithSupabase();
     }
   }
@@ -1020,12 +1045,18 @@ class LocalDatabase {
     setLocalData(KEYS.HISTORY, this.history);
     setLocalData(KEYS.FINANCES, this.finances);
     // Store only non-critical interface cache, removing legacy configuration keys to meet requirement
-    setLocalData('sl_config_cache', this.config);
+    setLocalData('sl_config_cache', toPublicSystemConfig(this.config));
     setLocalData('sl_automations_cache', this.automations);
-    setLocalData(KEYS.LOGS, this.logs);
     setLocalData(KEYS.VEHICLE_MODELS, this.vehicleModels);
-    setLocalData('sl_executions', this.executions);
-    setLocalData(KEYS.USERS, this.users);
+    if (isServer) {
+      setLocalData(KEYS.LOGS, this.logs);
+      setLocalData('sl_executions', this.executions);
+    }
+    const usersWithoutPasswords = this.users.map(user => {
+      const { password: _legacyPassword, ...safeUser } = user as User & { password?: string };
+      return safeUser;
+    });
+    setLocalData(KEYS.USERS, usersWithoutPasswords);
     setLocalData(KEYS.COMMISSIONS, this.commissions);
   }
 
@@ -1037,7 +1068,9 @@ class LocalDatabase {
     for (const defaultAuto of DEFAULT_AUTOMATIONS) {
       const exists = this.automations.some(a => a && a.event === defaultAuto.event);
       if (!exists) {
-        console.log(`[Automation Restore] Restoring missing automation for event: ${defaultAuto.event}`);
+        safeLog('info', 'automation.restore_default', 'started', {
+          eventType: defaultAuto.event
+        });
         this.automations.push({ ...defaultAuto });
         updated = true;
       }
@@ -1046,7 +1079,7 @@ class LocalDatabase {
       this.save();
       if (this.config.useRealSupabase) {
         this.saveConfigToSupabase().catch(e => {
-          console.error('[Automation Restore] Error syncing restored automations to Supabase:', e);
+          safeLog('error', 'automation.restore_default', 'error', { error: e });
         });
       }
     }
@@ -1058,11 +1091,32 @@ class LocalDatabase {
 
   async loadConfigFromSupabase(supabase: any) {
     try {
-      console.log('[Supabase Config] Tentando carregar configurações da tabela central "configuracoes_empresa"...');
-      const { data, error } = await supabase.from('configuracoes_empresa').select('*').eq('id', 'c0000000-0000-0000-0000-000000000000').single();
+      safeLog('info', 'supabase.config.load', 'started');
+      const publicColumns = [
+        'id',
+        'company_name',
+        'phone',
+        'email',
+        'cnpj',
+        'address',
+        'hours_of_operation',
+        'logo_url',
+        'primary_color',
+        'accent_color',
+        'referral_active',
+        'referral_discount_percent',
+        'agenda',
+        'automations',
+        'updated_at'
+      ].join(',');
+      const { data, error } = await supabase
+        .from('configuracoes_empresa')
+        .select(publicColumns)
+        .eq('id', 'c0000000-0000-0000-0000-000000000000')
+        .single();
       
       if (!error && data) {
-        console.log('[Supabase Config] Configurações administrativas carregadas com sucesso da tabela central.');
+        safeLog('info', 'supabase.config.load', 'success');
         this.config = {
           ...this.config,
           companyName: data.company_name || this.config.companyName,
@@ -1074,9 +1128,6 @@ class LocalDatabase {
           logoUrl: data.logo_url || this.config.logoUrl,
           primaryColor: data.primary_color || this.config.primaryColor,
           accentColor: data.accent_color || this.config.accentColor,
-          zapiInstanceId: data.zapi_instance_id || this.config.zapiInstanceId,
-          zapiToken: data.zapi_token || this.config.zapiToken,
-          makeWebhookUrl: data.make_webhook_url || this.config.makeWebhookUrl,
           referralActive: data.referral_active !== undefined ? data.referral_active : this.config.referralActive,
           referralDiscountPercent: data.referral_discount_percent !== undefined ? data.referral_discount_percent : this.config.referralDiscountPercent,
           agenda: data.agenda ? (typeof data.agenda === 'string' ? JSON.parse(data.agenda) : data.agenda) : this.config.agenda
@@ -1097,66 +1148,18 @@ class LocalDatabase {
         }
         return true;
       } else {
-        // If the table doesn't exist, we fall back to the "clientes" table
         if (error && (error.code === 'PGRST205' || error.message?.includes('does not exist') || error.code === '42P01')) {
-          console.log('[Supabase Config] Tabela "configuracoes_empresa" não encontrada. Utilizando fallback seguro na tabela "clientes"...');
-          const { data: fallbackData, error: fallbackError } = await supabase.from('clientes').select('nome').eq('id', 'c0000000-0000-0000-0000-000000000000').maybeSingle();
-          
-          if (!fallbackError && fallbackData && fallbackData.nome) {
-            const metaRegex = /\[meta:([\s\S]*?)\]\s*$/;
-            const match = fallbackData.nome.match(metaRegex);
-            if (match) {
-              try {
-                const parsed = JSON.parse(match[1]);
-                if (parsed.config) {
-                  this.config = { ...this.config, ...parsed.config };
-                }
-                if (parsed.automations && Array.isArray(parsed.automations)) {
-                  this.automations = parsed.automations;
-                }
-                this.ensureAllDefaultAutomationsExist();
-                console.log('[Supabase Config] Configurações administrativas carregadas do fallback da tabela "clientes" com sucesso.');
-                
-                // Cleanup local storage
-                if (!isServer) {
-                  localStorage.removeItem(KEYS.CONFIG);
-                  localStorage.removeItem(KEYS.AUTOMATIONS);
-                }
-                return true;
-              } catch (parseErr: any) {
-                console.error('[Supabase Config Error] Falha ao fazer parse do fallback no campo nome:', parseErr);
-              }
-            }
-          }
+          safeLog('warn', 'supabase.config.load', 'error', {
+            reason: 'table_not_found'
+          });
         } else {
-          console.warn('[Supabase Config] Erro ao carregar configurações administrativas do Supabase:', error);
+          safeLog('warn', 'supabase.config.load', 'error', { error });
         }
       }
     } catch (err: any) {
-      console.error('[Supabase Config Error] Erro inesperado ao carregar configurações administrativas:', err);
+      safeLog('error', 'supabase.config.load', 'error', { error: err });
     }
-    
-    // If no config was loaded from Supabase (e.g. first run), we perform migration from LocalStorage to Supabase
-    await this.migrateLocalConfigToSupabase(supabase);
     return false;
-  }
-
-  async migrateLocalConfigToSupabase(supabase: any) {
-    const legacyConfig = !isServer ? localStorage.getItem(KEYS.CONFIG) : null;
-    const legacyAutomations = !isServer ? localStorage.getItem(KEYS.AUTOMATIONS) : null;
-    
-    if (legacyConfig || legacyAutomations) {
-      console.log('[Supabase Config Migration] Configurações antigas encontradas no LocalStorage. Iniciando migração automática para o Supabase...');
-      const success = await this.saveConfigToSupabase(supabase);
-      if (success && !isServer) {
-        console.log('[Supabase Config Migration] Migração concluída com sucesso! Removendo dados legados do LocalStorage...');
-        localStorage.removeItem(KEYS.CONFIG);
-        localStorage.removeItem(KEYS.AUTOMATIONS);
-      }
-    } else {
-      console.log('[Supabase Config] Nenhuma configuração local encontrada. Gravando configurações padrão no Supabase...');
-      await this.saveConfigToSupabase(supabase);
-    }
   }
 
   async saveConfigToSupabase(supabaseClient?: any): Promise<boolean> {
@@ -1164,7 +1167,7 @@ class LocalDatabase {
     
     try {
       const supabase = supabaseClient || this.getSupabaseClient();
-      console.log('[Supabase Config] Salvando configurações centralizadas no Supabase...');
+      safeLog('info', 'supabase.config.save', 'started');
       
       const { error } = await supabase.from('configuracoes_empresa').upsert({
         id: 'c0000000-0000-0000-0000-000000000000',
@@ -1177,9 +1180,6 @@ class LocalDatabase {
         logo_url: this.config.logoUrl,
         primary_color: this.config.primaryColor,
         accent_color: this.config.accentColor,
-        zapi_instance_id: this.config.zapiInstanceId,
-        zapi_token: this.config.zapiToken,
-        make_webhook_url: this.config.makeWebhookUrl,
         referral_active: this.config.referralActive ?? true,
         referral_discount_percent: this.config.referralDiscountPercent ?? 10,
         agenda: this.config.agenda ? JSON.stringify(this.config.agenda) : undefined,
@@ -1188,50 +1188,12 @@ class LocalDatabase {
       });
       
       if (!error) {
-        console.log('[Supabase Config] Configurações centralizadas salvas com sucesso em "configuracoes_empresa".');
+        safeLog('info', 'supabase.config.save', 'success');
         return true;
       }
-      
-      if (error && (error.code === 'PGRST205' || error.message?.includes('does not exist') || error.code === '42P01')) {
-        console.log('[Supabase Config] Tabela "configuracoes_empresa" não existe. Salvando fallback na tabela "clientes"...');
-        const payload = {
-          config: {
-            companyName: this.config.companyName,
-            phone: this.config.phone,
-            email: this.config.email,
-            cnpj: this.config.cnpj,
-            address: this.config.address,
-            hoursOfOperation: this.config.hoursOfOperation,
-            logoUrl: this.config.logoUrl,
-            primaryColor: this.config.primaryColor,
-            accentColor: this.config.accentColor,
-            zapiInstanceId: this.config.zapiInstanceId,
-            zapiToken: this.config.zapiToken,
-            makeWebhookUrl: this.config.makeWebhookUrl,
-            referralActive: this.config.referralActive,
-            referralDiscountPercent: this.config.referralDiscountPercent,
-            agenda: this.config.agenda
-          },
-          automations: this.automations
-        };
-        
-        const { error: fallbackError } = await supabase.from('clientes').upsert({
-          id: 'c0000000-0000-0000-0000-000000000000',
-          nome: `Configurações Gerais do Sistema [meta:${JSON.stringify(payload)}]`,
-          telefone: '00000000000'
-        });
-        
-        if (!fallbackError) {
-          console.log('[Supabase Config] Configurações salvas no fallback da tabela "clientes" com sucesso.');
-          return true;
-        } else {
-          console.error('[Supabase Config Error] Falha ao salvar no fallback de "clientes":', fallbackError);
-        }
-      } else {
-        console.error('[Supabase Config Error] Falha ao salvar em "configuracoes_empresa":', error);
-      }
+      safeLog('error', 'supabase.config.save', 'error', { error });
     } catch (err: any) {
-      console.error('[Supabase Config Error] Erro inesperado ao salvar configurações centralizadas:', err);
+      safeLog('error', 'supabase.config.save', 'error', { error: err });
     }
     return false;
   }
@@ -1239,15 +1201,15 @@ class LocalDatabase {
   // --- SUPABASE LIVE SYNC ENGINE ---
   async syncWithSupabase() {
     if (!this.config.useRealSupabase) {
-      console.log('[Supabase Sync] Sincronização desativada (useRealSupabase: false)');
+      safeLog('info', 'supabase.sync', 'ignored', { reason: 'disabled' });
       return;
     }
     if (!this.config.supabaseUrl || !this.config.supabaseAnonKey) {
-      console.warn('[Supabase Sync] Sincronização ignorada: URL ou Chave Anon do Supabase faltando.');
+      safeLog('warn', 'supabase.sync', 'ignored', { reason: 'public_config_missing' });
       return;
     }
     
-    console.log(`[Supabase Sync] Iniciando sincronização. URL: ${this.config.supabaseUrl} | Key: ${this.config.supabaseAnonKey.slice(0, 10)}...`);
+    safeLog('info', 'supabase.sync', 'started');
     
     try {
       const supabase = this.getSupabaseClient();
@@ -1256,46 +1218,58 @@ class LocalDatabase {
       await this.loadConfigFromSupabase(supabase);
 
       // 1. Fetch Clientes
-      console.log('[Supabase Sync] Buscando clientes da tabela "clientes"...');
+      safeLog('info', 'supabase.sync.customers', 'started');
       const { data: dbClientes, error: errClientes } = await supabase.from('clientes').select('*');
       if (errClientes) {
-        console.error('[Supabase Sync Error] Erro ao buscar clientes do Supabase:', errClientes);
+        safeLog('error', 'supabase.sync.customers', 'error', { error: errClientes });
       } else if (dbClientes) {
-        console.log(`[Supabase Sync] Sucesso: ${dbClientes.length} registros brutos de clientes retornados do Supabase.`);
+        safeLog('info', 'supabase.sync.customers', 'success', { count: dbClientes.length });
         // Filter out system configurations record
         this.customers = dbClientes.filter(row => row.id !== 'c0000000-0000-0000-0000-000000000000').map(mapDbCustomerToFrontend);
         
         // Log existing referral codes loaded from database
         this.customers.forEach(customer => {
-          if (customer.referralCode) {
-            console.log(`[Referral Audit] Stage 3 (Leitura): Código "${customer.referralCode}" decodificado para o cliente "${customer.name}".`);
-          } else {
-            console.log(`[Referral Audit] Stage 3 (Leitura): Cliente "${customer.name}" carregado, mas sem código de indicação.`);
-          }
+          safeLog('info', 'referral.code.sync_load', 'success', {
+            entityId: customer.id,
+            reason: customer.referralCode ? 'code_present' : 'code_absent'
+          });
         });
         
         // Auto-generate referral codes for legacy/existing customers who don't have one
         let updatedAny = false;
         for (const customer of this.customers) {
           if (!customer.referralCode) {
-            console.log(`[Referral Audit] Stage 1 (Geração) - Sincronização: Cliente antigo/existente "${customer.name}" não possui código de indicação no metadata. Gerando novo código...`);
+            safeLog('info', 'referral.code.backfill', 'started', {
+              entityId: customer.id
+            });
             const generatedCode = generateReferralCode(this.customers);
             customer.referralCode = generatedCode;
             customer.referralDiscountAvailable = customer.referralDiscountAvailable ?? false;
             customer.referralDiscountUsed = customer.referralDiscountUsed ?? false;
             customer.referralCreatedAt = customer.referralCreatedAt || new Date().toISOString().split('T')[0];
             
-            console.log(`[Referral Audit] Stage 2 (Gravação) - Sincronização: Gravando código gerado "${customer.referralCode}" para o cliente "${customer.name}" no Supabase...`);
+            safeLog('info', 'referral.code.backfill', 'started', {
+              entityId: customer.id,
+              operation: 'persist'
+            });
             try {
               const mapped = mapFrontendCustomerToDb(customer);
               const { error: errUpdate } = await supabase.from('clientes').update(mapped).eq('id', customer.id);
               if (errUpdate) {
-                console.error(`[Referral Audit] Erro ao atualizar código no Supabase para "${customer.name}":`, errUpdate);
+                safeLog('error', 'referral.code.backfill', 'error', {
+                  entityId: customer.id,
+                  error: errUpdate
+                });
               } else {
-                console.log(`[Referral Audit] Stage 2 (Gravação) - Sincronização: Gravado com sucesso no Supabase para "${customer.name}"`);
+                safeLog('info', 'referral.code.backfill', 'success', {
+                  entityId: customer.id
+                });
               }
             } catch (err) {
-              console.error('[Referral Audit] Erro inesperado ao salvar código gerado para cliente antigo no Supabase:', err);
+              safeLog('error', 'referral.code.backfill', 'error', {
+                entityId: customer.id,
+                error: err
+              });
             }
             updatedAny = true;
           }
@@ -1306,41 +1280,43 @@ class LocalDatabase {
       }
 
       // 2. Fetch Veículos
-      console.log('[Supabase Sync] Buscando veículos da tabela "veiculos"...');
+      safeLog('info', 'supabase.sync.vehicles', 'started');
       const { data: dbVeiculos, error: errVeiculos } = await supabase.from('veiculos').select('*');
       if (errVeiculos) {
-        console.error('[Supabase Sync Error] Erro ao buscar veículos do Supabase:', errVeiculos);
+        safeLog('error', 'supabase.sync.vehicles', 'error', { error: errVeiculos });
       } else if (dbVeiculos) {
-        console.log(`[Supabase Sync] Sucesso: ${dbVeiculos.length} registros de veículos retornados.`);
+        safeLog('info', 'supabase.sync.vehicles', 'success', { count: dbVeiculos.length });
         this.vehicles = dbVeiculos.map(mapDbVehicleToFrontend);
       }
 
       // 3. Fetch Serviços
-      console.log('[Supabase Sync] Buscando serviços da tabela "servicos_disponiveis"...');
+      safeLog('info', 'supabase.sync.services', 'started');
       const { data: dbServicos, error: errServicos } = await supabase.from('servicos_disponiveis').select('*');
       if (errServicos) {
-        console.error('[Supabase Sync Error] Erro ao buscar serviços do Supabase:', errServicos);
+        safeLog('error', 'supabase.sync.services', 'error', { error: errServicos });
       } else if (dbServicos) {
-        console.log(`[Supabase Sync] Sucesso: ${dbServicos.length} registros de serviços retornados.`);
+        safeLog('info', 'supabase.sync.services', 'success', { count: dbServicos.length });
         this.services = dbServicos.map(mapDbServiceToFrontend);
       }
 
       // 4. Fetch Agendamentos
-      console.log('[Supabase Sync] Buscando agendamentos da tabela "agendamentos"...');
+      safeLog('info', 'supabase.sync.appointments', 'started');
       const { data: dbAgendamentos, error: errAgendamentos } = await supabase.from('agendamentos').select('*');
       if (errAgendamentos) {
-        console.error('[Supabase Sync Error] Erro ao buscar agendamentos do Supabase:', errAgendamentos);
+        safeLog('error', 'supabase.sync.appointments', 'error', { error: errAgendamentos });
       } else if (dbAgendamentos) {
-        console.log(`[Supabase Sync] Sucesso: ${dbAgendamentos.length} registros de agendamentos retornados.`);
+        safeLog('info', 'supabase.sync.appointments', 'success', { count: dbAgendamentos.length });
         this.appointments = dbAgendamentos.map(mapDbAppointmentToFrontend);
       }
 
       // 4.6 Fetch Automation Executions
       try {
-        console.log('[Supabase Sync] Buscando execuções de automações da tabela "automacoes_execucoes"...');
+        safeLog('info', 'supabase.sync.automation_executions', 'started');
         const { data: dbExecucoes, error: errExecucoes } = await supabase.from('automacoes_execucoes').select('*');
         if (dbExecucoes && !errExecucoes) {
-          console.log(`[Supabase Sync] Sucesso: ${dbExecucoes.length} registros de execuções de automações retornados.`);
+          safeLog('info', 'supabase.sync.automation_executions', 'success', {
+            count: dbExecucoes.length
+          });
           this.executions = dbExecucoes.map((row: any) => ({
             id: row.id,
             empresa_id: row.empresa_id || 'c0000000-0000-0000-0000-000000000000',
@@ -1358,10 +1334,16 @@ class LocalDatabase {
             updated_at: row.updated_at || new Date().toISOString()
           }));
         } else if (errExecucoes) {
-          console.log('[Supabase Sync Cache] Tabela "automacoes_execucoes" não encontrada ou falhou ao ler do Supabase. Usando cache local.', errExecucoes.message);
+          safeLog('warn', 'supabase.sync.automation_executions', 'error', {
+            reason: 'using_local_cache',
+            error: errExecucoes
+          });
         }
       } catch (e: any) {
-        console.warn('Erro ao ler tabela "automacoes_execucoes" do Supabase. Usando cache local.', e.message);
+        safeLog('warn', 'supabase.sync.automation_executions', 'error', {
+          reason: 'using_local_cache',
+          error: e
+        });
       }
 
       // 4.5 Fetch Modelos de Veículos (Reference Table)
@@ -1378,24 +1360,30 @@ class LocalDatabase {
             updated_at: row.updated_at
           }));
         } else if (errModelos) {
-          console.warn('Tabela vehicle_models não encontrada no Supabase. Utilizando modelos em cache local.', errModelos.message);
+          safeLog('warn', 'supabase.sync.vehicle_models', 'error', {
+            reason: 'using_local_cache',
+            error: errModelos
+          });
         }
       } catch (e: any) {
-        console.warn('Erro ao ler tabela vehicle_models do Supabase. Utilizando modelos em cache local.', e.message);
+        safeLog('warn', 'supabase.sync.vehicle_models', 'error', {
+          reason: 'using_local_cache',
+          error: e
+        });
       }
 
       // 4.7 Fetch Usuários
       try {
-        console.log('[Supabase Sync] Buscando usuários da tabela "usuarios"...');
+        safeLog('info', 'supabase.sync.users', 'started');
         const { data: dbUsuarios, error: errUsuarios } = await supabase.from('usuarios').select('*');
         if (dbUsuarios && !errUsuarios) {
-          console.log(`[Supabase Sync] Sucesso: ${dbUsuarios.length} registros de usuários retornados do Supabase.`);
+          safeLog('info', 'supabase.sync.users', 'success', { count: dbUsuarios.length });
           this.users = dbUsuarios.map(mapDbUserToFrontend);
         } else if (errUsuarios) {
-          console.warn('[Supabase Sync] Tabela "usuarios" não encontrada ou erro ao ler do Supabase:', errUsuarios.message);
+          safeLog('warn', 'supabase.sync.users', 'error', { error: errUsuarios });
         }
       } catch (e: any) {
-        console.warn('Erro ao ler tabela "usuarios" do Supabase:', e.message);
+        safeLog('warn', 'supabase.sync.users', 'error', { error: e });
       }
 
       // 5. Derive History dynamically from Completed/Delivered appointments
@@ -1450,7 +1438,7 @@ class LocalDatabase {
         this.onSyncCallback();
       }
     } catch (e) {
-      console.error('Falha ao sincronizar com Supabase:', e);
+      safeLog('error', 'supabase.sync', 'error', { error: e });
     }
   }
 
@@ -1461,100 +1449,39 @@ class LocalDatabase {
   ) {
     const automation = this.automations.find(a => a.event === event);
     if (!automation || !automation.isActive) {
-      console.log(`[Automation Trigger] Evento "${event}" ignorado. Automação não encontrada ou inativa.`);
+      safeLog('info', 'automation.trigger', 'ignored', {
+        eventType: event,
+        reason: 'missing_or_inactive'
+      });
       return;
     }
 
-    // Call the single, unified rendering and normalization function
-    const normalizedText = renderAndNormalizeMessage(automation.template, context);
-
-    const payloadBody = {
-      event,
-      customer: context.customer,
-      vehicle: context.vehicle,
-      service: context.service,
-      appointment: context.appointment,
-      formattedMessage: normalizedText
-    };
-
-    console.log(`[Automation Trigger] Evento: ${event} | Alvo: ${context.customer.name}`);
-    console.log(`[Automation Trigger] Webhook URL Configurada: ${this.config.makeWebhookUrl || 'Nenhuma'}`);
-
-    // 2. Validação programática do payload antes do envio
-    const validation = validatePayload(payloadBody);
-    if (!validation.valid) {
-      console.error(`[Automation Validation Failure] Falha de validação de payload JSON: ${validation.error}`);
-    } else {
-      console.log(`[Automation Validation Success] Payload JSON validado com sucesso! Sem caracteres de controle que invalidariam a string.`);
-    }
-
-    const newLog: AutomationLog = {
-      id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-      triggerEvent: automation.name,
-      targetName: context.customer.name,
-      targetContact: context.customer.phone || context.customer.whatsapp,
-      payload: `Mensagem Original:\n${automation.template}\n\nMensagem Normalizada:\n${normalizedText}\n\nStatus de Validação: ${validation.valid ? 'Sucesso' : 'Erro (' + validation.error + ')'}`,
-      status: 'simulado',
-      timestamp: new Date().toISOString()
-    };
-
-    if (this.config.makeWebhookUrl) {
-      const webhookUrl = this.config.makeWebhookUrl;
-      console.log(`[Webhook Make] Payload enviado ao Make (URL: ${webhookUrl}):`, JSON.stringify(payloadBody, null, 2));
-      
-      fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payloadBody)
-      }).then(async (response) => {
-        const responseText = await response.text();
-        console.log(`[Webhook Make] Payload recebido pelo Make (Resposta). Status: ${response.status} | Body: ${responseText}`);
-        
-        if (response.ok) {
-          newLog.status = 'sucesso';
-          newLog.payload += `\n\n[Webhook Enviado com Sucesso!]\nURL: ${webhookUrl}\nPayload: ${JSON.stringify(payloadBody, null, 2)}\nResposta: ${response.status} - ${responseText}`;
-        } else {
-          newLog.status = 'erro';
-          newLog.payload += `\n\n[Erro Webhook Make: Código de status ${response.status}]\nURL: ${webhookUrl}\nPayload: ${JSON.stringify(payloadBody, null, 2)}\nResposta: ${responseText}`;
-        }
-        this.addLog(newLog);
-      }).catch((e) => {
-        console.error(`[Webhook Make Error] Falha ao disparar fetch para ${webhookUrl}:`, e);
-        newLog.status = 'erro';
-        newLog.payload += `\n\n[Erro de Rede Webhook Make: ${e.message}]\nURL: ${webhookUrl}\nPayload: ${JSON.stringify(payloadBody, null, 2)}`;
-        this.addLog(newLog);
+    // The browser only queues the event. Provider credentials and outbound
+    // requests are handled by the server-side automation processor.
+    void this.queueAutomation(event, context)
+      .then((execution) => {
+        if (!execution) return;
+        this.addLog({
+          id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+          triggerEvent: automation.name,
+          targetName: 'Cliente protegido',
+          targetContact: maskPhone(context.customer.phone || context.customer.whatsapp),
+          payload: `Evento enfileirado com segurança. ID: ${execution.id}`,
+          status: 'sucesso',
+          timestamp: new Date().toISOString()
+        });
+      })
+      .catch(() => {
+        this.addLog({
+          id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+          triggerEvent: automation.name,
+          targetName: 'Cliente protegido',
+          targetContact: 'Contato protegido',
+          payload: 'Falha ao enfileirar o evento para processamento seguro.',
+          status: 'erro',
+          timestamp: new Date().toISOString()
+        });
       });
-    } else {
-      console.log(`[Webhook Make] Nenhum webhook configurado. Log registrado como simulado.`);
-      this.addLog(newLog);
-    }
-
-    if (this.config.zapiInstanceId && this.config.zapiToken) {
-      const zapiUrl = `https://api.z-api.io/instances/${this.config.zapiInstanceId}/token/${this.config.zapiToken}/send-text`;
-      
-      const zapiPayload = {
-        phone: context.customer.whatsapp || context.customer.phone,
-        message: normalizedText
-      };
-      
-      console.log(`[Z-API] Payload enviado para a Z-API (URL: ${zapiUrl}):`, JSON.stringify(zapiPayload, null, 2));
-      
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (this.config.zapiClientToken) {
-        headers['Client-Token'] = this.config.zapiClientToken;
-      }
-      
-      fetch(zapiUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(zapiPayload)
-      }).then(async (res) => {
-        const resText = await res.text();
-        console.log(`[Z-API] Payload recebido da Z-API (Resposta). Status: ${res.status} | Body: ${resText}`);
-      }).catch((e) => {
-        console.error('Error sending Z-API WhatsApp', e);
-      });
-    }
   }
 
   addLog(log: AutomationLog) {
@@ -1573,8 +1500,12 @@ class LocalDatabase {
     // Find the customer who owns this code
     const referrer = this.customers.find(c => c.referralCode?.toUpperCase() === cleanCode);
     
-    // Debug logs for ID do cliente atual, telefone, código informado e ID do proprietário do código
-    console.log(`[Referral Debug] ID do cliente atual: ${currentCustomerId || 'Não definido (primeiro cadastro)'}, Telefone: ${currentCustomerPhone || 'Não definido'}, Código informado: ${code}, ID do proprietário do código: ${referrer ? referrer.id : 'Nenhum proprietário encontrado'}`);
+    safeLog('info', 'referral.code.validate', referrer ? 'success' : 'denied', {
+      entityId: currentCustomerId,
+      relatedEntityId: referrer?.id,
+      phone: currentCustomerPhone,
+      reason: referrer ? 'owner_found' : 'owner_not_found'
+    });
 
     if (!referrer) {
       return { valid: false, error: 'código de indicação inválido.' };
@@ -1593,8 +1524,7 @@ class LocalDatabase {
     const id = generateUUID();
     const clientSince = new Date().toISOString().split('T')[0];
 
-    // 1. Cliente realiza o primeiro cadastro (cadastro iniciado)
-    console.log(`[Referral Audit] Cadastro iniciado para o cliente: ${customer.name}`);
+    safeLog('info', 'customer.create', 'started', { entityId: id });
 
     // Create the customer object without referralCode first to match step 2 (saved first)
     const customerObjWithoutCode: Customer = {
@@ -1610,28 +1540,40 @@ class LocalDatabase {
     // 2. Cliente é salvo no Supabase (cliente salvo)
     if (this.config.useRealSupabase) {
       const supabase = this.getSupabaseClient();
-      console.log(`[Referral Audit] Salvando cliente no Supabase: ${customer.name}`);
+      safeLog('info', 'customer.create.persist', 'started', { entityId: id });
       const { error } = await supabase.from('clientes').insert(mapFrontendCustomerToDb(customerObjWithoutCode));
       if (error) {
-        console.error('[Referral Audit] Erro ao cadastrar cliente no Supabase:', error.message);
+        safeLog('error', 'customer.create.persist', 'error', { entityId: id, error });
         throw error;
       }
-      console.log(`[Referral Audit] Cliente salvo no Supabase com sucesso: ${customer.name}`);
+      safeLog('info', 'customer.create.persist', 'success', { entityId: id });
     } else {
-      console.log(`[Referral Audit] Cliente salvo localmente com sucesso: ${customer.name}`);
+      safeLog('info', 'customer.create.persist', 'success', {
+        entityId: id,
+        operation: 'local'
+      });
     }
 
     // 3. Verificar se já existe referralCode. Se não existir,
-    console.log(`[Referral Audit] Verificar se já existe referralCode para o cliente: ${customer.name}`);
+    safeLog('info', 'referral.code.ensure', 'started', { entityId: id });
     let referralCode = customer.referralCode || '';
     if (referralCode) {
-      console.log(`[Referral Audit] Código existente: ${referralCode}`);
+      safeLog('info', 'referral.code.ensure', 'success', {
+        entityId: id,
+        reason: 'existing_code'
+      });
     } else {
-      console.log(`[Referral Audit] Cliente sem código de indicação.`);
+      safeLog('info', 'referral.code.ensure', 'started', {
+        entityId: id,
+        reason: 'code_absent'
+      });
       
       // 4. Gerar um único código (código gerado)
       referralCode = generateReferralCode(this.customers);
-      console.log(`[Referral Audit] Código gerado: ${referralCode}`);
+      safeLog('info', 'referral.code.ensure', 'success', {
+        entityId: id,
+        reason: 'code_generated'
+      });
     }
 
     const finalCustomer: Customer = {
@@ -1642,21 +1584,24 @@ class LocalDatabase {
     // 5. Salvar definitivamente no Supabase (código gravado com sucesso)
     if (this.config.useRealSupabase) {
       const supabase = this.getSupabaseClient();
-      console.log(`[Referral Audit] Salvando definitivamente o código no Supabase para: ${customer.name}`);
+      safeLog('info', 'referral.code.persist', 'started', { entityId: id });
       const { error } = await supabase.from('clientes').update(mapFrontendCustomerToDb(finalCustomer)).eq('id', id);
       if (error) {
-        console.error('[Referral Audit] Erro ao gravar código definitivo no Supabase:', error.message);
+        safeLog('error', 'referral.code.persist', 'error', { entityId: id, error });
         throw error;
       }
-      console.log(`[Referral Audit] Código gravado com sucesso no Supabase: ${referralCode}`);
+      safeLog('info', 'referral.code.persist', 'success', { entityId: id });
     } else {
-      console.log(`[Referral Audit] Código gravado com sucesso no banco local: ${referralCode}`);
+      safeLog('info', 'referral.code.persist', 'success', {
+        entityId: id,
+        operation: 'local'
+      });
     }
 
     // 6. Atualizar o estado local
     this.customers.push(finalCustomer);
     this.save();
-    console.log(`[Referral Audit] Estado local atualizado com o novo cliente.`);
+    safeLog('info', 'customer.create', 'success', { entityId: id });
 
     this.triggerAutomation('novo_cliente', { customer: finalCustomer });
     return finalCustomer;
@@ -1666,16 +1611,16 @@ class LocalDatabase {
     const existing = this.customers.find(c => c.id === id);
     const fullCustomer = existing ? { ...existing, ...updated } : updated;
 
-    console.log(`[Referral Audit] Stage 2 (Gravação): Atualizando dados do cliente "${fullCustomer.name || id}" no Supabase...`);
+    safeLog('info', 'customer.update', 'started', { entityId: id });
     if (this.config.useRealSupabase) {
       const supabase = this.getSupabaseClient();
       const mapped = mapFrontendCustomerToDb(fullCustomer);
       const { error } = await supabase.from('clientes').update(mapped).eq('id', id);
       if (error) {
-        console.error('[Referral Audit] Erro ao atualizar cliente no Supabase:', error.message);
+        safeLog('error', 'customer.update', 'error', { entityId: id, error });
         throw error;
       }
-      console.log(`[Referral Audit] Stage 2 (Gravação): Cliente "${fullCustomer.name || id}" atualizado com sucesso no Supabase.`);
+      safeLog('info', 'customer.update', 'success', { entityId: id });
     }
 
     this.customers = this.customers.map(c => c.id === id ? { ...c, ...updated } : c);
@@ -1690,7 +1635,7 @@ class LocalDatabase {
       await supabase.from('veiculos').delete().eq('cliente_id', id);
       const { error } = await supabase.from('clientes').delete().eq('id', id);
       if (error) {
-        console.error('Erro ao deletar cliente do Supabase:', error.message);
+        safeLog('error', 'customer.delete', 'error', { entityId: id, error });
         throw error;
       }
     }
@@ -1713,7 +1658,7 @@ class LocalDatabase {
       const supabase = this.getSupabaseClient();
       const { error } = await supabase.from('veiculos').insert(mapFrontendVehicleToDb(newVehicle));
       if (error) {
-        console.error('Erro ao salvar veículo no Supabase:', error.message);
+        safeLog('error', 'vehicle.create', 'error', { entityId: id, error });
         throw error;
       }
     }
@@ -1728,7 +1673,7 @@ class LocalDatabase {
       const supabase = this.getSupabaseClient();
       const { error } = await supabase.from('veiculos').update(mapFrontendVehicleToDb(updated)).eq('id', id);
       if (error) {
-        console.error('Erro ao atualizar veículo no Supabase:', error.message);
+        safeLog('error', 'vehicle.update', 'error', { entityId: id, error });
         throw error;
       }
     }
@@ -1743,7 +1688,7 @@ class LocalDatabase {
       await supabase.from('agendamentos').delete().eq('veiculo_id', id);
       const { error } = await supabase.from('veiculos').delete().eq('id', id);
       if (error) {
-        console.error('Erro ao deletar veículo do Supabase:', error.message);
+        safeLog('error', 'vehicle.delete', 'error', { entityId: id, error });
         throw error;
       }
     }
@@ -1765,7 +1710,7 @@ class LocalDatabase {
       const supabase = this.getSupabaseClient();
       const { error } = await supabase.from('servicos_disponiveis').insert(mapFrontendServiceToDb(newService));
       if (error) {
-        console.error('Erro ao cadastrar serviço no Supabase:', error.message);
+        safeLog('error', 'service.create', 'error', { entityId: id, error });
         throw error;
       }
     }
@@ -1780,7 +1725,7 @@ class LocalDatabase {
       const supabase = this.getSupabaseClient();
       const { error } = await supabase.from('servicos_disponiveis').update(mapFrontendServiceToDb(updated)).eq('id', id);
       if (error) {
-        console.error('Erro ao atualizar serviço no Supabase:', error.message);
+        safeLog('error', 'service.update', 'error', { entityId: id, error });
         throw error;
       }
     }
@@ -1795,7 +1740,7 @@ class LocalDatabase {
       await supabase.from('agendamentos').delete().eq('servico_id', id);
       const { error } = await supabase.from('servicos_disponiveis').delete().eq('id', id);
       if (error) {
-        console.error('Erro ao deletar serviço do Supabase:', error.message);
+        safeLog('error', 'service.delete', 'error', { entityId: id, error });
         throw error;
       }
     }
@@ -1816,7 +1761,7 @@ class LocalDatabase {
       const supabase = this.getSupabaseClient();
       const { error } = await supabase.from('agendamentos').insert(mapFrontendAppointmentToDb(newAppointment));
       if (error) {
-        console.error('Erro ao criar agendamento no Supabase:', error.message);
+        safeLog('error', 'appointment.create', 'error', { entityId: id, error });
         throw error;
       }
     }
@@ -1848,7 +1793,7 @@ class LocalDatabase {
       const supabase = this.getSupabaseClient();
       const { error } = await supabase.from('agendamentos').update(mapFrontendAppointmentToDb(appointment)).eq('id', id);
       if (error) {
-        console.error('Erro ao atualizar status do agendamento no Supabase:', error.message);
+        safeLog('error', 'appointment.status.update', 'error', { entityId: id, error });
         throw error;
       }
     }
@@ -1910,7 +1855,7 @@ class LocalDatabase {
       const supabase = this.getSupabaseClient();
       const { error } = await supabase.from('agendamentos').update(mapFrontendAppointmentToDb(appointment)).eq('id', id);
       if (error) {
-        console.error('Erro ao atualizar agendamento no Supabase:', error.message);
+        safeLog('error', 'appointment.update', 'error', { entityId: id, error });
         throw error;
       }
     }
@@ -1959,7 +1904,7 @@ class LocalDatabase {
       const supabase = this.getSupabaseClient();
       const { error } = await supabase.from('agendamentos').delete().eq('id', id);
       if (error) {
-        console.error('Erro ao deletar agendamento do Supabase:', error.message);
+        safeLog('error', 'appointment.delete', 'error', { entityId: id, error });
         throw error;
       }
     }
@@ -2055,10 +2000,10 @@ class LocalDatabase {
           active: model.active
         });
         if (error) {
-          console.warn('Erro ao salvar modelo no Supabase:', error.message);
+          safeLog('warn', 'vehicle_model.create', 'error', { entityId: id, error });
         }
       } catch (e: any) {
-        console.warn('Falha na inserção no Supabase:', e.message);
+        safeLog('warn', 'vehicle_model.create', 'error', { entityId: id, error: e });
       }
     }
 
@@ -2084,10 +2029,10 @@ class LocalDatabase {
 
         const { error } = await supabase.from('vehicle_models').update(dbPayload).eq('id', id);
         if (error) {
-          console.warn('Erro ao atualizar modelo no Supabase:', error.message);
+          safeLog('warn', 'vehicle_model.update', 'error', { entityId: id, error });
         }
       } catch (e: any) {
-        console.warn('Falha na atualização no Supabase:', e.message);
+        safeLog('warn', 'vehicle_model.update', 'error', { entityId: id, error: e });
       }
     }
 
@@ -2101,10 +2046,10 @@ class LocalDatabase {
       try {
         const { error } = await supabase.from('vehicle_models').delete().eq('id', id);
         if (error) {
-          console.warn('Erro ao deletar modelo do Supabase:', error.message);
+          safeLog('warn', 'vehicle_model.delete', 'error', { entityId: id, error });
         }
       } catch (e: any) {
-        console.warn('Falha na exclusão no Supabase:', e.message);
+        safeLog('warn', 'vehicle_model.delete', 'error', { entityId: id, error: e });
       }
     }
 
@@ -2114,7 +2059,7 @@ class LocalDatabase {
 
   // --- UPDATE CONFIG ---
   async updateConfig(updated: Partial<SystemConfig>) {
-    this.config = { ...this.config, ...updated };
+    this.config = { ...this.config, ...toPublicSystemConfig(updated) };
     this.save();
     
     // Save to Supabase immediately if active
@@ -2227,7 +2172,7 @@ class LocalDatabase {
       // Mark as sent
       appt.reminderSent = true;
       sent++;
-      logs.push(`[Reminder Engine] Lembrete enviado com sucesso para ${customer.name} (Veículo: ${vehicle?.brand} ${vehicle?.model}, Horário: ${appt.dateTime.split('T')[1] || ''}).`);
+      logs.push(`[Reminder Engine] Lembrete enfileirado. ClienteId=${customer.id}; AgendamentoId=${appt.id}.`);
     }
 
     if (sent > 0) {
@@ -2241,8 +2186,8 @@ class LocalDatabase {
           }
           await this.syncWithSupabase();
         } catch (e: any) {
-          console.error(`[Reminder Engine Error] Erro ao salvar status de lembrete no Supabase:`, e);
-          logs.push(`[Reminder Engine Error] Erro ao sincronizar com Supabase: ${e.message || e}`);
+          safeLog('error', 'reminder.status.persist', 'error', { error: e });
+          logs.push('[Reminder Engine] Falha interna ao sincronizar status. Consulte o correlation ID do log.');
         }
       }
 
@@ -2276,7 +2221,7 @@ class LocalDatabase {
 
   // --- FORCE RESTORE DEFAULT AUTOMATIONS ---
   async restoreDefaultAutomations() {
-    console.log('[Automation Restore] Forçando restauração das automações padrão...');
+    safeLog('info', 'automation.restore_defaults', 'started');
     this.automations = JSON.parse(JSON.stringify(DEFAULT_AUTOMATIONS));
     this.save();
     if (this.config.useRealSupabase) {
@@ -2299,7 +2244,10 @@ class LocalDatabase {
   ): Promise<AutomationExecution | null> {
     const trigger = this.automations.find(a => a.event === event);
     if (!trigger || !trigger.isActive) {
-      console.log(`[Queue] Gatilho "${event}" não encontrado ou está inativo.`);
+      safeLog('info', 'automation.queue', 'ignored', {
+        eventType: event,
+        reason: 'missing_or_inactive'
+      });
       return null;
     }
 
@@ -2328,7 +2276,10 @@ class LocalDatabase {
       const [sh, sm] = startHour.split(':').map(Number);
       deferredDate.setHours(sh, sm, 0, 0);
       targetTime = deferredDate.toISOString();
-      console.log(`[Queue] Fora do horário operacional (${startHour}-${endHour}). Disparo "${event}" postergado para: ${targetTime}`);
+      safeLog('info', 'automation.queue', 'ignored', {
+        eventType: event,
+        reason: 'outside_operational_window'
+      });
     }
 
     const execution: AutomationExecution = {
@@ -2369,12 +2320,21 @@ class LocalDatabase {
           updated_at: execution.updated_at
         });
         if (error) {
-          console.error(`[Queue] Erro ao salvar execução no Supabase:`, error.message);
+          safeLog('error', 'automation.queue.persist', 'error', {
+            entityId: execution.id,
+            error
+          });
         } else {
-          console.log(`[Queue] Execução salva com sucesso no Supabase.`);
+          safeLog('info', 'automation.queue.persist', 'success', {
+            entityId: execution.id,
+            eventType: execution.automacao
+          });
         }
       } catch (err: any) {
-        console.error(`[Queue] Erro na requisição Supabase:`, err.message || err);
+        safeLog('error', 'automation.queue.persist', 'error', {
+          entityId: execution.id,
+          error: err
+        });
       }
     }
 
@@ -2475,7 +2435,7 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
     email VARCHAR(255) NOT NULL UNIQUE,
     telefone VARCHAR(50),
     status VARCHAR(50) DEFAULT 'ativo' NOT NULL,
-    role VARCHAR(50) DEFAULT 'tecnico' NOT NULL,
+    perfil VARCHAR(50) DEFAULT 'tecnico' NOT NULL,
     foto_url TEXT,
     permissions JSONB DEFAULT '{}'::jsonb NOT NULL,
     commissions JSONB DEFAULT '[]'::jsonb NOT NULL,
@@ -2496,22 +2456,76 @@ CREATE INDEX IF NOT EXISTS idx_usuarios_status ON public.usuarios(status);
 
 -- POLÍTICAS DE SEGURANÇA (RLS) PARA A TABELA USUÁRIOS
 ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.usuarios NO FORCE ROW LEVEL SECURITY;
 
-DO $$ 
+-- Remove políticas anteriores, inclusive as que consultavam public.usuarios
+-- diretamente e causavam recursão infinita no RLS.
+DO $$
+DECLARE
+    policy_record RECORD;
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Permitir leitura de usuarios para autenticados' AND tablename = 'usuarios') THEN
-        CREATE POLICY "Permitir leitura de usuarios para autenticados" ON public.usuarios FOR SELECT TO authenticated USING (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Permitir atualizacao para proprio usuario ou admin' AND tablename = 'usuarios') THEN
-        CREATE POLICY "Permitir atualizacao para proprio usuario ou admin" ON public.usuarios FOR UPDATE TO authenticated USING (auth.uid() = auth_user_id OR EXISTS (SELECT 1 FROM public.usuarios WHERE auth_user_id = auth.uid() AND role = 'admin'));
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Permitir insercao para administradores' AND tablename = 'usuarios') THEN
-        CREATE POLICY "Permitir insercao para administradores" ON public.usuarios FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.usuarios WHERE auth_user_id = auth.uid() AND role = 'admin') OR NOT EXISTS (SELECT 1 FROM public.usuarios));
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Permitir exclusao para administradores' AND tablename = 'usuarios') THEN
-        CREATE POLICY "Permitir exclusao para administradores" ON public.usuarios FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM public.usuarios WHERE auth_user_id = auth.uid() AND role = 'admin'));
-    END IF;
+    FOR policy_record IN
+        SELECT policyname
+        FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'usuarios'
+    LOOP
+        EXECUTE format(
+            'DROP POLICY IF EXISTS %I ON public.usuarios',
+            policy_record.policyname
+        );
+    END LOOP;
 END $$;
+
+-- A função é executada pelo proprietário e não reaplica o RLS da tabela.
+-- Ela não recebe IDs externos: sempre avalia exclusivamente auth.uid().
+CREATE OR REPLACE FUNCTION public.is_active_usuario_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.usuarios AS u
+        WHERE u.auth_user_id = (SELECT auth.uid())
+          AND u.perfil = 'admin'
+          AND u.status = 'ativo'
+    );
+$$;
+
+REVOKE ALL ON FUNCTION public.is_active_usuario_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_active_usuario_admin() FROM anon;
+GRANT EXECUTE ON FUNCTION public.is_active_usuario_admin() TO authenticated;
+
+CREATE POLICY "usuarios_select_own_or_admin"
+ON public.usuarios
+FOR SELECT
+TO authenticated
+USING (
+    auth_user_id = (SELECT auth.uid())
+    OR (SELECT public.is_active_usuario_admin())
+);
+
+CREATE POLICY "usuarios_insert_admin"
+ON public.usuarios
+FOR INSERT
+TO authenticated
+WITH CHECK ((SELECT public.is_active_usuario_admin()));
+
+CREATE POLICY "usuarios_update_admin"
+ON public.usuarios
+FOR UPDATE
+TO authenticated
+USING ((SELECT public.is_active_usuario_admin()))
+WITH CHECK ((SELECT public.is_active_usuario_admin()));
+
+CREATE POLICY "usuarios_delete_admin"
+ON public.usuarios
+FOR DELETE
+TO authenticated
+USING ((SELECT public.is_active_usuario_admin()));
 `;
   }
 
@@ -2520,95 +2534,116 @@ END $$;
     return this.users;
   }
 
-  async addUser(userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
-    const id = generateUUID();
-    const now = new Date().toISOString();
-    let authUserId: string | undefined = undefined;
-
-    if (this.config.useRealSupabase) {
-      // Step 1: Create user in Supabase Authentication using a non-persisting client
-      try {
-        const tempAuthClient = createClient(this.config.supabaseUrl, this.config.supabaseAnonKey, {
-          auth: { persistSession: false, autoRefreshToken: false }
-        });
-
-        const { data: authData, error: authError } = await tempAuthClient.auth.signUp({
-          email: userData.email,
-          password: userData.password || '123456',
-          options: {
-            data: {
-              name: userData.name,
-              role: userData.role
-            }
-          }
-        });
-
-        if (authError) {
-          console.warn('[Supabase Auth SignUp] Warning creating user in Auth:', authError.message);
-          if (authError.message.toLowerCase().includes('password should be at least')) {
-            throw new Error('A senha deve conter no mínimo 6 caracteres para o Supabase Auth.');
-          }
-        }
-
-        if (authData?.user) {
-          authUserId = authData.user.id;
-          console.log(`[Supabase Auth SignUp] Usuário criado com sucesso no Supabase Auth. Auth User ID: ${authUserId}`);
-        }
-      } catch (err: any) {
-        console.error('[Supabase Auth SignUp Error]:', err);
-        if (err.message && err.message.includes('mínimo 6 caracteres')) {
-          throw err;
-        }
-      }
-
-      // Step 2: Save the user profile record in public.usuarios table
-      try {
-        const supabase = this.getSupabaseClient();
-        const payload = {
-          id,
-          auth_user_id: authUserId || null,
-          nome: userData.name,
-          email: userData.email,
-          telefone: userData.phone || '',
-          status: userData.status || 'ativo',
-          role: userData.role || 'tecnico',
-          foto_url: userData.photoUrl || '',
-          permissions: userData.permissions || DEFAULT_ROLE_PERMISSIONS.tecnico,
-          commissions: userData.commissions || [],
-          default_commission_percent: userData.defaultCommissionPercent ?? 10,
-          created_at: now,
-          updated_at: now
-        };
-
-        const { error: dbErr } = await supabase.from('usuarios').upsert(payload);
-        if (dbErr) {
-          console.error('[Supabase Users DB Error] Erro ao inserir na tabela usuarios:', dbErr.message);
-        } else {
-          console.log(`[Supabase Users DB] Registro de usuário salvo na tabela usuarios com sucesso.`);
-        }
-      } catch (dbErr: any) {
-        console.error('[Supabase Users DB Exception]:', dbErr);
-      }
+  async refreshUsersFromSupabase(): Promise<User[]> {
+    if (!this.config.useRealSupabase) {
+      throw new Error('O cadastro de usuários exige uma conexão ativa com o Supabase.');
     }
 
-    const newUser: User = {
-      ...userData,
-      id,
-      authUserId,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const supabase = this.getSupabaseClient();
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select(`
+        id,
+        auth_user_id,
+        nome,
+        email,
+        telefone,
+        status,
+        perfil,
+        foto_url,
+        permissions,
+        commissions,
+        default_commission_percent,
+        created_at,
+        updated_at
+      `)
+      .order('nome', { ascending: true });
 
-    this.users.unshift(newUser);
+    if (error) {
+      throw new Error(`Não foi possível atualizar a lista real de usuários: ${error.message}`);
+    }
+
+    this.users = (data || []).map(mapDbUserToFrontend);
     this.save();
-    return newUser;
+    this.onSyncCallback?.();
+    return this.users;
+  }
+
+  async addUser(userData: CreateUserInput): Promise<User> {
+    if (!this.config.useRealSupabase) {
+      throw new Error('O cadastro de usuários exige uma conexão ativa com o Supabase.');
+    }
+
+    if (!userData.password || userData.password.length < 6) {
+      throw new Error('A senha deve conter no mínimo 6 caracteres.');
+    }
+
+    const supabase = this.getSupabaseClient();
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    const session = sessionData.session;
+
+    if (sessionError || !session?.access_token) {
+      throw new Error('Sua sessão administrativa expirou. Entre novamente antes de cadastrar o usuário.');
+    }
+
+    const { data, error } = await supabase.functions.invoke('admin-create-user', {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: {
+        nome: userData.name.trim(),
+        email: userData.email.trim().toLowerCase(),
+        password: userData.password,
+        telefone: userData.phone || '',
+        foto_url: userData.photoUrl || '',
+        perfil: userData.role,
+        status: userData.status,
+        permissions: userData.permissions,
+        commissions: userData.commissions,
+        default_commission_percent: userData.defaultCommissionPercent,
+      },
+    });
+
+    if (error) {
+      let backendMessage = data?.error || error.message || 'Falha ao criar o usuário.';
+      const response = (error as any).context;
+
+      if (response && typeof response.clone === 'function') {
+        try {
+          const payload = await response.clone().json();
+          backendMessage = payload?.error || backendMessage;
+        } catch {
+          // Mantém a mensagem original quando a resposta não contém JSON.
+        }
+      }
+
+      throw new Error(backendMessage);
+    }
+
+    const createdAuthUserId = data?.user?.auth_user_id;
+    if (!createdAuthUserId) {
+      throw new Error('A função concluiu sem retornar o vínculo auth_user_id criado.');
+    }
+
+    await this.refreshUsersFromSupabase();
+
+    const createdUser = this.users.find(user => user.authUserId === createdAuthUserId);
+    if (!createdUser) {
+      throw new Error(
+        'O usuário foi criado, mas seu perfil não apareceu na leitura de public.usuarios. Não repita o cadastro; atualize a tela e verifique as políticas RLS.'
+      );
+    }
+
+    return createdUser;
   }
 
   async updateUser(id: string, updated: Partial<User>): Promise<void> {
     const user = this.users.find(u => u.id === id);
     if (!user) return;
 
-    Object.assign(user, updated, { updatedAt: new Date().toISOString() });
+    const { password: _discardedPassword, ...safeUpdated } = updated as Partial<User> & { password?: string };
+    Object.assign(user, safeUpdated, { updatedAt: new Date().toISOString() });
+    delete (user as User & { password?: string }).password;
 
     if (this.config.useRealSupabase) {
       try {
@@ -2618,7 +2653,7 @@ END $$;
           email: user.email,
           telefone: user.phone || '',
           status: user.status || 'ativo',
-          role: user.role || 'tecnico',
+          perfil: user.role || 'tecnico',
           foto_url: user.photoUrl || '',
           permissions: user.permissions,
           commissions: user.commissions,
@@ -2632,12 +2667,12 @@ END $$;
         const { error } = await supabase.from('usuarios').update(payload).eq('id', id);
 
         if (error) {
-          console.error('[Supabase Users Update Error]:', error.message);
+          safeLog('error', 'user.update', 'error', { entityId: id, error });
         } else {
-          console.log(`[Supabase Users Update] Usuário ${id} atualizado com sucesso na tabela usuarios.`);
+          safeLog('info', 'user.update', 'success', { entityId: id });
         }
       } catch (err: any) {
-        console.warn('[Supabase Users Update Exception]:', err);
+        safeLog('warn', 'user.update', 'error', { entityId: id, error: err });
       }
     }
 
@@ -2651,7 +2686,7 @@ END $$;
         const supabase = this.getSupabaseClient();
         await supabase.from('usuarios').delete().eq('id', id);
       } catch (err: any) {
-        console.warn('[Supabase Users Delete Error]:', err);
+        safeLog('warn', 'user.delete', 'error', { entityId: id, error: err });
       }
     }
 
@@ -2795,8 +2830,6 @@ export function renderAndNormalizeMessage(
   template: string,
   context: { customer: Customer; vehicle?: Vehicle; service?: Service; appointment?: Appointment }
 ): string {
-  const originalTemplateLog = template;
-  
   let text = template || '';
   
   if (context.customer) {
@@ -2836,17 +2869,8 @@ export function renderAndNormalizeMessage(
     text = text.replace(/{data_hora}/g, '').replace(/{valor}/g, '');
   }
 
-  const textAfterSubstitutionLog = text;
-
   // Now, normalize using the unified string cleanup function
   const finalMessage = cleanAndNormalizeMessageString(text);
-
-  // Temporary logging containing: Template original, Texto após substituição das variáveis, Texto após normalização
-  console.log(`[Unified Message Engine] --- MENSAGEM PROCESSADA ---`);
-  console.log(`[Unified Message Engine] Template Original:`, JSON.stringify(originalTemplateLog));
-  console.log(`[Unified Message Engine] Texto Após Substituição:`, JSON.stringify(textAfterSubstitutionLog));
-  console.log(`[Unified Message Engine] Texto Final Normalizado:`, JSON.stringify(finalMessage));
-  console.log(`[Unified Message Engine] ----------------------------`);
 
   return finalMessage;
 }

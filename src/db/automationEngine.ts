@@ -1,11 +1,69 @@
 import { dbInstance } from './localDb';
-import { AutomationExecution, AutomationLog, Customer, Vehicle, Service, Appointment } from '../types';
+import { AutomationLog, Customer, Vehicle, Service, Appointment } from '../types';
+import { getIntegrationSecrets, hasZapiCredentials } from '../server/integrationSecrets';
+import { maskPhone, redactExternalResponse, safeLog } from '../security/safeOutput';
+
+const sendToConfiguredProviders = async (
+  payloadBody: Record<string, unknown>,
+  phone: string,
+  message: string
+): Promise<{ success: boolean; apiResponse: string }> => {
+  const secrets = getIntegrationSecrets();
+  const statuses: string[] = [];
+  let configuredProviders = 0;
+  let success = false;
+
+  if (secrets.makeWebhookUrl) {
+    configuredProviders += 1;
+    try {
+      const response = await fetch(secrets.makeWebhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payloadBody)
+      });
+      statuses.push(`[Make Webhook] Status HTTP: ${response.status}`);
+      success = success || response.ok;
+    } catch {
+      statuses.push('[Make Webhook] Falha de comunicação com o provedor');
+    }
+  }
+
+  if (hasZapiCredentials(secrets)) {
+    configuredProviders += 1;
+    const zapiUrl = `https://api.z-api.io/instances/${encodeURIComponent(secrets.zapiInstanceId)}/token/${encodeURIComponent(secrets.zapiToken)}/send-text`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (secrets.zapiClientToken) {
+      headers['Client-Token'] = secrets.zapiClientToken;
+    }
+
+    try {
+      const response = await fetch(zapiUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ phone, message })
+      });
+      statuses.push(`[Z-API] Status HTTP: ${response.status}`);
+      success = success || response.ok;
+    } catch {
+      statuses.push('[Z-API] Falha de comunicação com o provedor');
+    }
+  }
+
+  if (configuredProviders === 0) {
+    return {
+      success: true,
+      apiResponse: 'Envio simulado: nenhum provedor configurado no ambiente do servidor'
+    };
+  }
+
+  return { success, apiResponse: statuses.join('\n') };
+};
 
 export class AutomationEngine {
   private isProcessing = false;
 
   constructor() {
-    console.log('[Automation Engine] Inicializado.');
+    safeLog('info', 'automation_engine.initialize', 'success');
   }
 
   /**
@@ -35,8 +93,8 @@ export class AutomationEngine {
       processedCount = await this.processQueue(logs);
 
     } catch (error: any) {
-      console.error('[Automation Engine Error]', error);
-      logs.push(`[Automation Engine Error] Erro crítico no ciclo: ${error.message || error}`);
+      safeLog('error', 'automation_engine.cycle', 'error', { error });
+      logs.push('[Automation Engine] Falha interna no ciclo. Consulte o correlation ID do log do servidor.');
     } finally {
       this.isProcessing = false;
     }
@@ -49,7 +107,6 @@ export class AutomationEngine {
    */
   private async scanAndGenerateExecutions(logs: string[]): Promise<number> {
     let count = 0;
-    const nowIso = new Date().toISOString();
 
     // --- 1. LEMBRETE DE AGENDAMENTO (60 minutos antes) ---
     const reminderTrigger = dbInstance.automations.find(a => a.event === 'lembrete_agendamento');
@@ -90,7 +147,7 @@ export class AutomationEngine {
 
         if (execution) {
           count++;
-          logs.push(`[Reminder Scan] Lembrete agendado para o cliente ${customer.name} (Agendamento: ${appt.id}).`);
+          logs.push(`[Reminder Scan] Lembrete agendado. ClienteId=${customer.id}; AgendamentoId=${appt.id}.`);
         }
       }
     }
@@ -120,7 +177,7 @@ export class AutomationEngine {
         const execution = await dbInstance.queueAutomation('aniversario', { customer });
         if (execution) {
           count++;
-          logs.push(`[Birthday Scan] Mensagem de aniversário agendada para ${customer.name}.`);
+          logs.push(`[Birthday Scan] Mensagem agendada. ClienteId=${customer.id}.`);
         }
       }
     }
@@ -163,7 +220,7 @@ export class AutomationEngine {
             });
             if (execution) {
               count++;
-              logs.push(`[Inactive Scan] Mensagem de reativação agendada para ${customer.name}.`);
+              logs.push(`[Inactive Scan] Mensagem agendada. ClienteId=${customer.id}.`);
             }
           }
         }
@@ -201,7 +258,7 @@ export class AutomationEngine {
 
         if (execution) {
           count++;
-          logs.push(`[Feedback Scan] Pesquisa de satisfação agendada para ${customer.name} (Agendamento: ${appt.id}).`);
+          logs.push(`[Feedback Scan] Pesquisa agendada. ClienteId=${customer.id}; AgendamentoId=${appt.id}.`);
         }
       }
     }
@@ -255,17 +312,14 @@ export class AutomationEngine {
     // Process each pending execution
     for (const exec of pendingExecutions) {
       processedCount++;
-      logs.push(`[Queue Processor] Processando envio da execução ${exec.id} (${exec.automacao}) para ${exec.telefone}...`);
+      logs.push(`[Queue Processor] Processando execução ${exec.id} (${exec.automacao}).`);
 
       exec.status = 'processando';
       exec.tentativas += 1;
       exec.updated_at = new Date().toISOString();
       dbInstance.save();
 
-      let success = false;
-      let apiResponse = '';
-
-      // Prepare payload identical to make webhook format
+      // Provider credentials are resolved only on the server.
       const payloadBody = {
         event: exec.automacao,
         executionId: exec.id,
@@ -274,71 +328,16 @@ export class AutomationEngine {
         timestamp: exec.updated_at
       };
 
-      try {
-        // --- 1. WEBHOOK MAKE.COM ---
-        if (dbInstance.config.makeWebhookUrl) {
-          const makeUrl = dbInstance.config.makeWebhookUrl;
-          console.log(`[Queue Processor Webhook] Payload enviado ao Make (URL: ${makeUrl}):`, JSON.stringify(payloadBody, null, 2));
-          
-          const response = await fetch(makeUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payloadBody)
-          });
-          
-          const resText = await response.text();
-          console.log(`[Queue Processor Webhook] Payload recebido pelo Make (Resposta). Status: ${response.status} | Body: ${resText}`);
-          apiResponse += `[Make Webhook] Status: ${response.status} | Resposta: ${resText}\n`;
-          if (response.ok) {
-            success = true;
-          }
-        }
-
-        // --- 2. Z-API INTEGRATION ---
-        if (dbInstance.config.zapiInstanceId && dbInstance.config.zapiToken) {
-          const zapiUrl = `https://api.z-api.io/instances/${dbInstance.config.zapiInstanceId}/token/${dbInstance.config.zapiToken}/send-text`;
-          
-          const zapiPayload = {
-            phone: exec.telefone,
-            message: exec.mensagem
-          };
-          
-          console.log(`[Queue Processor Z-API] Payload enviado para a Z-API (URL: ${zapiUrl}):`, JSON.stringify(zapiPayload, null, 2));
-          
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (dbInstance.config.zapiClientToken) {
-            headers['Client-Token'] = dbInstance.config.zapiClientToken;
-          }
-
-          const response = await fetch(zapiUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(zapiPayload)
-          });
-
-          const resText = await response.text();
-          console.log(`[Queue Processor Z-API] Payload recebido da Z-API (Resposta). Status: ${response.status} | Body: ${resText}`);
-          apiResponse += `[Z-API] Status: ${response.status} | Resposta: ${resText}\n`;
-          if (response.ok) {
-            success = true; // Mark true if at least one sending succeeds
-          }
-        }
-
-        // If neither is configured, mark as simulado/sucesso
-        if (!dbInstance.config.makeWebhookUrl && !(dbInstance.config.zapiInstanceId && dbInstance.config.zapiToken)) {
-          apiResponse = 'Envio simulado com sucesso (Sem canais de envio reais configurados)';
-          success = true;
-        }
-
-      } catch (err: any) {
-        apiResponse += `[Erro de Envio] ${err.message || err}`;
-        console.error('[Queue Processor Error] Falha de comunicação:', err);
-      }
+      const { success, apiResponse } = await sendToConfiguredProviders(
+        payloadBody,
+        exec.telefone,
+        exec.mensagem
+      );
 
       // --- RETRIES SYSTEM (Requirement 5) ---
       if (success) {
         exec.status = 'sucesso';
-        exec.resposta_api = apiResponse;
+        exec.resposta_api = redactExternalResponse(apiResponse);
         logs.push(`[Queue Processor] Sucesso ao enviar execução ${exec.id}.`);
       } else {
         logs.push(`[Queue Processor] Falha ao enviar execução ${exec.id} (Tentativa ${exec.tentativas}/3).`);
@@ -349,11 +348,11 @@ export class AutomationEngine {
           const nextAttemptDate = new Date(Date.now() + backoffMinutes * 60 * 1000);
           exec.data_execucao = nextAttemptDate.toISOString();
           exec.data_proxima_tentativa = nextAttemptDate.toISOString();
-          exec.resposta_api = `[TENTATIVA FALHOU] ${apiResponse}`;
+          exec.resposta_api = `[TENTATIVA FALHOU] ${redactExternalResponse(apiResponse)}`;
           logs.push(`[Queue Processor] Reagendado para ${exec.data_execucao} (${backoffMinutes}min de espera).`);
         } else {
           exec.status = 'erro_definitivo';
-          exec.resposta_api = `[ERRO DEFINITIVO] ${apiResponse}`;
+          exec.resposta_api = `[ERRO DEFINITIVO] ${redactExternalResponse(apiResponse)}`;
           logs.push(`[Queue Processor] Falha permanente na execução ${exec.id}.`);
         }
       }
@@ -368,9 +367,9 @@ export class AutomationEngine {
       const newLog: AutomationLog = {
         id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
         triggerEvent: triggerName,
-        targetName: targetCustomer ? targetCustomer.name : 'Cliente',
-        targetContact: exec.telefone,
-        payload: `ID da Execução: ${exec.id}\nTentativa: ${exec.tentativas}\nPayload: ${JSON.stringify(payloadBody, null, 2)}\nResposta: ${exec.resposta_api}`,
+        targetName: targetCustomer ? 'Cliente protegido' : 'Cliente',
+        targetContact: maskPhone(exec.telefone),
+        payload: `ID da execução: ${exec.id}\nTentativa: ${exec.tentativas}\nStatus técnico: ${exec.resposta_api}`,
         status: exec.status === 'sucesso' ? 'sucesso' : 'erro',
         timestamp: exec.updated_at
       };
@@ -398,10 +397,16 @@ export class AutomationEngine {
               updated_at: exec.updated_at
             });
           if (error) {
-            console.error('[Supabase Queue Update Error] Erro ao sincronizar status do processador:', error.message);
+            safeLog('error', 'automation_engine.queue.persist', 'error', {
+              entityId: exec.id,
+              error
+            });
           }
         } catch (e: any) {
-          console.error('[Supabase Queue Update Error] Falha ao atualizar status no Supabase:', e.message);
+          safeLog('error', 'automation_engine.queue.persist', 'error', {
+            entityId: exec.id,
+            error: e
+          });
         }
       }
     }
@@ -479,9 +484,6 @@ export class AutomationEngine {
     execution.updated_at = new Date().toISOString();
     dbInstance.save();
 
-    let success = false;
-    let apiResponse = '';
-
     const payloadBody = {
       event: execution.automacao,
       executionId: execution.id,
@@ -491,58 +493,14 @@ export class AutomationEngine {
       isTest: true
     };
 
-    try {
-      if (dbInstance.config.makeWebhookUrl) {
-        const makeUrl = dbInstance.config.makeWebhookUrl;
-        console.log(`[Manual Test Webhook] Payload enviado ao Make (URL: ${makeUrl}):`, JSON.stringify(payloadBody, null, 2));
-        
-        const response = await fetch(makeUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payloadBody)
-        });
-        const resText = await response.text();
-        console.log(`[Manual Test Webhook] Payload recebido pelo Make (Resposta). Status: ${response.status} | Body: ${resText}`);
-        apiResponse += `[Make Webhook] Status: ${response.status} | Resposta: ${resText}\n`;
-        if (response.ok) success = true;
-      }
-
-      if (dbInstance.config.zapiInstanceId && dbInstance.config.zapiToken) {
-        const zapiUrl = `https://api.z-api.io/instances/${dbInstance.config.zapiInstanceId}/token/${dbInstance.config.zapiToken}/send-text`;
-        
-        const zapiPayload = {
-          phone: execution.telefone,
-          message: execution.mensagem
-        };
-        
-        console.log(`[Manual Test Z-API] Payload enviado para a Z-API (URL: ${zapiUrl}):`, JSON.stringify(zapiPayload, null, 2));
-        
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (dbInstance.config.zapiClientToken) {
-          headers['Client-Token'] = dbInstance.config.zapiClientToken;
-        }
-
-        const response = await fetch(zapiUrl, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(zapiPayload)
-        });
-        const resText = await response.text();
-        console.log(`[Manual Test Z-API] Payload recebido da Z-API (Resposta). Status: ${response.status} | Body: ${resText}`);
-        apiResponse += `[Z-API] Status: ${response.status} | Resposta: ${resText}\n`;
-        if (response.ok) success = true;
-      }
-
-      if (!dbInstance.config.makeWebhookUrl && !(dbInstance.config.zapiInstanceId && dbInstance.config.zapiToken)) {
-        apiResponse = 'Envio manual simulado com sucesso.';
-        success = true;
-      }
-    } catch (err: any) {
-      apiResponse += `[Erro] ${err.message || err}`;
-    }
+    const { success, apiResponse } = await sendToConfiguredProviders(
+      payloadBody,
+      execution.telefone,
+      execution.mensagem
+    );
 
     execution.status = success ? 'sucesso' : 'erro_definitivo';
-    execution.resposta_api = apiResponse;
+    execution.resposta_api = redactExternalResponse(apiResponse);
     execution.updated_at = new Date().toISOString();
     dbInstance.save();
 
@@ -574,9 +532,9 @@ export class AutomationEngine {
     const newLog: AutomationLog = {
       id: 'log_manual_' + Date.now(),
       triggerEvent: automation.name + ' (Teste Manual)',
-      targetName: sampleCustomer.name,
-      targetContact: execution.telefone,
-      payload: `ID da Execução: ${execution.id}\nResposta: ${execution.resposta_api}`,
+      targetName: 'Cliente de teste protegido',
+      targetContact: maskPhone(execution.telefone),
+      payload: `ID da execução: ${execution.id}\nStatus técnico: ${execution.resposta_api}`,
       status: success ? 'sucesso' : 'erro',
       timestamp: execution.updated_at
     };
@@ -586,7 +544,7 @@ export class AutomationEngine {
       dbInstance.onSyncCallback();
     }
 
-    return { success, log: apiResponse };
+    return { success, log: redactExternalResponse(apiResponse) };
   }
 }
 

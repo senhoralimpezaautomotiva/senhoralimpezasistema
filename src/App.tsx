@@ -3,11 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { dbInstance, hasModulePermission, mapDbUserToFrontend } from './db/localDb';
-import { Customer, Vehicle, Service, Appointment, CashTransaction, SystemConfig, AutomationTrigger, AutomationLog, AppointmentStatus, VehicleModel, User, CommissionRecord, SystemModuleId } from './types';
+import { Customer, Vehicle, Service, Appointment, CashTransaction, SystemConfig, AutomationTrigger, AppointmentStatus, User, CreateUserInput, CommissionRecord, SystemModuleId, HistoryRecord } from './types';
 import { ShieldAlert, LogOut, LayoutDashboard } from 'lucide-react';
+import { safeLog } from './security/safeOutput';
+import { isClientPortalEnabled } from './config/publicEnvironment';
 
 const ALL_MODULE_IDS: SystemModuleId[] = [
   'dashboard',
@@ -24,22 +26,32 @@ const ALL_MODULE_IDS: SystemModuleId[] = [
   'configuracoes'
 ];
 
-// Importing modules
 import LoginScreen from './components/LoginScreen';
 import Sidebar from './components/Sidebar';
-import DashboardModule from './components/DashboardModule';
-import ClientesModule from './components/ClientesModule';
-import ServicosModule from './components/ServicosModule';
-import AgendaModule from './components/AgendaModule';
-import HistoricoModule from './components/HistoricoModule';
-import FinanceiroModule from './components/FinanceiroModule';
-import RelatoriosModule from './components/RelatoriosModule';
-import UsuariosModule from './components/UsuariosModule';
-import AutomacoesModule from './components/AutomacoesModule';
-import AutomacoesTab from './components/AutomacoesTab';
-import IndicacoesModule from './components/IndicacoesModule';
-import ConfiguracoesModule from './components/ConfiguracoesModule';
-import ClientPortal from './components/ClientPortal';
+
+const DashboardModule = lazy(() => import('./components/DashboardModule'));
+const ClientesModule = lazy(() => import('./components/ClientesModule'));
+const ServicosModule = lazy(() => import('./components/ServicosModule'));
+const AgendaModule = lazy(() => import('./components/AgendaModule'));
+const HistoricoModule = lazy(() => import('./components/HistoricoModule'));
+const FinanceiroModule = lazy(() => import('./components/FinanceiroModule'));
+const RelatoriosModule = lazy(() => import('./components/RelatoriosModule'));
+const UsuariosModule = lazy(() => import('./components/UsuariosModule'));
+const AutomacoesModule = lazy(() => import('./components/AutomacoesModule'));
+const AutomacoesTab = lazy(() => import('./components/AutomacoesTab'));
+const IndicacoesModule = lazy(() => import('./components/IndicacoesModule'));
+const ConfiguracoesModule = lazy(() => import('./components/ConfiguracoesModule'));
+const CLIENT_PORTAL_ENABLED = isClientPortalEnabled();
+const ClientPortal = CLIENT_PORTAL_ENABLED
+  ? lazy(() => import('./components/ClientPortal'))
+  : null;
+
+const ModuleLoader = () => (
+  <div className="min-h-[40vh] flex flex-col items-center justify-center gap-3 text-slate-400">
+    <div className="w-7 h-7 rounded-full border-2 border-slate-700 border-t-sky-500 animate-spin" />
+    <span className="text-xs font-mono">Carregando módulo...</span>
+  </div>
+);
 
 export default function App() {
   // Session authentication state
@@ -58,12 +70,10 @@ export default function App() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [finances, setFinances] = useState<CashTransaction[]>([]);
   const [config, setConfig] = useState<SystemConfig>(dbInstance.config);
   const [automations, setAutomations] = useState<AutomationTrigger[]>([]);
-  const [logs, setLogs] = useState<AutomationLog[]>([]);
-  const [vehicleModels, setVehicleModels] = useState<VehicleModel[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [commissions, setCommissions] = useState<CommissionRecord[]>([]);
 
@@ -101,7 +111,21 @@ export default function App() {
       try {
         const { data: profileRow, error: profileError } = await supabase
           .from('usuarios')
-          .select('*')
+          .select(`
+            id,
+            auth_user_id,
+            nome,
+            email,
+            telefone,
+            status,
+            perfil,
+            foto_url,
+            permissions,
+            commissions,
+            default_commission_percent,
+            created_at,
+            updated_at
+          `)
           .eq('auth_user_id', session.user.id)
           .maybeSingle();
 
@@ -112,24 +136,33 @@ export default function App() {
         }
 
         if (!profileRow) {
-          throw new Error('Usuário autenticado sem perfil vinculado na tabela public.usuarios.');
+          throw new Error(
+            'Perfil não encontrado para o usuário autenticado. Verifique se public.usuarios.auth_user_id corresponde ao ID do usuário no Supabase Auth.'
+          );
+        }
+
+        if (profileRow.auth_user_id !== session.user.id) {
+          throw new Error('O perfil retornado não corresponde ao usuário autenticado.');
         }
 
         const profile = mapDbUserToFrontend(profileRow);
-        if (profile.status === 'inativo') {
+        if (profile.status !== 'ativo') {
           throw new Error('Sua conta de usuário está inativa. Entre em contato com o administrador do sistema.');
         }
 
         setUser({ ...profile, authProvider: 'supabase' });
       } catch (error: any) {
+        safeLog('error', 'authentication.profile.validate', 'error', { error });
         if (!disposed && currentRequestId === profileRequestId) {
           setUser(null);
-          setAuthError(error.message || 'Não foi possível validar o perfil autenticado.');
+          setAuthError('Não foi possível validar o perfil autenticado.');
         }
 
         const { error: signOutError } = await supabase.auth.signOut();
         if (signOutError) {
-          console.error('Erro ao encerrar sessão inválida do Supabase:', signOutError);
+          safeLog('error', 'authentication.invalid_session.sign_out', 'error', {
+            error: signOutError
+          });
         }
       } finally {
         if (!disposed && currentRequestId === profileRequestId) {
@@ -144,7 +177,8 @@ export default function App() {
 
       if (error) {
         setUser(null);
-        setAuthError(`Não foi possível restaurar a sessão: ${error.message}`);
+        safeLog('error', 'authentication.session.restore', 'error', { error });
+        setAuthError('Não foi possível restaurar a sessão.');
         setAuthInitializing(false);
         return;
       }
@@ -181,25 +215,28 @@ export default function App() {
 
     // Check url search parameter or hash for client portal
     const checkPortalUrl = () => {
-      const isPortal = window.location.search.includes('portal=true') || window.location.hash.includes('portal');
-      if (isPortal) {
-        setIsClientPortal(true);
-      }
+      const isPortal =
+        CLIENT_PORTAL_ENABLED &&
+        (window.location.search.includes('portal=true') ||
+          window.location.hash.includes('portal'));
+      setIsClientPortal(isPortal);
     };
     checkPortalUrl();
     window.addEventListener('hashchange', checkPortalUrl);
     window.addEventListener('popstate', checkPortalUrl);
-
-    // Fetch live data if Supabase connection is active
-    if (dbInstance.config.useRealSupabase) {
-      dbInstance.syncWithSupabase();
-    }
 
     return () => {
       window.removeEventListener('hashchange', checkPortalUrl);
       window.removeEventListener('popstate', checkPortalUrl);
     };
   }, []);
+
+  // Dados operacionais só são sincronizados depois que o perfil administrativo
+  // autenticado e ativo foi validado. O portal usa um cliente Supabase isolado.
+  useEffect(() => {
+    if (!user || !dbInstance.config.useRealSupabase) return;
+    void dbInstance.syncWithSupabase();
+  }, [user?.id]);
 
   // Synchronize CSS class with active system theme
   useEffect(() => {
@@ -223,19 +260,15 @@ export default function App() {
     setFinances([...dbInstance.finances]);
     setConfig({ ...dbInstance.config });
     setAutomations([...dbInstance.automations]);
-    setLogs([...dbInstance.logs]);
-    setVehicleModels([...dbInstance.vehicleModels]);
     setUsers([...dbInstance.users]);
     setCommissions([...dbInstance.commissions]);
 
     // Keep the in-memory profile permissions up to date with DB state.
     setUser(prevUser => {
       if (!prevUser) return null;
-      const prevId = (prevUser as any).id;
-      const prevEmail = prevUser.email;
-      const latestInDb = dbInstance.users.find(u => 
-        (prevId && u.id === prevId) || 
-        (prevEmail && u.email && u.email.toLowerCase() === prevEmail.toLowerCase())
+      const authenticatedUserId = prevUser.authUserId;
+      const latestInDb = dbInstance.users.find(
+        candidate => authenticatedUserId && candidate.authUserId === authenticatedUserId
       );
       if (latestInDb) {
         return { ...prevUser, ...latestInDb };
@@ -247,9 +280,9 @@ export default function App() {
   // Automatically adjust activeTab if user lacks permission for current activeTab
   useEffect(() => {
     if (user) {
-      const isAllowed = hasModulePermission(user as any, activeTab as SystemModuleId, 'view');
+      const isAllowed = hasModulePermission(user, activeTab as SystemModuleId, 'view');
       if (!isAllowed) {
-        const allowedModule = ALL_MODULE_IDS.find(id => hasModulePermission(user as any, id, 'view'));
+        const allowedModule = ALL_MODULE_IDS.find(id => hasModulePermission(user, id, 'view'));
         if (allowedModule) {
           setActiveTab(allowedModule);
         }
@@ -258,7 +291,7 @@ export default function App() {
   }, [user, activeTab]);
 
   // User & Commission handlers
-  const handleAddUser = async (u: Omit<User, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleAddUser = async (u: CreateUserInput) => {
     const newUser = await dbInstance.addUser(u);
     syncWithDatabase();
     return newUser;
@@ -285,7 +318,7 @@ export default function App() {
   };
 
   // Auth handlers
-  const handleProfileUpdate = (updatedUser: any) => {
+  const handleProfileUpdate = (updatedUser: User) => {
     setUser(updatedUser);
   };
 
@@ -294,7 +327,7 @@ export default function App() {
     const { error } = await supabase.auth.signOut();
 
     if (error) {
-      console.error('Erro ao sair do Supabase:', error);
+      safeLog('error', 'authentication.sign_out', 'error', { error });
       return;
     }
 
@@ -309,7 +342,7 @@ export default function App() {
       syncWithDatabase();
       return newCustomer;
     } catch (e) {
-      console.error('Erro ao adicionar cliente:', e);
+      safeLog('error', 'customer.create', 'error', { error: e });
       throw e;
     }
   };
@@ -319,7 +352,7 @@ export default function App() {
       await dbInstance.updateCustomer(id, c);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao atualizar cliente:', e);
+      safeLog('error', 'customer.update', 'error', { entityId: id, error: e });
       throw e;
     }
   };
@@ -329,7 +362,7 @@ export default function App() {
       await dbInstance.deleteCustomer(id);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao excluir cliente:', e);
+      safeLog('error', 'customer.delete', 'error', { entityId: id, error: e });
       throw e;
     }
   };
@@ -341,7 +374,7 @@ export default function App() {
       syncWithDatabase();
       return newVehicle;
     } catch (e) {
-      console.error('Erro ao adicionar veículo:', e);
+      safeLog('error', 'vehicle.create', 'error', { error: e });
       throw e;
     }
   };
@@ -351,7 +384,7 @@ export default function App() {
       await dbInstance.updateVehicle(id, v);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao atualizar veículo:', e);
+      safeLog('error', 'vehicle.update', 'error', { entityId: id, error: e });
       throw e;
     }
   };
@@ -361,38 +394,7 @@ export default function App() {
       await dbInstance.deleteVehicle(id);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao excluir veículo:', e);
-      throw e;
-    }
-  };
-
-  // Vehicle Model handlers
-  const handleAddVehicleModel = async (model: Omit<VehicleModel, 'id' | 'created_at' | 'updated_at'>) => {
-    try {
-      await dbInstance.addVehicleModel(model);
-      syncWithDatabase();
-    } catch (e) {
-      console.error('Erro ao adicionar modelo de veículo:', e);
-      throw e;
-    }
-  };
-
-  const handleUpdateVehicleModel = async (id: string, updated: Partial<VehicleModel>) => {
-    try {
-      await dbInstance.updateVehicleModel(id, updated);
-      syncWithDatabase();
-    } catch (e) {
-      console.error('Erro ao atualizar modelo de veículo:', e);
-      throw e;
-    }
-  };
-
-  const handleDeleteVehicleModel = async (id: string) => {
-    try {
-      await dbInstance.deleteVehicleModel(id);
-      syncWithDatabase();
-    } catch (e) {
-      console.error('Erro ao excluir modelo de veículo:', e);
+      safeLog('error', 'vehicle.delete', 'error', { entityId: id, error: e });
       throw e;
     }
   };
@@ -403,7 +405,7 @@ export default function App() {
       await dbInstance.addService(s);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao adicionar serviço:', e);
+      safeLog('error', 'service.create', 'error', { error: e });
       throw e;
     }
   };
@@ -413,7 +415,7 @@ export default function App() {
       await dbInstance.updateService(id, s);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao atualizar serviço:', e);
+      safeLog('error', 'service.update', 'error', { entityId: id, error: e });
       throw e;
     }
   };
@@ -423,7 +425,7 @@ export default function App() {
       await dbInstance.deleteService(id);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao excluir serviço:', e);
+      safeLog('error', 'service.delete', 'error', { entityId: id, error: e });
       throw e;
     }
   };
@@ -434,7 +436,7 @@ export default function App() {
       await dbInstance.addAppointment(appt);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao adicionar agendamento:', e);
+      safeLog('error', 'appointment.create', 'error', { error: e });
       throw e;
     }
   };
@@ -444,7 +446,7 @@ export default function App() {
       await dbInstance.updateAppointmentStatus(id, status, notes);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao atualizar status do agendamento:', e);
+      safeLog('error', 'appointment.status.update', 'error', { entityId: id, error: e });
       throw e;
     }
   };
@@ -454,7 +456,7 @@ export default function App() {
       await dbInstance.deleteAppointment(id);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao excluir agendamento:', e);
+      safeLog('error', 'appointment.delete', 'error', { entityId: id, error: e });
       throw e;
     }
   };
@@ -465,7 +467,7 @@ export default function App() {
       await dbInstance.addTransaction(t);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao adicionar transação:', e);
+      safeLog('error', 'finance.transaction.create', 'error', { error: e });
       throw e;
     }
   };
@@ -475,7 +477,7 @@ export default function App() {
       await dbInstance.deleteTransaction(id);
       syncWithDatabase();
     } catch (e) {
-      console.error('Erro ao deletar transação:', e);
+      safeLog('error', 'finance.transaction.delete', 'error', { entityId: id, error: e });
       throw e;
     }
   };
@@ -486,17 +488,6 @@ export default function App() {
     syncWithDatabase();
   };
 
-  const handleTestTrigger = (id: string) => {
-    dbInstance.testTrigger(id);
-    syncWithDatabase();
-  };
-
-  const handleResetLogs = () => {
-    dbInstance.logs = [];
-    dbInstance.save();
-    syncWithDatabase();
-  };
-
   // Config handler
   const handleUpdateConfig = (updated: Partial<SystemConfig>) => {
     dbInstance.updateConfig(updated);
@@ -504,21 +495,23 @@ export default function App() {
   };
 
   // If Client Portal is active, render it directly (fully separated from admin)
-  if (isClientPortal) {
+  if (CLIENT_PORTAL_ENABLED && isClientPortal && ClientPortal) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-y-auto">
-        {/* Decorative background gradients */}
-        <div className="absolute top-0 left-0 w-96 h-96 bg-sky-500/5 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-slate-500/5 rounded-full blur-3xl translate-x-1/2 translate-y-1/2 pointer-events-none" />
-        <ClientPortal 
-          config={config}
-          onBackToAdmin={() => {
-            setIsClientPortal(false);
-            window.history.pushState({}, '', window.location.pathname);
-          }}
-          onSyncNeeded={syncWithDatabase}
-        />
-      </div>
+      <Suspense fallback={<ModuleLoader />}>
+        <div className="min-h-screen bg-slate-950 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-y-auto">
+          {/* Decorative background gradients */}
+          <div className="absolute top-0 left-0 w-96 h-96 bg-sky-500/5 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
+          <div className="absolute bottom-0 right-0 w-96 h-96 bg-slate-500/5 rounded-full blur-3xl translate-x-1/2 translate-y-1/2 pointer-events-none" />
+          <ClientPortal 
+            config={config}
+            onBackToAdmin={() => {
+              setIsClientPortal(false);
+              window.history.pushState({}, '', window.location.pathname);
+            }}
+            onSyncNeeded={syncWithDatabase}
+          />
+        </div>
+      </Suspense>
     );
   }
 
@@ -536,15 +529,22 @@ export default function App() {
 
   // If user is not authenticated, render Login Screen
   if (!user) {
-    return <LoginScreen authError={authError} onGoToPortal={() => setIsClientPortal(true)} />;
+    return (
+      <LoginScreen
+        authError={authError}
+        onGoToPortal={
+          CLIENT_PORTAL_ENABLED ? () => setIsClientPortal(true) : undefined
+        }
+      />
+    );
   }
 
   // Render correct dashboard component based on selected sidebar tab
   const renderTabContent = () => {
     if (!user) return null;
 
-    if (!hasModulePermission(user as any, activeTab as SystemModuleId, 'view')) {
-      const allowedModule = ALL_MODULE_IDS.find(id => hasModulePermission(user as any, id, 'view'));
+    if (!hasModulePermission(user, activeTab as SystemModuleId, 'view')) {
+      const allowedModule = ALL_MODULE_IDS.find(id => hasModulePermission(user, id, 'view'));
       return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center animate-fadeIn">
           <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 mb-4 shadow-lg shadow-red-500/5">
@@ -586,6 +586,8 @@ export default function App() {
             history={history}
             finances={finances}
             config={config}
+            currentUser={user}
+            clientPortalEnabled={CLIENT_PORTAL_ENABLED}
             onNavigate={setActiveTab}
             onUpdateStatus={(id, status) => handleUpdateAppointmentStatus(id, status)}
             onAddAppointment={handleAddAppointment}
@@ -594,7 +596,7 @@ export default function App() {
                 await dbInstance.updateAppointment(id, updated);
                 syncWithDatabase();
               } catch (e) {
-                console.error('Erro ao atualizar agendamento:', e);
+                safeLog('error', 'appointment.update', 'error', { entityId: id, error: e });
               }
             }}
             onDeleteAppointment={handleDeleteAppointment}
@@ -645,7 +647,7 @@ export default function App() {
                 await dbInstance.updateAppointment(id, updated);
                 syncWithDatabase();
               } catch (e) {
-                console.error('Erro ao atualizar agendamento:', e);
+                safeLog('error', 'appointment.update', 'error', { entityId: id, error: e });
               }
             }}
           />
@@ -677,7 +679,6 @@ export default function App() {
           <UsuariosModule 
             users={users}
             services={services}
-            appointments={appointments}
             commissions={commissions}
             currentUser={user}
             onAddUser={handleAddUser}
@@ -691,12 +692,8 @@ export default function App() {
         return (
           <AutomacoesModule 
             automations={automations}
-            logs={logs}
-            config={config}
             currentUser={user}
             onUpdateTrigger={handleUpdateAutomationTrigger}
-            onTestTrigger={handleTestTrigger}
-            onResetLogs={handleResetLogs}
           />
         );
       case 'automacoes':
@@ -707,7 +704,6 @@ export default function App() {
             customers={customers}
             vehicles={vehicles}
             services={services}
-            logs={logs}
             currentUser={user}
             onUpdateTrigger={handleUpdateAutomationTrigger}
             onSyncNeeded={syncWithDatabase}
@@ -764,7 +760,9 @@ export default function App() {
 
         {/* Dynamic viewport scroll container */}
         <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
-          {renderTabContent()}
+          <Suspense fallback={<ModuleLoader />}>
+            {renderTabContent()}
+          </Suspense>
         </div>
       </main>
     </div>

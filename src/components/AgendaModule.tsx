@@ -14,15 +14,16 @@ import {
   Car, 
   CheckCircle, 
   X, 
-  HelpCircle,
   Play,
   Check,
   AlertTriangle
 } from 'lucide-react';
 import { Appointment, Customer, Vehicle, Service, AppointmentStatus, SystemConfig, User as SystemUser } from '../types';
 import { getServicePrice, hasModulePermission } from '../db/localDb';
-import { getCurrentDate, getCurrentDateStr, getCurrentMonthPrefix, getCurrentYear } from '../utils/dateUtils';
+import { getCurrentDate } from '../utils/dateUtils';
+import { safeLog } from '../security/safeOutput';
 import { AppointmentGridCard, EmptySlotCard } from './AppointmentGridCard';
+import { createAppointmentFormDraft } from '../utils/servicePricing';
 
 interface AgendaModuleProps {
   appointments: Appointment[];
@@ -148,6 +149,14 @@ export default function AgendaModule({
     notes: ''
   });
 
+  const openNewAppointment = (time: string) => {
+    if (!canCreate) return;
+    setEditingApptId(null);
+    setErrorMessage(null);
+    setFormData(createAppointmentFormDraft(customers, vehicles, services, time));
+    setIsAddOpen(true);
+  };
+
   // Calculate day-by-day counts dynamically
   const getDayAppointments = (dayNum: number) => {
     const dayStr = `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}-${dayNum.toString().padStart(2, '0')}`;
@@ -167,6 +176,7 @@ export default function AgendaModule({
 
   // Handle Duplicating an Appointment on the same day slot
   const handleDuplicateAppointment = async (apptId: string) => {
+    if (!canCreate) return;
     const toClone = appointments.find(a => a.id === apptId);
     if (!toClone) return;
 
@@ -190,8 +200,8 @@ export default function AgendaModule({
         updatedAt: new Date().toISOString()
       });
     } catch (err: any) {
-      console.error('Erro ao duplicar agendamento:', err);
-      setErrorMessage(err.message || 'Erro ao duplicar agendamento.');
+      safeLog('error', 'agenda.appointment.duplicate', 'error', { error: err });
+      setErrorMessage('Erro ao duplicar agendamento.');
     } finally {
       setIsSaving(false);
     }
@@ -199,6 +209,7 @@ export default function AgendaModule({
 
   // Open the modal form in Edit Mode
   const handleEditClick = (apptId: string) => {
+    if (!canEdit) return;
     const appt = appointments.find(a => a.id === apptId);
     if (!appt) return;
 
@@ -252,6 +263,7 @@ export default function AgendaModule({
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (editingApptId ? !canEdit : !canCreate) return;
     setErrorMessage(null);
     setIsSaving(true);
 
@@ -374,8 +386,8 @@ export default function AgendaModule({
       }
       setIsAddOpen(false);
     } catch (err: any) {
-      console.error('Erro ao salvar agendamento:', err);
-      setErrorMessage(err.message || 'Erro ao processar agendamento no Supabase.');
+      safeLog('error', 'agenda.appointment.save', 'error', { error: err });
+      setErrorMessage('Erro ao processar agendamento.');
     } finally {
       setIsSaving(false);
     }
@@ -387,21 +399,22 @@ export default function AgendaModule({
     try {
       await onUpdateStatus(id, status, notes);
     } catch (err: any) {
-      console.error('Erro ao atualizar status do agendamento:', err);
-      alert(err.message || 'Erro ao atualizar status no Supabase.');
+      safeLog('error', 'agenda.appointment.status_update', 'error', { error: err });
+      alert('Erro ao atualizar status do agendamento.');
     } finally {
       setActiveStatusTransitionId(null);
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (!canDelete) return;
     setErrorMessage(null);
     setActiveStatusTransitionId(id);
     try {
       await onDeleteAppointment(id);
     } catch (err: any) {
-      console.error('Erro ao deletar agendamento:', err);
-      alert(err.message || 'Erro ao deletar agendamento no Supabase.');
+      safeLog('error', 'agenda.appointment.delete', 'error', { error: err });
+      alert('Erro ao deletar agendamento.');
     } finally {
       setActiveStatusTransitionId(null);
     }
@@ -438,7 +451,7 @@ export default function AgendaModule({
   for (let d = 1; d <= daysInMonth; d++) {
     const dayAppts = getDayAppointments(d);
     const isSelected = selectedDay === d;
-    const isToday = d === 15; // Simulated today date is July 15
+    const isToday = d === todayDateObj.getDate();
 
     calendarCells.push(
       <button
@@ -569,7 +582,9 @@ export default function AgendaModule({
             >
               <option value="" disabled>Selecione o serviço comercial...</option>
               {services.map(s => (
-                <option key={s.id} value={s.id}>{s.name} - R$ {s.basePrice.toFixed(2)}</option>
+                <option key={s.id} value={s.id}>
+                  {s.name} - R$ {getServicePrice(s, vehicles.find(vehicle => vehicle.id === formData.vehicleId)).toFixed(2)}
+                </option>
               ))}
             </select>
           </div>
@@ -701,19 +716,7 @@ export default function AgendaModule({
             </button>
             {canCreate && (
               <button 
-                onClick={() => {
-                  setEditingApptId(null);
-                  setFormData({
-                    customerId: customers[0]?.id || '',
-                    vehicleId: vehicles.find(v => v.customerId === customers[0]?.id)?.id || '',
-                    serviceId: services[0]?.id || '',
-                    time: baseHours[0] || '08:00',
-                    value: services[0]?.basePrice || 0,
-                    employeeId: 'Gabriel',
-                    notes: ''
-                  });
-                  setIsAddOpen(true);
-                }}
+                onClick={() => openNewAppointment(baseHours[0] || '08:00')}
                 className="px-5 py-2.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl shadow-[0_0_15px_rgba(14,165,233,0.35)] transition-all cursor-pointer"
               >
                 + Novo Agendamento
@@ -798,6 +801,8 @@ export default function AgendaModule({
                     onEditClick={handleEditClick}
                     onDuplicateClick={handleDuplicateAppointment}
                     onUpdateStatus={handleUpdateStatus}
+                    canCreate={canCreate}
+                    canEdit={canEdit}
                   />
                 );
               } else {
@@ -805,19 +810,8 @@ export default function AgendaModule({
                   <EmptySlotCard
                     key={hour}
                     hour={hour}
-                    onBookClick={(h) => {
-                      setEditingApptId(null);
-                      setFormData({
-                        customerId: customers[0]?.id || '',
-                        vehicleId: vehicles.find(v => v.customerId === customers[0]?.id)?.id || '',
-                        serviceId: services[0]?.id || '',
-                        time: h,
-                        value: services[0]?.basePrice || 0,
-                        employeeId: 'Gabriel',
-                        notes: ''
-                      });
-                      setIsAddOpen(true);
-                    }}
+                    onBookClick={openNewAppointment}
+                    canCreate={canCreate}
                   />
                 );
               }
@@ -872,21 +866,12 @@ export default function AgendaModule({
           <div className="flex justify-between items-center border-b border-slate-800 pb-3">
             <div>
               <span className="text-[10px] uppercase font-mono tracking-wider text-sky-400 font-bold">Fila Diária</span>
-              <h3 className="text-sm font-bold text-white">Atendimentos do dia {selectedDay}/07</h3>
+              <h3 className="text-sm font-bold text-white">
+                Atendimentos do dia {String(selectedDay).padStart(2, '0')}/{String(currentMonthIdx + 1).padStart(2, '0')}
+              </h3>
             </div>
             <button 
-              onClick={() => {
-                setFormData({
-                  customerId: customers[0]?.id || '',
-                  vehicleId: vehicles.find(v => v.customerId === customers[0]?.id)?.id || '',
-                  serviceId: services[0]?.id || '',
-                  time: agenda.timeSlots[0]?.time || '08:00',
-                  value: services[0]?.basePrice || 0,
-                  employeeId: 'Gabriel',
-                  notes: ''
-                });
-                setIsAddOpen(true);
-              }}
+              onClick={() => openNewAppointment(agenda.timeSlots[0]?.time || '08:00')}
               className="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 font-bold text-[11px] text-white rounded-xl shadow-md flex items-center gap-1.5 transition-colors cursor-pointer"
               id="btn-new-appointment"
             >
@@ -949,7 +934,7 @@ export default function AgendaModule({
 
                     {/* Operational Status Transitions */}
                     <div className="pt-3 border-t border-slate-800/80 flex gap-2 justify-end flex-wrap">
-                      {appt.status === 'agendado' && (
+                      {canEdit && appt.status === 'agendado' && (
                         <button 
                           disabled={activeStatusTransitionId === appt.id}
                           onClick={() => handleUpdateStatus(appt.id, 'confirmado')}
@@ -959,7 +944,7 @@ export default function AgendaModule({
                           <span>{activeStatusTransitionId === appt.id ? 'Salvando...' : 'Confirmar'}</span>
                         </button>
                       )}
-                      {appt.status === 'confirmado' && (
+                      {canEdit && appt.status === 'confirmado' && (
                         <button 
                           disabled={activeStatusTransitionId === appt.id}
                           onClick={() => handleUpdateStatus(appt.id, 'em_andamento')}
@@ -969,7 +954,7 @@ export default function AgendaModule({
                           <span>{activeStatusTransitionId === appt.id ? 'Salvando...' : 'Iniciar'}</span>
                         </button>
                       )}
-                      {appt.status === 'em_andamento' && (
+                      {canEdit && appt.status === 'em_andamento' && (
                         <button 
                           disabled={activeStatusTransitionId === appt.id}
                           onClick={() => handleUpdateStatus(appt.id, 'finalizado')}
@@ -979,7 +964,7 @@ export default function AgendaModule({
                           <span>{activeStatusTransitionId === appt.id ? 'Salvando...' : 'Finalizar'}</span>
                         </button>
                       )}
-                      {appt.status !== 'finalizado' && appt.status !== 'cancelado' && (
+                      {canEdit && appt.status !== 'finalizado' && appt.status !== 'cancelado' && (
                         <button 
                           disabled={activeStatusTransitionId === appt.id}
                           onClick={() => {
@@ -992,17 +977,19 @@ export default function AgendaModule({
                           Cancelar
                         </button>
                       )}
-                      <button 
-                        disabled={activeStatusTransitionId === appt.id}
-                        onClick={() => {
-                          if (confirm('Excluir agendamento?')) {
-                            handleDelete(appt.id);
-                          }
-                        }}
-                        className="px-2 py-1 bg-slate-900 hover:bg-red-500/10 border border-slate-800 text-[10px] text-red-500 rounded-lg transition-colors disabled:opacity-50"
-                      >
-                        Excluir
-                      </button>
+                      {canDelete && (
+                        <button 
+                          disabled={activeStatusTransitionId === appt.id}
+                          onClick={() => {
+                            if (confirm('Excluir agendamento?')) {
+                              void handleDelete(appt.id);
+                            }
+                          }}
+                          className="px-2 py-1 bg-slate-900 hover:bg-red-500/10 border border-slate-800 text-[10px] text-red-500 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          Excluir
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

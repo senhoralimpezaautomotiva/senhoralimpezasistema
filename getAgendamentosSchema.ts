@@ -1,5 +1,6 @@
-const SUPABASE_URL = 'https://ansrnnydksrjwefnntaw.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_vbMMkzHsGfSd5Gyg_7zogg_YUIBB7gg';
+const SUPABASE_URL = process.env.SUPABASE_URL?.trim() || '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY?.trim() || '';
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error('Configuração Supabase ausente.');
 
 async function main() {
   try {

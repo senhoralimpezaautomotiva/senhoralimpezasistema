@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { 
   Gift, 
   Users, 
@@ -31,17 +31,23 @@ export default function IndicacoesModule({ customers, appointments, config, curr
   const [searchTerm, setSearchTerm] = useState('');
   const [bonusPercentInput, setBonusPercentInput] = useState(config.referralDiscountPercent ?? 10);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+  const successTimerRef = useRef<number | null>(null);
 
   // Sync state if config prop changes
   useEffect(() => {
     setBonusPercentInput(config.referralDiscountPercent ?? 10);
   }, [config.referralDiscountPercent]);
 
+  useEffect(() => () => {
+    if (successTimerRef.current !== null) window.clearTimeout(successTimerRef.current);
+  }, []);
+
   const handleSaveConfig = () => {
-    if (onUpdateConfig) {
+    if (canEdit && onUpdateConfig) {
       onUpdateConfig({ referralDiscountPercent: bonusPercentInput });
       setShowSaveSuccess(true);
-      setTimeout(() => setShowSaveSuccess(false), 3000);
+      if (successTimerRef.current !== null) window.clearTimeout(successTimerRef.current);
+      successTimerRef.current = window.setTimeout(() => setShowSaveSuccess(false), 3000);
     }
   };
 
@@ -200,6 +206,7 @@ export default function IndicacoesModule({ customers, appointments, config, curr
                 max="100"
                 value={bonusPercentInput}
                 onChange={(e) => setBonusPercentInput(Number(e.target.value))}
+                disabled={!canEdit}
                 className="w-24 bg-slate-950 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 rounded-xl px-3 py-1.5 text-xs text-white font-mono"
               />
               <span className="text-slate-500 font-mono text-xs">%</span>
@@ -209,7 +216,8 @@ export default function IndicacoesModule({ customers, appointments, config, curr
           <div className="flex items-center gap-3">
             <button
               onClick={handleSaveConfig}
-              className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors"
+              disabled={!canEdit}
+              className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors"
             >
               <Check size={14} />
               <span>Salvar Alteração</span>
