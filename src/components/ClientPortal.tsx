@@ -225,6 +225,18 @@ function AuthenticatedClientPortal({
   // View booking detail state
   const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
 
+  // Inicialização e sincronização automática do veículo selecionado
+  useEffect(() => {
+    if (vehicles.length > 0) {
+      const exists = vehicles.some(v => v.id === selectedVehicleId);
+      if (!selectedVehicleId || !exists) {
+        setSelectedVehicleId(vehicles[0].id);
+      }
+    } else if (selectedVehicleId) {
+      setSelectedVehicleId('');
+    }
+  }, [vehicles, selectedVehicleId]);
+
   // Consulta somente intervalos agregados da data escolhida. Nenhum cadastro
   // de outro cliente é retornado ao navegador.
   useEffect(() => {
