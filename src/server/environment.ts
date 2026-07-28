@@ -6,6 +6,7 @@ export interface ServerEnvironment {
   port: number;
   supabaseUrl: string;
   supabaseAnonKey: string;
+  supabaseServiceRoleKey?: string;
   clientPortalEnabled: boolean;
   makeWebhookConfigured: boolean;
   zapiConfigured: boolean;
@@ -91,6 +92,7 @@ export const loadServerEnvironment = (
   const supabaseAnonKey = requiresSupabase
     ? required(source, 'SUPABASE_ANON_KEY')
     : optional(source, 'SUPABASE_ANON_KEY');
+  const supabaseServiceRoleKey = optional(source, 'SUPABASE_SERVICE_ROLE_KEY');
 
   if (Boolean(supabaseUrl) !== Boolean(supabaseAnonKey)) {
     throw new EnvironmentConfigurationError('ENV_INCOMPLETE_SUPABASE_CONFIG');
@@ -147,6 +149,7 @@ export const loadServerEnvironment = (
     port,
     supabaseUrl,
     supabaseAnonKey,
+    supabaseServiceRoleKey: supabaseServiceRoleKey || undefined,
     clientPortalEnabled,
     makeWebhookConfigured: Boolean(makeWebhookUrl),
     zapiConfigured: Boolean(zapiInstanceId && zapiToken)
