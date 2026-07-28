@@ -973,6 +973,7 @@ class LocalDatabase {
   history: HistoryRecord[] = [];
   finances: CashTransaction[] = [];
   config: SystemConfig = DEFAULT_CONFIG;
+  supabaseServiceRoleKey?: string;
   automations: AutomationTrigger[] = [];
   logs: AutomationLog[] = [];
   vehicleModels: VehicleModel[] = [];
@@ -1086,7 +1087,10 @@ class LocalDatabase {
   }
 
   getSupabaseClient() {
-    return getSharedSupabaseClient(this.config.supabaseUrl, this.config.supabaseAnonKey);
+    const key = (isServer && this.supabaseServiceRoleKey)
+      ? this.supabaseServiceRoleKey
+      : this.config.supabaseAnonKey;
+    return getSharedSupabaseClient(this.config.supabaseUrl, key);
   }
 
   async loadConfigFromSupabase(supabase: any) {
