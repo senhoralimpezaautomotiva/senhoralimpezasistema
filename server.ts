@@ -34,6 +34,7 @@ const apiError = (
 
 async function startServer() {
   const environment = loadServerEnvironment();
+  dbInstance.supabaseServiceRoleKey = environment.supabaseServiceRoleKey;
   dbInstance.config = {
     ...dbInstance.config,
     supabaseUrl: environment.supabaseUrl,
