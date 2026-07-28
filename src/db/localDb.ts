@@ -2259,7 +2259,7 @@ class LocalDatabase {
     const normalized = renderAndNormalizeMessage(trigger.template, context);
 
     // Build the execution record
-    const id = `exec_${event}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+    const id = generateUUID();
     const nowStr = new Date().toISOString();
     
     // Check if outside operational window
