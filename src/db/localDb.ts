@@ -30,6 +30,7 @@ import { getCurrentDateStr } from '../utils/dateUtils';
 import { sanitizeLegacyConfigStorage, toPublicSystemConfig } from '../security/publicConfig';
 import { maskPhone, safeLog } from '../security/safeOutput';
 import { getPublicSupabaseEnvironment } from '../config/publicEnvironment';
+import { isWithinOperationalWindow, getNextStartTime } from '../utils/operationalWindow';
 export { getServicePrice } from '../utils/servicePricing';
 
 // Constants for Local Storage Keys
@@ -2267,19 +2268,8 @@ class LocalDatabase {
     const startHour = this.config.automationStartHour || '08:00';
     const endHour = this.config.automationEndHour || '20:00';
     
-    const now = new Date();
-    const currentHourStr = now.toTimeString().slice(0, 5); // "HH:MM"
-    
-    if (currentHourStr < startHour || currentHourStr > endHour) {
-      // Defer to start of next operational window
-      const deferredDate = new Date();
-      if (currentHourStr > endHour) {
-        // schedule for tomorrow at startHour
-        deferredDate.setDate(deferredDate.getDate() + 1);
-      }
-      const [sh, sm] = startHour.split(':').map(Number);
-      deferredDate.setHours(sh, sm, 0, 0);
-      targetTime = deferredDate.toISOString();
+    if (!isWithinOperationalWindow(startHour, endHour)) {
+      targetTime = getNextStartTime(startHour, endHour);
       safeLog('info', 'automation.queue', 'ignored', {
         eventType: event,
         reason: 'outside_operational_window'
