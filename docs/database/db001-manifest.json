@@ -12,7 +12,8 @@
   "officialMigrationFiles": [
     "20260724210000_baseline.sql",
     "20260724213000_portal001_client_auth_and_isolation.sql",
-    "20260724224500_portal001_email_identity_provider.sql"
+    "20260724224500_portal001_email_identity_provider.sql",
+    "20260727220000_automacoes_execucoes.sql"
   ],
   "sqlArtifacts": [
     {
@@ -41,6 +42,15 @@
       "idempotent": "partial",
       "risk": "high",
       "recommendation": "Aplicar após a migração base da PORTAL-001 e manter confirmação de e-mail habilitada."
+    },
+    {
+      "path": "supabase/migrations/20260727220000_automacoes_execucoes.sql",
+      "category": ["official-migration", "automation", "security"],
+      "purpose": "Cria tabela automacoes_execucoes e políticas RLS para worker de automação e equipe.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Aplicar para restaurar a fila de automações no Supabase."
     },
     {
       "path": "configuracoes_empresa.sql",
