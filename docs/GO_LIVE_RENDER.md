@@ -53,6 +53,7 @@ Preencha no painel:
 | --- | --- | --- |
 | `SUPABASE_URL` | Sim | Project Settings → API |
 | `SUPABASE_ANON_KEY` | Sim | Chave pública `publishable` ou `anon` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Recomendada | Project Settings → API (Chave secreta `service_role` para o worker de automações no backend) |
 | `VITE_SUPABASE_URL` | Sim | Mesmo valor de `SUPABASE_URL` |
 | `VITE_SUPABASE_ANON_KEY` | Sim | Mesmo valor de `SUPABASE_ANON_KEY` |
 | `MAKE_WEBHOOK_URL` | Condicional | Cofre do Make |
@@ -60,9 +61,7 @@ Preencha no painel:
 | `ZAPI_TOKEN` | Condicional | Painel Z-API |
 | `ZAPI_CLIENT_TOKEN` | Opcional | Painel Z-API |
 
-Configure Make ou o conjunto Z-API. Não use `service_role`, chave `secret`,
-senha do banco ou Access Token da CLI no Render. As variáveis `VITE_*` são
-públicas e aceitam somente a URL e a chave pública do Supabase.
+Configure Make ou o conjunto Z-API. A chave `SUPABASE_SERVICE_ROLE_KEY` é usada exclusivamente pelo backend Node.js no Render para contornar a RLS de background workers. As variáveis `VITE_*` são públicas e aceitam somente a URL e a chave anônima pública do Supabase, jamais a `service_role`.
 
 O Render fornece `PORT` e `RENDER_EXTERNAL_URL` automaticamente. Se um domínio
 próprio for adotado, adicione `PUBLIC_APP_URL=https://dominio` ao Render e
