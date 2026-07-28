@@ -82,7 +82,8 @@ test('supabase/migrations é a única fonte oficial e contém a baseline remota 
   assert.deepEqual(migrationFiles, [
     '20260724210000_baseline.sql',
     '20260724213000_portal001_client_auth_and_isolation.sql',
-    '20260724224500_portal001_email_identity_provider.sql'
+    '20260724224500_portal001_email_identity_provider.sql',
+    '20260727220000_automacoes_execucoes.sql'
   ]);
 
   const pattern = new RegExp(manifest.expectedBaselineFilenamePattern);
