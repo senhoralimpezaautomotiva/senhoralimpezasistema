@@ -189,3 +189,60 @@ test('portal mantém preço por porte e tabela de sobrescritas após unificaçã
   assert.match(portal, /pricingType === 'porte'/);
   assert.match(portal, /sizeCategoryToPorte/);
 });
+
+test('filtro de execuções pendentes usa timestamps numéricos e aceita sufixos +00:00 e Z', () => {
+  const now = Date.now();
+  const pastIsoUtc = new Date(now - 10000).toISOString();
+  const pastIsoOffset = pastIsoUtc.replace(/\.\d{3}Z$/, '+00:00');
+  const futureIsoZ = new Date(now + 3600000).toISOString();
+
+  const executions = [
+    { id: 'exec_overdue_offset', status: 'pendente', data_execucao: pastIsoOffset },
+    { id: 'exec_overdue_z', status: 'pendente', data_execucao: pastIsoUtc },
+    { id: 'exec_future', status: 'pendente', data_execucao: futureIsoZ },
+    { id: 'exec_completed', status: 'sucesso', data_execucao: pastIsoUtc }
+  ];
+
+  const pending = executions.filter(e => 
+    e.status === 'pendente' && new Date(e.data_execucao).getTime() <= now
+  );
+
+  assert.equal(pending.length, 2);
+  assert.deepEqual(pending.map(e => e.id), ['exec_overdue_offset', 'exec_overdue_z']);
+});
+
+test('janela operacional em America/Sao_Paulo suporta 08:00-20:00 e travessia de meia-noite 08:00-02:00', async () => {
+  const {
+    getPartsInTimezone,
+    isWithinOperationalWindow,
+    getNextStartTime
+  } = await import('../src/utils/operationalWindow');
+
+  // 14:00 em SP (17:00 UTC) -> dentro da janela em ambas
+  const dateAt14SP = new Date('2026-07-28T17:00:00.000Z');
+  assert.equal(getPartsInTimezone(dateAt14SP, 'America/Sao_Paulo').hours, '14');
+  assert.equal(isWithinOperationalWindow('08:00', '20:00', dateAt14SP), true);
+  assert.equal(isWithinOperationalWindow('08:00', '02:00', dateAt14SP), true);
+
+  // 21:00 em SP (00:00 UTC do dia seguinte) -> fora de 08:00-20:00, dentro de 08:00-02:00
+  const dateAt21SP = new Date('2026-07-29T00:00:00.000Z');
+  assert.equal(getPartsInTimezone(dateAt21SP, 'America/Sao_Paulo').hours, '21');
+  assert.equal(isWithinOperationalWindow('08:00', '20:00', dateAt21SP), false);
+  assert.equal(isWithinOperationalWindow('08:00', '02:00', dateAt21SP), true);
+
+  // 01:30 em SP (04:30 UTC) -> fora de 08:00-20:00, dentro de 08:00-02:00
+  const dateAt0130SP = new Date('2026-07-28T04:30:00.000Z');
+  assert.equal(getPartsInTimezone(dateAt0130SP, 'America/Sao_Paulo').hours, '01');
+  assert.equal(isWithinOperationalWindow('08:00', '20:00', dateAt0130SP), false);
+  assert.equal(isWithinOperationalWindow('08:00', '02:00', dateAt0130SP), true);
+
+  // 04:00 em SP (07:00 UTC) -> fora de ambas
+  const dateAt0400SP = new Date('2026-07-28T07:00:00.000Z');
+  assert.equal(getPartsInTimezone(dateAt0400SP, 'America/Sao_Paulo').hours, '04');
+  assert.equal(isWithinOperationalWindow('08:00', '20:00', dateAt0400SP), false);
+  assert.equal(isWithinOperationalWindow('08:00', '02:00', dateAt0400SP), false);
+
+  // Testa getNextStartTime
+  const nextStart = getNextStartTime('08:00', '20:00', dateAt21SP);
+  assert.equal(new Date(nextStart).toISOString(), '2026-07-29T11:00:00.000Z');
+});
