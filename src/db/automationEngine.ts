@@ -2,6 +2,13 @@ import { dbInstance } from './localDb';
 import { AutomationLog, Customer, Vehicle, Service, Appointment } from '../types';
 import { getIntegrationSecrets, hasZapiCredentials } from '../server/integrationSecrets';
 import { maskPhone, redactExternalResponse, safeLog } from '../security/safeOutput';
+import {
+  getPartsInTimezone,
+  isWithinOperationalWindow,
+  getNextStartTime
+} from '../utils/operationalWindow';
+
+export { getPartsInTimezone, isWithinOperationalWindow, getNextStartTime };
 
 const sendToConfiguredProviders = async (
   payloadBody: Record<string, unknown>,
@@ -270,10 +277,10 @@ export class AutomationEngine {
    * Processes pending automation executions in the queue.
    */
   private async processQueue(logs: string[]): Promise<number> {
-    const nowIso = new Date().toISOString();
+    const nowTime = Date.now();
     const pendingExecutions = dbInstance.executions.filter(e => 
       e.status === 'pendente' && 
-      e.data_execucao <= nowIso
+      new Date(e.data_execucao).getTime() <= nowTime
     );
 
     if (pendingExecutions.length === 0) {
@@ -288,7 +295,7 @@ export class AutomationEngine {
     if (!this.isWithinOperationalWindow(startHour, endHour)) {
       logs.push(`[Operational Window] Fora do horário de funcionamento (${startHour} - ${endHour}). Postergando agendamentos pendentes.`);
       
-      const nextStart = this.getNextStartTime(startHour);
+      const nextStart = this.getNextStartTime(startHour, endHour);
       for (const exec of pendingExecutions) {
         exec.data_execucao = nextStart;
         exec.updated_at = new Date().toISOString();
@@ -422,24 +429,15 @@ export class AutomationEngine {
   /**
    * Checks if current time is within operational window.
    */
-  private isWithinOperationalWindow(startHour: string, endHour: string): boolean {
-    const now = new Date();
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const currentTime = `${hours}:${minutes}`;
-
-    return currentTime >= startHour && currentTime <= endHour;
+  isWithinOperationalWindow(startHour: string, endHour: string, date = new Date()): boolean {
+    return isWithinOperationalWindow(startHour, endHour, date);
   }
 
   /**
    * Generates next day's start time ISO string.
    */
-  private getNextStartTime(startHour: string): string {
-    const now = new Date();
-    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    const [h, m] = startHour.split(':').map(Number);
-    tomorrow.setHours(h || 8, m || 0, 0, 0);
-    return tomorrow.toISOString();
+  getNextStartTime(startHour: string, endHour = '20:00', date = new Date()): string {
+    return getNextStartTime(startHour, endHour, date);
   }
 
   /**
