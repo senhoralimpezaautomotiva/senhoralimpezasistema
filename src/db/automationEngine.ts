@@ -23,7 +23,7 @@ const sendToConfiguredProviders = async (
   if (secrets.makeWebhookUrl) {
     configuredProviders += 1;
     // [AUTOMATION TRACE 3] Mensagem antes do envio (Make)
-    console.log('[AUTOMATION TRACE] 3. Mensagem antes do envio (Make):', {
+    safeLog('info', 'automation.trace.3.make_before_send', 'success', {
       message,
       payloadBody
     });
@@ -36,10 +36,10 @@ const sendToConfiguredProviders = async (
       });
 
       // [AUTOMATION TRACE 5] Confirmação Make
-      console.log('[AUTOMATION TRACE] 5. Confirmação (Make):', {
+      safeLog('info', 'automation.trace.5.confirmation', 'success', {
         provider: 'Make',
         status: response.status,
-        executionId: payloadBody.executionId
+        executionId: String(payloadBody.executionId || '')
       });
 
       statuses.push(`[Make Webhook] Status HTTP: ${response.status}`);
@@ -58,7 +58,7 @@ const sendToConfiguredProviders = async (
     }
 
     // [AUTOMATION TRACE 4] Mensagem enviada para Z-API
-    console.log('[AUTOMATION TRACE] 4. Mensagem enviada para Z-API:', {
+    safeLog('info', 'automation.trace.4.zapi_send', 'success', {
       phone,
       message
     });
@@ -71,10 +71,10 @@ const sendToConfiguredProviders = async (
       });
 
       // [AUTOMATION TRACE 5] Confirmação Z-API
-      console.log('[AUTOMATION TRACE] 5. Confirmação (Z-API):', {
+      safeLog('info', 'automation.trace.5.confirmation', 'success', {
         provider: 'Z-API',
         status: response.status,
-        executionId: payloadBody.executionId
+        executionId: String(payloadBody.executionId || '')
       });
 
       statuses.push(`[Z-API] Status HTTP: ${response.status}`);
@@ -85,8 +85,8 @@ const sendToConfiguredProviders = async (
   }
 
   if (configuredProviders === 0) {
-    console.log('[AUTOMATION TRACE] 3 & 4. Provedores não configurados. Envio simulado:', {
-      executionId: payloadBody.executionId,
+    safeLog('info', 'automation.trace.3_4.unconfigured', 'success', {
+      executionId: String(payloadBody.executionId || ''),
       phone,
       message
     });
