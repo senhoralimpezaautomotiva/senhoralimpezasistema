@@ -1015,18 +1015,11 @@ class LocalDatabase {
     );
     this.config = { ...DEFAULT_CONFIG, ...savedConfig };
     
-    let savedAutomations = DEFAULT_AUTOMATIONS;
-    if (legacyAutomations) {
-      try {
-        savedAutomations = JSON.parse(legacyAutomations);
-      } catch (e) {
-        // ignore
-      }
-    } else {
-      savedAutomations = getLocalData<AutomationTrigger[]>('sl_automations_cache', DEFAULT_AUTOMATIONS);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(KEYS.AUTOMATIONS);
+      localStorage.removeItem('sl_automations_cache');
     }
-    
-    this.automations = savedAutomations;
+    this.automations = DEFAULT_AUTOMATIONS;
     this.ensureAllDefaultAutomationsExist();
     this.logs = isServer ? getLocalData<AutomationLog[]>(KEYS.LOGS, []) : [];
     this.vehicleModels = getLocalData<VehicleModel[]>(KEYS.VEHICLE_MODELS, PREFILLED_VEHICLE_MODELS);
@@ -1048,7 +1041,9 @@ class LocalDatabase {
     setLocalData(KEYS.FINANCES, this.finances);
     // Store only non-critical interface cache, removing legacy configuration keys to meet requirement
     setLocalData('sl_config_cache', toPublicSystemConfig(this.config));
-    setLocalData('sl_automations_cache', this.automations);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('sl_automations_cache');
+    }
     setLocalData(KEYS.VEHICLE_MODELS, this.vehicleModels);
     if (isServer) {
       setLocalData(KEYS.LOGS, this.logs);
@@ -1461,8 +1456,27 @@ class LocalDatabase {
       return;
     }
 
-    // The browser only queues the event. Provider credentials and outbound
-    // requests are handled by the server-side automation processor.
+    const isOperationalEvent = [
+      'novo_agendamento',
+      'novo_cliente',
+      'servico_iniciado',
+      'servico_finalizado',
+      'pagamento_recebido'
+    ].includes(event);
+
+    if (isOperationalEvent) {
+      this.addLog({
+        id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        triggerEvent: automation.name,
+        targetName: 'Cliente protegido',
+        targetContact: maskPhone(context.customer.phone || context.customer.whatsapp),
+        payload: 'Operação concluída. A notificação é gerenciada automaticamente pelo banco de dados.',
+        status: 'sucesso',
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+
     void this.queueAutomation(event, context)
       .then((execution) => {
         if (!execution) return;
@@ -2075,17 +2089,43 @@ class LocalDatabase {
   }
 
   // --- MANAGE AUTOMATION TRIGGERS ---
-  async updateAutomationTrigger(id: string, updated: Partial<AutomationTrigger>) {
-    this.automations = this.automations.map(a => a.id === id ? { ...a, ...updated } : a);
-    this.save();
-    
-    // Save to Supabase immediately if active
-    if (this.config.useRealSupabase) {
-      await this.saveConfigToSupabase();
-      if (this.onSyncCallback) {
-        this.onSyncCallback();
-      }
+  async updateAutomationTrigger(id: string, updated: Partial<AutomationTrigger>): Promise<AutomationTrigger[]> {
+    const updatedItem = this.automations.find(a => a.id === id);
+    if (!updatedItem) {
+      throw new Error(`Automação com ID ${id} não encontrada.`);
     }
+
+    const mergedItem = { ...updatedItem, ...updated };
+    const payloadItems = [mergedItem];
+
+    const { getAdminApiClient } = await import('../security/adminApiClient');
+    const api = getAdminApiClient();
+    const response = await api.fetch('/api/automations/templates', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ templates: payloadItems })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      safeLog('error', 'automation.trigger.update.api', 'error', { id, error: errorData });
+      throw new Error(errorData.error || 'Falha ao salvar template via servidor.');
+    }
+
+    const data = await response.json().catch(() => null);
+    if (!data || !Array.isArray(data.automations)) {
+      safeLog('error', 'automation.trigger.update.api', 'invalid_response', { id, data });
+      throw new Error('Resposta do servidor inválida: campo automations ausente ou malformado.');
+    }
+
+    // Atualiza o estado da RAM do frontend SOMENTE a partir da resposta confirmada e validada do backend
+    this.automations = data.automations;
+    if (this.onSyncCallback) {
+      this.onSyncCallback();
+    }
+    return this.automations;
   }
 
   // --- MANUALLY SIMULATE AUTOMATION TRIGGER ---
@@ -2256,6 +2296,12 @@ class LocalDatabase {
       return null;
     }
 
+    // [AUTOMATION TRACE 1] Template carregado
+    console.log('[AUTOMATION TRACE] 1. Template carregado:', {
+      event,
+      template: trigger.template
+    });
+
     // Render message using the unified rendering engine
     const normalized = renderAndNormalizeMessage(trigger.template, context);
 
@@ -2276,6 +2322,15 @@ class LocalDatabase {
       });
     }
 
+    const dedupKeyMap: Record<string, string | undefined> = {
+      novo_cliente: context.customer?.id ? `novo_cliente:${context.customer.id}` : undefined,
+      novo_agendamento: context.appointment?.id ? `novo_agendamento:${context.appointment.id}` : undefined,
+      servico_iniciado: context.appointment?.id ? `servico_iniciado:${context.appointment.id}` : undefined,
+      servico_finalizado: context.appointment?.id ? `servico_finalizado:${context.appointment.id}` : undefined,
+      pagamento_recebido: context.appointment?.id ? `pagamento_recebido:${context.appointment.id}` : undefined,
+    };
+    const deduplicationKey = dedupKeyMap[event];
+
     const execution: AutomationExecution = {
       id,
       empresa_id: 'c0000000-0000-0000-0000-000000000000',
@@ -2287,10 +2342,17 @@ class LocalDatabase {
       status: 'pendente',
       tentativas: 0,
       resposta_api: '',
+      deduplication_key: deduplicationKey,
       data_execucao: targetTime,
       created_at: nowStr,
       updated_at: nowStr
     };
+
+    // [AUTOMATION TRACE 2] Mensagem renderizada
+    console.log('[AUTOMATION TRACE] 2. Mensagem renderizada:', {
+      normalized,
+      executionMensagem: execution.mensagem
+    });
 
     this.executions.push(execution);
     this.save();
@@ -2309,6 +2371,7 @@ class LocalDatabase {
           status: execution.status,
           tentativas: execution.tentativas,
           resposta_api: execution.resposta_api,
+          deduplication_key: execution.deduplication_key || null,
           data_execucao: execution.data_execucao,
           created_at: execution.created_at,
           updated_at: execution.updated_at
