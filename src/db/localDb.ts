@@ -844,21 +844,30 @@ function mapFrontendServiceToDb(s: Partial<Service>): any {
 
 export function mapDbAppointmentToFrontend(row: any): Appointment {
   let status: AppointmentStatus = 'agendado';
-  const dbStatus = (row.status || '').toLowerCase();
+  const dbStatus = String(row.status || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
   
   if (dbStatus === 'agendado') {
     status = 'agendado';
   } else if (dbStatus === 'confirmado') {
     status = 'confirmado';
-  } else if (dbStatus === 'em andamento' || dbStatus === 'em_andamento') {
+  } else if (dbStatus === 'em_andamento') {
     status = 'em_andamento';
-  } else if (dbStatus === 'concluído' || dbStatus === 'concluido' || dbStatus === 'finalizado' || dbStatus === 'entregue') {
+  } else if (dbStatus === 'concluido' || dbStatus === 'finalizado') {
     status = 'finalizado';
+  } else if (dbStatus === 'entregue') {
+    status = 'entregue';
   } else if (dbStatus === 'cancelado') {
     status = 'cancelado';
-  } else if (dbStatus === 'cliente_chegou') {
-    status = 'cliente_chegou';
-  } else if (['agendado', 'confirmado', 'em_andamento', 'finalizado', 'cancelado'].includes(dbStatus)) {
+  } else if (
+    dbStatus === 'cliente_chegou'
+    || dbStatus === 'aguardando_aprovacao'
+    || dbStatus === 'aguardando_peca'
+  ) {
     status = dbStatus as AppointmentStatus;
   }
 
@@ -918,7 +927,7 @@ export function mapDbAppointmentToFrontend(row: any): Appointment {
   };
 }
 
-function mapFrontendAppointmentToDb(a: Partial<Appointment>): any {
+export function mapFrontendAppointmentToDb(a: Partial<Appointment>): any {
   const row: any = {};
   if (a.id) row.id = a.id;
   if (a.customerId) row.cliente_id = a.customerId;
@@ -934,14 +943,18 @@ function mapFrontendAppointmentToDb(a: Partial<Appointment>): any {
   }
   
   if (a.status) {
-    if (a.status === 'finalizado' || a.status === 'entregue') {
-      row.status = 'Concluído';
-    } else if (a.status === 'em_andamento' || a.status === 'cliente_chegou' || a.status === 'aguardando_aprovacao' || a.status === 'aguardando_peca') {
-      row.status = 'Em andamento';
-    } else {
-      const capitalizedStatus = a.status.charAt(0).toUpperCase() + a.status.slice(1).toLowerCase();
-      row.status = capitalizedStatus;
-    }
+    const dbStatusByFrontend: Record<AppointmentStatus, string> = {
+      agendado: 'Agendado',
+      confirmado: 'Confirmado',
+      cliente_chegou: 'Cliente chegou',
+      em_andamento: 'Em andamento',
+      aguardando_aprovacao: 'Aguardando aprovação',
+      aguardando_peca: 'Aguardando peça',
+      finalizado: 'Finalizado',
+      entregue: 'Entregue',
+      cancelado: 'Cancelado'
+    };
+    row.status = dbStatusByFrontend[a.status];
   }
   
   if (a.value !== undefined) row.valor_servico = a.value;
@@ -981,6 +994,14 @@ class LocalDatabase {
   executions: AutomationExecution[] = [];
   users: User[] = [];
   commissions: CommissionRecord[] = [];
+  automationConfigUpdatedAt: string | null = null;
+  lastSupabaseSync = {
+    configLoaded: false,
+    customersLoaded: false,
+    vehiclesLoaded: false,
+    servicesLoaded: false,
+    appointmentsLoaded: false
+  };
   
   onSyncCallback: (() => void) | null = null;
 
@@ -1008,8 +1029,6 @@ class LocalDatabase {
     this.commissions = getLocalData<CommissionRecord[]>(KEYS.COMMISSIONS, []);
     
     // Only public interface configuration may be cached in the browser.
-    const legacyAutomations = typeof localStorage !== 'undefined' ? localStorage.getItem(KEYS.AUTOMATIONS) : null;
-    
     const savedConfig = toPublicSystemConfig(
       getLocalData<Partial<SystemConfig>>('sl_config_cache', DEFAULT_CONFIG)
     );
@@ -1074,11 +1093,6 @@ class LocalDatabase {
     }
     if (updated) {
       this.save();
-      if (this.config.useRealSupabase) {
-        this.saveConfigToSupabase().catch(e => {
-          safeLog('error', 'automation.restore_default', 'error', { error: e });
-        });
-      }
     }
   }
 
@@ -1133,13 +1147,21 @@ class LocalDatabase {
           agenda: data.agenda ? (typeof data.agenda === 'string' ? JSON.parse(data.agenda) : data.agenda) : this.config.agenda
         };
         
-        if (data.automations) {
-          const parsedAutomations = typeof data.automations === 'string' ? JSON.parse(data.automations) : data.automations;
-          if (Array.isArray(parsedAutomations) && parsedAutomations.length > 0) {
-            this.automations = parsedAutomations;
-          }
+        const parsedAutomations = typeof data.automations === 'string'
+          ? JSON.parse(data.automations)
+          : data.automations;
+        if (parsedAutomations !== null && !Array.isArray(parsedAutomations)) {
+          safeLog('error', 'supabase.config.load', 'error', {
+            reason: 'invalid_automations_shape'
+          });
+          return false;
         }
-        this.ensureAllDefaultAutomationsExist();
+        if (Array.isArray(parsedAutomations) && parsedAutomations.length > 0) {
+          this.automations = parsedAutomations;
+        } else {
+          this.automations = DEFAULT_AUTOMATIONS.map(item => ({ ...item }));
+        }
+        this.automationConfigUpdatedAt = data.updated_at || null;
         
         // Remove old LocalStorage configs to fulfill migration cleanup requirement
         if (!isServer) {
@@ -1182,9 +1204,7 @@ class LocalDatabase {
         accent_color: this.config.accentColor,
         referral_active: this.config.referralActive ?? true,
         referral_discount_percent: this.config.referralDiscountPercent ?? 10,
-        agenda: this.config.agenda ? JSON.stringify(this.config.agenda) : undefined,
-        automations: this.automations,
-        updated_at: new Date().toISOString()
+        agenda: this.config.agenda ? JSON.stringify(this.config.agenda) : undefined
       });
       
       if (!error) {
@@ -1200,6 +1220,13 @@ class LocalDatabase {
 
   // --- SUPABASE LIVE SYNC ENGINE ---
   async syncWithSupabase() {
+    this.lastSupabaseSync = {
+      configLoaded: false,
+      customersLoaded: false,
+      vehiclesLoaded: false,
+      servicesLoaded: false,
+      appointmentsLoaded: false
+    };
     if (!this.config.useRealSupabase) {
       safeLog('info', 'supabase.sync', 'ignored', { reason: 'disabled' });
       return;
@@ -1215,7 +1242,7 @@ class LocalDatabase {
       const supabase = this.getSupabaseClient();
 
       // Load configurations from Supabase first
-      await this.loadConfigFromSupabase(supabase);
+      this.lastSupabaseSync.configLoaded = await this.loadConfigFromSupabase(supabase);
 
       // 1. Fetch Clientes
       safeLog('info', 'supabase.sync.customers', 'started');
@@ -1223,6 +1250,7 @@ class LocalDatabase {
       if (errClientes) {
         safeLog('error', 'supabase.sync.customers', 'error', { error: errClientes });
       } else if (dbClientes) {
+        this.lastSupabaseSync.customersLoaded = true;
         safeLog('info', 'supabase.sync.customers', 'success', { count: dbClientes.length });
         // Filter out system configurations record
         this.customers = dbClientes.filter(row => row.id !== 'c0000000-0000-0000-0000-000000000000').map(mapDbCustomerToFrontend);
@@ -1285,6 +1313,7 @@ class LocalDatabase {
       if (errVeiculos) {
         safeLog('error', 'supabase.sync.vehicles', 'error', { error: errVeiculos });
       } else if (dbVeiculos) {
+        this.lastSupabaseSync.vehiclesLoaded = true;
         safeLog('info', 'supabase.sync.vehicles', 'success', { count: dbVeiculos.length });
         this.vehicles = dbVeiculos.map(mapDbVehicleToFrontend);
       }
@@ -1295,6 +1324,7 @@ class LocalDatabase {
       if (errServicos) {
         safeLog('error', 'supabase.sync.services', 'error', { error: errServicos });
       } else if (dbServicos) {
+        this.lastSupabaseSync.servicesLoaded = true;
         safeLog('info', 'supabase.sync.services', 'success', { count: dbServicos.length });
         this.services = dbServicos.map(mapDbServiceToFrontend);
       }
@@ -1305,6 +1335,7 @@ class LocalDatabase {
       if (errAgendamentos) {
         safeLog('error', 'supabase.sync.appointments', 'error', { error: errAgendamentos });
       } else if (dbAgendamentos) {
+        this.lastSupabaseSync.appointmentsLoaded = true;
         safeLog('info', 'supabase.sync.appointments', 'success', { count: dbAgendamentos.length });
         this.appointments = dbAgendamentos.map(mapDbAppointmentToFrontend);
       }
@@ -1328,6 +1359,7 @@ class LocalDatabase {
             status: row.status || 'pendente',
             tentativas: row.tentativas !== undefined ? row.tentativas : 1,
             resposta_api: row.resposta_api || undefined,
+            deduplication_key: row.deduplication_key || undefined,
             data_execucao: row.data_execucao || new Date().toISOString(),
             data_proxima_tentativa: row.data_proxima_tentativa || undefined,
             created_at: row.created_at || new Date().toISOString(),
@@ -1465,15 +1497,22 @@ class LocalDatabase {
     ].includes(event);
 
     if (isOperationalEvent) {
-      this.addLog({
-        id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-        triggerEvent: automation.name,
-        targetName: 'Cliente protegido',
-        targetContact: maskPhone(context.customer.phone || context.customer.whatsapp),
-        payload: 'Operação concluída. A notificação é gerenciada automaticamente pelo banco de dados.',
-        status: 'sucesso',
-        timestamp: new Date().toISOString()
-      });
+      try {
+        this.addLog({
+          id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+          triggerEvent: automation.name,
+          targetName: 'Cliente protegido',
+          targetContact: maskPhone(context.customer.phone || context.customer.whatsapp),
+          payload: 'Operação concluída. A notificação é gerenciada automaticamente pelo banco de dados.',
+          status: 'sucesso',
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        safeLog('error', 'automation.trigger.audit', 'error', {
+          eventType: event,
+          error
+        });
+      }
       return;
     }
 
@@ -1843,16 +1882,14 @@ class LocalDatabase {
       await this.syncWithSupabase();
     }
 
-    // Dynamically derive history & revenues if status changes to finished
+    // Finalização é um fato distinto de entrega e pagamento.
     if ((status === 'finalizado' || status === 'entregue') && oldStatus !== 'finalizado' && oldStatus !== 'entregue') {
       const customer = this.customers.find(c => c.id === appointment.customerId);
       const vehicle = this.vehicles.find(v => v.id === appointment.vehicleId);
       const service = this.services.find(s => s.id === appointment.serviceId);
 
-      // Trigger automatic automation hooks
-      if (customer) {
+      if (customer && status === 'finalizado') {
         this.triggerAutomation('servico_finalizado', { customer, vehicle, service, appointment });
-        this.triggerAutomation('pagamento_recebido', { customer, vehicle, service, appointment });
       }
 
       // Release referral credits
@@ -1908,9 +1945,8 @@ class LocalDatabase {
       const vehicle = this.vehicles.find(v => v.id === appointment.vehicleId);
       const service = this.services.find(s => s.id === appointment.serviceId);
 
-      if (customer) {
+      if (customer && appointment.status === 'finalizado') {
         this.triggerAutomation('servico_finalizado', { customer, vehicle, service, appointment });
-        this.triggerAutomation('pagamento_recebido', { customer, vehicle, service, appointment });
       }
 
       await this.checkAndReleaseReferralCredits(appointment.customerId);
@@ -2095,29 +2131,65 @@ class LocalDatabase {
       throw new Error(`Automação com ID ${id} não encontrada.`);
     }
 
-    const mergedItem = { ...updatedItem, ...updated };
-    const payloadItems = [mergedItem];
+    if (!this.automationConfigUpdatedAt && this.config.useRealSupabase) {
+      await this.syncWithSupabase();
+    }
+    if (!this.automationConfigUpdatedAt) {
+      throw new Error('Versão da configuração indisponível; sincronize o painel antes de salvar.');
+    }
+
+    const supabase = this.getSupabaseClient();
+    const {
+      data: { session },
+      error: sessionError
+    } = await supabase.auth.getSession();
+
+    if (sessionError || !session?.access_token) {
+      throw new Error('Sessão administrativa ausente ou expirada.');
+    }
 
     const response = await fetch('/api/automations/templates', {
       method: 'PUT',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
       },
-      body: JSON.stringify({ templates: payloadItems })
+      body: JSON.stringify({
+        id,
+        patch: updated,
+        expectedUpdatedAt: this.automationConfigUpdatedAt
+      })
     });
 
     if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      if (
+        response.status === 409
+        && errorData
+        && Array.isArray(errorData.automations)
+        && typeof errorData.updatedAt === 'string'
+      ) {
+        this.automations = errorData.automations;
+        this.automationConfigUpdatedAt = errorData.updatedAt;
+        if (this.onSyncCallback) this.onSyncCallback();
+      }
       throw new Error(`Falha ao salvar templates: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json().catch(() => null);
     if (!data || !Array.isArray(data.automations)) {
-      safeLog('error', 'automation.trigger.update.api', 'invalid_response', { id, data });
+      safeLog('error', 'automation.trigger.update.api', 'error', {
+        entityId: id,
+        reason: 'invalid_response'
+      });
       throw new Error('Resposta do servidor inválida: campo automations ausente ou malformado.');
     }
 
     // Atualiza o estado da RAM do frontend SOMENTE a partir da resposta confirmada e validada do backend
     this.automations = data.automations;
+    this.automationConfigUpdatedAt = typeof data.updatedAt === 'string'
+      ? data.updatedAt
+      : this.automationConfigUpdatedAt;
     if (this.onSyncCallback) {
       this.onSyncCallback();
     }
@@ -2263,10 +2335,18 @@ class LocalDatabase {
   // --- FORCE RESTORE DEFAULT AUTOMATIONS ---
   async restoreDefaultAutomations() {
     safeLog('info', 'automation.restore_defaults', 'started');
-    this.automations = JSON.parse(JSON.stringify(DEFAULT_AUTOMATIONS));
-    this.save();
     if (this.config.useRealSupabase) {
-      await this.saveConfigToSupabase();
+      for (const defaultAutomation of DEFAULT_AUTOMATIONS) {
+        await this.updateAutomationTrigger(defaultAutomation.id, {
+          isActive: defaultAutomation.isActive,
+          template: defaultAutomation.template,
+          inactiveDays: defaultAutomation.inactiveDays,
+          minServices: defaultAutomation.minServices
+        });
+      }
+    } else {
+      this.automations = JSON.parse(JSON.stringify(DEFAULT_AUTOMATIONS));
+      this.save();
     }
     if (this.onSyncCallback) {
       this.onSyncCallback();
@@ -2294,12 +2374,20 @@ class LocalDatabase {
 
     // [AUTOMATION TRACE 1] Template carregado
     safeLog('info', 'automation.trace.1.template', 'success', {
-      event,
-      template: trigger.template
+      eventType: event,
+      operation: 'template_loaded'
     });
 
     // Render message using the unified rendering engine
     const normalized = renderAndNormalizeMessage(trigger.template, context);
+    const phone = context.customer.phone || context.customer.whatsapp || '';
+    if (phone.replace(/\D/g, '').length < 8 || !normalized.trim()) {
+      safeLog('info', 'automation.queue', 'ignored', {
+        eventType: event,
+        reason: !normalized.trim() ? 'empty_message' : 'invalid_phone'
+      });
+      return null;
+    }
 
     // Build the execution record
     const id = generateUUID();
@@ -2324,8 +2412,21 @@ class LocalDatabase {
       servico_iniciado: context.appointment?.id ? `servico_iniciado:${context.appointment.id}` : undefined,
       servico_finalizado: context.appointment?.id ? `servico_finalizado:${context.appointment.id}` : undefined,
       pagamento_recebido: context.appointment?.id ? `pagamento_recebido:${context.appointment.id}` : undefined,
+      lembrete_agendamento: context.appointment?.id ? `lembrete_agendamento:${context.appointment.id}` : undefined,
+      aniversario: context.customer?.id ? `aniversario:${context.customer.id}:${new Date().getFullYear()}` : undefined,
     };
     const deduplicationKey = dedupKeyMap[event];
+
+    if (
+      deduplicationKey &&
+      this.executions.some(execution => execution.deduplication_key === deduplicationKey)
+    ) {
+      safeLog('info', 'automation.queue', 'ignored', {
+        eventType: event,
+        reason: 'duplicate'
+      });
+      return null;
+    }
 
     const execution: AutomationExecution = {
       id,
@@ -2333,7 +2434,7 @@ class LocalDatabase {
       automacao: event,
       appointment_id: context.appointment?.id,
       customer_id: context.customer.id,
-      telefone: context.customer.phone || context.customer.whatsapp || '',
+      telefone: phone,
       mensagem: normalized,
       status: 'pendente',
       tentativas: 0,
@@ -2346,12 +2447,10 @@ class LocalDatabase {
 
     // [AUTOMATION TRACE 2] Mensagem renderizada
     safeLog('info', 'automation.trace.2.rendered', 'success', {
-      normalized,
-      executionMensagem: execution.mensagem
+      entityId: execution.id,
+      eventType: event,
+      operation: 'message_rendered'
     });
-
-    this.executions.push(execution);
-    this.save();
 
     if (this.config.useRealSupabase) {
       try {
@@ -2373,10 +2472,16 @@ class LocalDatabase {
           updated_at: execution.updated_at
         });
         if (error) {
-          safeLog('error', 'automation.queue.persist', 'error', {
+          safeLog(
+            error.code === '23505' ? 'info' : 'error',
+            'automation.queue.persist',
+            error.code === '23505' ? 'ignored' : 'error',
+            {
             entityId: execution.id,
             error
-          });
+            }
+          );
+          return null;
         } else {
           safeLog('info', 'automation.queue.persist', 'success', {
             entityId: execution.id,
@@ -2388,8 +2493,12 @@ class LocalDatabase {
           entityId: execution.id,
           error: err
         });
+        return null;
       }
     }
+
+    this.executions.push(execution);
+    this.save();
 
     return execution;
   }
