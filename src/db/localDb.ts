@@ -2293,7 +2293,7 @@ class LocalDatabase {
     }
 
     // [AUTOMATION TRACE 1] Template carregado
-    console.log('[AUTOMATION TRACE] 1. Template carregado:', {
+    safeLog('info', 'automation.trace.1.template', 'success', {
       event,
       template: trigger.template
     });
@@ -2345,7 +2345,7 @@ class LocalDatabase {
     };
 
     // [AUTOMATION TRACE 2] Mensagem renderizada
-    console.log('[AUTOMATION TRACE] 2. Mensagem renderizada:', {
+    safeLog('info', 'automation.trace.2.rendered', 'success', {
       normalized,
       executionMensagem: execution.mensagem
     });
