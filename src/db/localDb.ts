@@ -2098,9 +2098,7 @@ class LocalDatabase {
     const mergedItem = { ...updatedItem, ...updated };
     const payloadItems = [mergedItem];
 
-    const { getAdminApiClient } = await import('../security/adminApiClient');
-    const api = getAdminApiClient();
-    const response = await api.fetch('/api/automations/templates', {
+    const response = await fetch('/api/automations/templates', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -2109,9 +2107,7 @@ class LocalDatabase {
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      safeLog('error', 'automation.trigger.update.api', 'error', { id, error: errorData });
-      throw new Error(errorData.error || 'Falha ao salvar template via servidor.');
+      throw new Error(`Falha ao salvar templates: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json().catch(() => null);
