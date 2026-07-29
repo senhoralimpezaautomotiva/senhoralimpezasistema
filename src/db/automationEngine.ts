@@ -22,12 +22,26 @@ const sendToConfiguredProviders = async (
 
   if (secrets.makeWebhookUrl) {
     configuredProviders += 1;
+    // [AUTOMATION TRACE 3] Mensagem antes do envio (Make)
+    console.log('[AUTOMATION TRACE] 3. Mensagem antes do envio (Make):', {
+      message,
+      payloadBody
+    });
+
     try {
       const response = await fetch(secrets.makeWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payloadBody)
       });
+
+      // [AUTOMATION TRACE 5] Confirmação Make
+      console.log('[AUTOMATION TRACE] 5. Confirmação (Make):', {
+        provider: 'Make',
+        status: response.status,
+        executionId: payloadBody.executionId
+      });
+
       statuses.push(`[Make Webhook] Status HTTP: ${response.status}`);
       success = success || response.ok;
     } catch {
@@ -43,12 +57,26 @@ const sendToConfiguredProviders = async (
       headers['Client-Token'] = secrets.zapiClientToken;
     }
 
+    // [AUTOMATION TRACE 4] Mensagem enviada para Z-API
+    console.log('[AUTOMATION TRACE] 4. Mensagem enviada para Z-API:', {
+      phone,
+      message
+    });
+
     try {
       const response = await fetch(zapiUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify({ phone, message })
       });
+
+      // [AUTOMATION TRACE 5] Confirmação Z-API
+      console.log('[AUTOMATION TRACE] 5. Confirmação (Z-API):', {
+        provider: 'Z-API',
+        status: response.status,
+        executionId: payloadBody.executionId
+      });
+
       statuses.push(`[Z-API] Status HTTP: ${response.status}`);
       success = success || response.ok;
     } catch {
@@ -57,6 +85,12 @@ const sendToConfiguredProviders = async (
   }
 
   if (configuredProviders === 0) {
+    console.log('[AUTOMATION TRACE] 3 & 4. Provedores não configurados. Envio simulado:', {
+      executionId: payloadBody.executionId,
+      phone,
+      message
+    });
+
     return {
       success: true,
       apiResponse: 'Envio simulado: nenhum provedor configurado no ambiente do servidor'
