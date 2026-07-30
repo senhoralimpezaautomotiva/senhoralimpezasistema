@@ -672,3 +672,68 @@ e manter compatibilidade temporária com os campos legados do cenário Make.
   os aliases, mantendo as migrations já aplicadas.
 - Para desativar o comportamento sem rollback, manter
   `automation_24_hours=false`.
+
+---
+
+## 2026-07-30-010 — Deploy e teste técnico do envio 24 horas
+
+**Etapa relacionada:** Noite 2 — Controle “Envios 24 horas”.
+
+**Objetivo:** publicar a correção, ativar o modo 24 horas e validar um envio
+único pelo pipeline sistema → Make → provedor.
+
+### Trabalho realizado
+
+- Commit `e00bfe3` enviado ao branch `piloto-2026`.
+- Deploy manual iniciado no Render porque o disparo automático do serviço
+  estava desligado.
+- Pipeline completa do Render concluída e serviço publicado.
+- Controle **Envios 24 horas** confirmado na interface.
+- Modo 24 horas ligado e persistido no Supabase.
+- Liberada somente a execução controlada criada anteriormente.
+- Acompanhados o painel, o banco e o histórico do Make.
+
+### Arquivos alterados
+
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+As alterações funcionais e migrations estão relacionadas na entrada
+`2026-07-30-009`.
+
+### Banco, hospedagem e serviços externos
+
+- Supabase confirmou `automation_24_hours=true`, mantendo a janela cadastrada
+  como 08:00–20:00 para quando o modo for desligado.
+- Render publicou o commit `e00bfe3` e permaneceu ativo no plano gratuito.
+- Make recebeu exatamente uma execução nova e concluiu seus dois módulos.
+- O provedor respondeu HTTP 200.
+- Nenhuma alteração foi salva no cenário Make.
+
+### Verificações e resultados
+
+- Build do Render: aprovado.
+- Endpoint `/health`: HTTP 200, estado `ok`.
+- Fila do sistema: uma execução controlada.
+- Tentativas: uma.
+- Estado final no sistema: `sucesso`.
+- Make: uma execução instantânea, duas operações, estado `Success`.
+- Módulo HTTP: status 200.
+- Duplicidade técnica: não detectada.
+
+### Riscos, limitações e pendências
+
+- HTTP 200 prova aceitação técnica, não entrega no aparelho.
+- A Noite 2 permanece **Implementada** até o responsável confirmar o
+  recebimento da mensagem no telefone autorizado.
+- O modo 24 horas está ligado para os testes noturnos.
+- Credenciais do provedor e hook de deploy devem ser rotacionados após a
+  estabilização, pois ficaram visíveis em telas administrativas durante a
+  auditoria; nenhum valor foi registrado.
+
+### Como desfazer
+
+- Desligar **Envios 24 horas** e salvar para voltar à janela 08:00–20:00.
+- Para reverter o código, publicar um novo commit que reverta `e00bfe3`.
+- Não reenviar nem reprocessar a execução desta etapa; ela já terminou com
+  sucesso técnico.

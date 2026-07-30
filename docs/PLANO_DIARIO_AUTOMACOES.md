@@ -5,11 +5,12 @@ Limpeza Estética Automotiva.
 
 ## Ponto de retomada
 
-**Próxima noite:** Noite 2 — Controle “Envios 24 horas”
-**Estado atual:** Noite 1 validada e gate de alinhamento do banco concluído no
-ambiente Supabase de testes.
+**Próxima ação:** confirmar no aparelho autorizado o recebimento da mensagem e,
+após isso, iniciar a Noite 3 — Mensagens imediatas.
+**Estado atual:** Noite 2 implementada e aprovada tecnicamente; confirmação de
+entrega no aparelho ainda pendente.
 **Última noite validada:** Noite 1 — Verificação do ambiente real.
-**Render:** permanecer no plano gratuito durante o desenvolvimento.
+**Render:** publicado e ativo no plano gratuito.
 **Bloqueios conhecidos:** o dry-run Docker permanece indisponível nesta máquina;
 o Supabase descartável foi usado como laboratório com autorização explícita.
 O provedor configurado no Render é o Make e o telefone autorizado está
@@ -45,7 +46,7 @@ de retomada estiverem atualizados.
 | Noite | Etapa | Objetivo | Estado |
 | --- | --- | --- | --- |
 | 1 | Etapa 1 | Verificação do ambiente real | **Validada** |
-| 2 | Etapa 1 | Controle “Envios 24 horas” | **Pendente** |
+| 2 | Etapa 1 | Controle “Envios 24 horas” | **Implementada** |
 | 3 | Etapa 2 | Mensagens imediatas | **Pendente** |
 | 4 | Etapa 2 | Lembrete configurável e fuso horário | **Pendente** |
 | 5 | Etapa 2 | Segurança do lembrete | **Pendente** |
