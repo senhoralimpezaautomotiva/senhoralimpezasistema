@@ -12,6 +12,7 @@ import {
   AutomationTransportPayload,
   sendAutomationPayload
 } from '../server/automationTransport';
+import { getIntegrationSecrets } from '../server/integrationSecrets';
 import {
   classifyAutomationEvent,
   getAutomationEventRetryDelayMinutes
@@ -493,7 +494,9 @@ export class AutomationEngine {
         }
       };
 
-      const { success, apiResponse } = await sendAutomationPayload(payloadBody);
+      const { success, apiResponse } = await sendAutomationPayload(payloadBody, {
+        secrets: getIntegrationSecrets()
+      });
 
       // --- RETRIES SYSTEM (Requirement 5) ---
       if (success) {
@@ -713,7 +716,9 @@ export class AutomationEngine {
       }
     };
 
-    const { success, apiResponse } = await sendAutomationPayload(payloadBody);
+    const { success, apiResponse } = await sendAutomationPayload(payloadBody, {
+      secrets: getIntegrationSecrets()
+    });
 
     execution.status = success ? 'sucesso' : 'erro_definitivo';
     execution.resposta_api = redactExternalResponse(apiResponse);
