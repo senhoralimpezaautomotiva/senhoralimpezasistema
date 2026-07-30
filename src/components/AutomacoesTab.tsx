@@ -72,6 +72,7 @@ export default function AutomacoesTab({
   // Operational Window states
   const [startHour, setStartHour] = useState(dbInstance.config.automationStartHour || '08:00');
   const [endHour, setEndHour] = useState(dbInstance.config.automationEndHour || '20:00');
+  const [automation24Hours, setAutomation24Hours] = useState(dbInstance.config.automation24Hours === true);
   const [isSavingHours, setIsSavingHours] = useState(false);
   const [saveHoursSuccess, setSaveHoursSuccess] = useState(false);
 
@@ -223,10 +224,14 @@ export default function AutomacoesTab({
     try {
       dbInstance.config.automationStartHour = startHour;
       dbInstance.config.automationEndHour = endHour;
+      dbInstance.config.automation24Hours = automation24Hours;
       dbInstance.save();
       
       if (dbInstance.config.useRealSupabase) {
-        await dbInstance.saveConfigToSupabase();
+        const saved = await dbInstance.saveConfigToSupabase();
+        if (!saved) {
+          throw new Error('Não foi possível persistir a janela operacional.');
+        }
       }
       
       setSaveHoursSuccess(true);
@@ -553,6 +558,21 @@ export default function AutomacoesTab({
                 />
               </div>
             </div>
+
+            <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950 px-4 py-3">
+              <span>
+                <span className="block text-xs font-bold text-white">Envios 24 horas</span>
+                <span className="block text-[10px] text-slate-400">
+                  Ignora a janela operacional enquanto estiver ligado.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={automation24Hours}
+                onChange={(event) => setAutomation24Hours(event.target.checked)}
+                className="h-4 w-4 accent-emerald-500"
+              />
+            </label>
 
             <div className="flex justify-end pt-2">
               <button

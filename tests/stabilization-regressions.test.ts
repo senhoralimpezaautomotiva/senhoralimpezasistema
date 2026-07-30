@@ -246,3 +246,22 @@ test('janela operacional em America/Sao_Paulo suporta 08:00-20:00 e travessia de
   const nextStart = getNextStartTime('08:00', '20:00', dateAt21SP);
   assert.equal(new Date(nextStart).toISOString(), '2026-07-29T11:00:00.000Z');
 });
+
+test('modo 24 horas persiste no Supabase e mantém compatibilidade com o Make', () => {
+  const localDb = projectFile('src', 'db', 'localDb.ts');
+  const engine = projectFile('src', 'db', 'automationEngine.ts');
+  const transport = projectFile('src', 'server', 'automationTransport.ts');
+  const migration = projectFile(
+    'supabase',
+    'migrations',
+    '20260730233000_automacoes_janela_24h.sql'
+  );
+
+  assert.match(localDb, /automation_24_hours/);
+  assert.match(localDb, /automation_start_hour/);
+  assert.match(localDb, /automation_end_hour/);
+  assert.match(engine, /!dbInstance\.config\.automation24Hours/);
+  assert.match(transport, /telefone:\s*payload\.phone/);
+  assert.match(transport, /formattedMessage:\s*payload\.message/);
+  assert.match(migration, /automation_24_hours BOOLEAN NOT NULL DEFAULT FALSE/);
+});

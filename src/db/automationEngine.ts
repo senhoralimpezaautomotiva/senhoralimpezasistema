@@ -360,7 +360,7 @@ export class AutomationEngine {
     const endHour = dbInstance.config.automationEndHour || '20:00';
 
     // --- JANELA DE FUNCIONAMENTO CHECK ---
-    if (!this.isWithinOperationalWindow(startHour, endHour)) {
+    if (!dbInstance.config.automation24Hours && !this.isWithinOperationalWindow(startHour, endHour)) {
       logs.push(`[Operational Window] Fora do horário de funcionamento (${startHour} - ${endHour}). Postergando agendamentos pendentes.`);
       
       const nextStart = this.getNextStartTime(startHour, endHour);

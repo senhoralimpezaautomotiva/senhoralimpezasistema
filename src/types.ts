@@ -149,6 +149,7 @@ export interface PublicSystemConfig {
   // Automation Operational Window
   automationStartHour?: string; // e.g., "08:00"
   automationEndHour?: string;   // e.g., "20:00"
+  automation24Hours?: boolean;
 
   // Agenda settings
   agenda?: AgendaConfig;
@@ -192,9 +193,10 @@ export interface AutomationExecution {
   customer_id: string;
   telefone: string;
   mensagem: string;
-  status: 'pendente' | 'processando' | 'sucesso' | 'erro_definitivo';
+  status: 'pendente' | 'processando' | 'sucesso' | 'erro_definitivo' | 'cancelada';
   tentativas: number;
   resposta_api?: string;
+  deduplication_key?: string;
   data_execucao: string; // ISO format
   data_proxima_tentativa?: string; // ISO format
   created_at: string;

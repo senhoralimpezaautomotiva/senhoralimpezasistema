@@ -22,6 +22,7 @@ export const PUBLIC_SYSTEM_CONFIG_KEYS = [
   'referralDiscountPercent',
   'automationStartHour',
   'automationEndHour',
+  'automation24Hours',
   'agenda',
   'theme'
 ] as const satisfies readonly (keyof PublicSystemConfig)[];
@@ -142,6 +143,7 @@ export const toPublicSystemConfig = (value: unknown): Partial<PublicSystemConfig
 
   if (typeof value.useRealSupabase === 'boolean') result.useRealSupabase = value.useRealSupabase;
   if (typeof value.referralActive === 'boolean') result.referralActive = value.referralActive;
+  if (typeof value.automation24Hours === 'boolean') result.automation24Hours = value.automation24Hours;
   if (typeof value.referralDiscountPercent === 'number' && Number.isFinite(value.referralDiscountPercent)) {
     result.referralDiscountPercent = value.referralDiscountPercent;
   }

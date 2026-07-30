@@ -202,6 +202,7 @@ const DEFAULT_CONFIG: SystemConfig = {
   referralDiscountPercent: 10,
   automationStartHour: '08:00',
   automationEndHour: '20:00',
+  automation24Hours: false,
   theme: 'dark',
   agenda: {
     days: [
@@ -1119,6 +1120,9 @@ class LocalDatabase {
         'accent_color',
         'referral_active',
         'referral_discount_percent',
+        'automation_start_hour',
+        'automation_end_hour',
+        'automation_24_hours',
         'agenda',
         'automations',
         'updated_at'
@@ -1144,6 +1148,9 @@ class LocalDatabase {
           accentColor: data.accent_color || this.config.accentColor,
           referralActive: data.referral_active !== undefined ? data.referral_active : this.config.referralActive,
           referralDiscountPercent: data.referral_discount_percent !== undefined ? data.referral_discount_percent : this.config.referralDiscountPercent,
+          automationStartHour: data.automation_start_hour || this.config.automationStartHour,
+          automationEndHour: data.automation_end_hour || this.config.automationEndHour,
+          automation24Hours: data.automation_24_hours === true,
           agenda: data.agenda ? (typeof data.agenda === 'string' ? JSON.parse(data.agenda) : data.agenda) : this.config.agenda
         };
         
@@ -1204,6 +1211,9 @@ class LocalDatabase {
         accent_color: this.config.accentColor,
         referral_active: this.config.referralActive ?? true,
         referral_discount_percent: this.config.referralDiscountPercent ?? 10,
+        automation_start_hour: this.config.automationStartHour || '08:00',
+        automation_end_hour: this.config.automationEndHour || '20:00',
+        automation_24_hours: this.config.automation24Hours === true,
         agenda: this.config.agenda ? JSON.stringify(this.config.agenda) : undefined
       });
       
@@ -2398,7 +2408,7 @@ class LocalDatabase {
     const startHour = this.config.automationStartHour || '08:00';
     const endHour = this.config.automationEndHour || '20:00';
     
-    if (!isWithinOperationalWindow(startHour, endHour)) {
+    if (!this.config.automation24Hours && !isWithinOperationalWindow(startHour, endHour)) {
       targetTime = getNextStartTime(startHour, endHour);
       safeLog('info', 'automation.queue', 'ignored', {
         eventType: event,

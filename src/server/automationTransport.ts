@@ -103,7 +103,12 @@ export const sendAutomationPayload = async (
       const response = await fetchImpl(secrets.makeWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          // Compatibility aliases for the currently deployed Make scenario.
+          telefone: payload.phone,
+          formattedMessage: payload.message
+        }),
         signal: AbortSignal.timeout(timeoutMs)
       });
       safeLog('info', 'automation.trace.5.confirmation', response.ok ? 'success' : 'error', {

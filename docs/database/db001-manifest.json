@@ -13,7 +13,13 @@
     "20260724210000_baseline.sql",
     "20260724213000_portal001_client_auth_and_isolation.sql",
     "20260724224500_portal001_email_identity_provider.sql",
-    "20260727220000_automacoes_execucoes.sql"
+    "20260727220000_automacoes_execucoes.sql",
+    "20260728220000_automacoes_triggers_nativos.sql",
+    "20260729220000_automacoes_fluxo_unificado.sql",
+    "20260729223000_automacoes_claim_backfill.sql",
+    "20260729230000_automacoes_riscos_residuais.sql",
+    "20260730225000_configuracoes_empresa_runtime.sql",
+    "20260730233000_automacoes_janela_24h.sql"
   ],
   "sqlArtifacts": [
     {
@@ -51,6 +57,60 @@
       "idempotent": "yes",
       "risk": "low",
       "recommendation": "Aplicar para restaurar a fila de automações no Supabase."
+    },
+    {
+      "path": "supabase/migrations/20260728220000_automacoes_triggers_nativos.sql",
+      "category": ["official-migration", "automation", "trigger"],
+      "purpose": "Adiciona deduplicação e gatilhos PostgreSQL transacionais para fatos operacionais.",
+      "rerunnable": "partial",
+      "idempotent": "partial",
+      "risk": "high",
+      "recommendation": "Aplicar somente na ordem oficial, após confirmar o estado remoto e executar o dry-run documentado."
+    },
+    {
+      "path": "supabase/migrations/20260729220000_automacoes_fluxo_unificado.sql",
+      "category": ["official-migration", "automation", "outbox"],
+      "purpose": "Unifica a produção de automações no outbox automacoes_eventos e mantém a aplicação como produtora das execuções.",
+      "rerunnable": "partial",
+      "idempotent": "partial",
+      "risk": "high",
+      "recommendation": "Aplicar somente após a migration de gatilhos e validar produtores, policies e deduplicação no dry-run."
+    },
+    {
+      "path": "supabase/migrations/20260729223000_automacoes_claim_backfill.sql",
+      "category": ["official-migration", "automation", "claim", "data-migration"],
+      "purpose": "Adiciona claim atômico, coloca execuções legadas vazias em quarentena e prepara backfill controlado.",
+      "rerunnable": "partial",
+      "idempotent": "partial",
+      "risk": "high",
+      "recommendation": "Aplicar somente após backup e dry-run; qualquer backfill exige janela temporal e aprovação explícitas."
+    },
+    {
+      "path": "supabase/migrations/20260729230000_automacoes_riscos_residuais.sql",
+      "category": ["official-migration", "automation", "retry", "concurrency"],
+      "purpose": "Adiciona retry do outbox, encerra fatos ambíguos e protege atualizações concorrentes por automação.",
+      "rerunnable": "partial",
+      "idempotent": "partial",
+      "risk": "high",
+      "recommendation": "Aplicar por último na sequência de automações e validar estados, retries e compare-and-swap antes da liberação."
+    },
+    {
+      "path": "supabase/migrations/20260730225000_configuracoes_empresa_runtime.sql",
+      "category": ["official-migration", "configuration", "automation", "security"],
+      "purpose": "Restaura a tabela de configuração central exigida pelo runtime, sem armazenar credenciais de provedores.",
+      "rerunnable": "partial",
+      "idempotent": "partial",
+      "risk": "medium",
+      "recommendation": "Aplicar após a baseline e validar carregamento da configuração, RLS e ciclo do worker."
+    },
+    {
+      "path": "supabase/migrations/20260730233000_automacoes_janela_24h.sql",
+      "category": ["official-migration", "automation", "configuration"],
+      "purpose": "Persiste a janela operacional e o modo de envios 24 horas consumidos pelo worker.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Aplicar após a configuração central e validar o modo desligado por padrão."
     },
     {
       "path": "configuracoes_empresa.sql",
@@ -105,6 +165,60 @@
       "idempotent": "yes",
       "risk": "low",
       "recommendation": "Executar somente por conexão controlada e guardar a saída em backups/."
+    },
+    {
+      "path": "scripts/automations/backfill-approved.sql",
+      "category": ["operations", "automation", "data-migration", "dangerous"],
+      "purpose": "Executa backfill de automações somente com data inicial e aprovação explícita.",
+      "rerunnable": "conditional",
+      "idempotent": "partial",
+      "risk": "high",
+      "recommendation": "Não executar durante a auditoria; usar somente em janela aprovada, com backup e parâmetros revisados."
+    },
+    {
+      "path": "scripts/automations/dry-run-assertions.sql",
+      "category": ["official-diagnostic", "automation", "test"],
+      "purpose": "Valida em ambiente isolado as invariantes gerais das migrations de automação.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Executar apenas no banco efêmero criado pelo procedimento de dry-run."
+    },
+    {
+      "path": "scripts/automations/dry-run-claim-assertions.sql",
+      "category": ["official-diagnostic", "automation", "test"],
+      "purpose": "Valida atomicidade e posse do claim em uma execução sintética.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Executar apenas no banco efêmero do dry-run, após carregar o alvo sintético."
+    },
+    {
+      "path": "scripts/automations/dry-run-claim-target.sql",
+      "category": ["test-fixture", "automation", "test"],
+      "purpose": "Cria a execução sintética usada nas verificações de claim.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "medium",
+      "recommendation": "Não executar no Supabase real; usar somente no banco efêmero do dry-run."
+    },
+    {
+      "path": "scripts/automations/dry-run-fixture.sql",
+      "category": ["test-fixture", "automation", "test"],
+      "purpose": "Cria roles, tabelas e funções mínimas para ensaiar migrations de automação.",
+      "rerunnable": "no",
+      "idempotent": "no",
+      "risk": "high",
+      "recommendation": "Não executar no Supabase real; usar somente em banco descartável e vazio."
+    },
+    {
+      "path": "scripts/automations/dry-run-pre-claim.sql",
+      "category": ["test-fixture", "automation", "test"],
+      "purpose": "Carrega fatos sintéticos anteriores à validação de claim e quarentena.",
+      "rerunnable": "no",
+      "idempotent": "no",
+      "risk": "high",
+      "recommendation": "Não executar no Supabase real; usar somente no banco efêmero preparado pelo dry-run."
     },
     {
       "path": "scripts/database/validate_restore.sql",
