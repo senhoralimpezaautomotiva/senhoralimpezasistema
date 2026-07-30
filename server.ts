@@ -21,7 +21,6 @@ import {
 } from './src/security/safeOutput';
 import { loadServerEnvironment } from './src/server/environment';
 import { createSecurityHeaders } from './src/server/securityHeaders';
-import { sanitizeAutomationConfigPatch } from './src/server/automationConfigPatch';
 
 const apiError = (
   req: express.Request,
@@ -236,98 +235,6 @@ async function startServer() {
       res.status(500).json(apiError(req, 'Erro interno ao executar ciclo.', { success: false }));
     }
   });
-
-  // Update automation templates (persist to Supabase using service_role with explicit merge and no fallback company)
-  app.put(
-    '/api/automations/templates',
-    sensitiveActionRateLimit,
-    requireAccess({
-      module: 'automacoes',
-      action: 'edit',
-      allowedRoles: ['admin', 'gerente']
-    }),
-    auditAdministrativeAction('automations.templates.update'),
-    async (req, res) => {
-      try {
-        const companyId = 'c0000000-0000-0000-0000-000000000000';
-        const { id, patch: rawPatch, expectedUpdatedAt } = req.body || {};
-        const patch = sanitizeAutomationConfigPatch(rawPatch);
-        if (typeof id !== 'string' || !id.trim() || !patch) {
-          return res.status(400).json(apiError(req, 'Alteração de automação inválida.'));
-        }
-        if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt.trim()) {
-          return res.status(409).json(apiError(req, 'Versão da configuração ausente; sincronize o painel antes de salvar.', {
-            conflict: true
-          }));
-        }
-        if (!dbInstance.config.useRealSupabase) {
-          return res.status(503).json(apiError(req, 'Persistência do Supabase indisponível; nenhuma alteração foi aplicada.'));
-        }
-
-        const supabase = dbInstance.getSupabaseClient();
-        const { data, error } = await supabase.rpc('fn_update_automacao_config', {
-          p_company_id: companyId,
-          p_automation_id: id.trim(),
-          p_patch: patch,
-          p_expected_updated_at: expectedUpdatedAt,
-          p_defaults: dbInstance.automations
-        });
-
-        if (error) {
-          const isConflict = error.code === '40001'
-            || String(error.message || '').includes('AUTOMATION_CONFIG_CONFLICT');
-          if (isConflict) {
-            const { data: current } = await supabase
-              .from('configuracoes_empresa')
-              .select('automations,updated_at')
-              .eq('id', companyId)
-              .single();
-            return res.status(409).json(apiError(req, 'A configuração foi alterada por outra sessão. O painel deve ser sincronizado.', {
-              conflict: true,
-              ...(current && Array.isArray(current.automations)
-                ? {
-                    automations: current.automations,
-                    updatedAt: current.updated_at
-                  }
-                : {})
-            } as any));
-          }
-          safeLog('error', 'api.automations.templates.persist', 'error', {
-            correlationId: req.securityRequestId,
-            error
-          });
-          return res.status(500).json(apiError(req, 'Falha ao persistir a automação. Os dados de RAM foram preservados.'));
-        }
-
-        const confirmed = Array.isArray(data) ? data[0] : data;
-        if (!confirmed || !Array.isArray(confirmed.automations) || !confirmed.updated_at) {
-          return res.status(500).json(apiError(req, 'O banco não confirmou a nova configuração.'));
-        }
-
-        dbInstance.automations = confirmed.automations;
-        dbInstance.automationConfigUpdatedAt = confirmed.updated_at;
-
-        safeLog('info', 'api.automations.templates.update', 'success', {
-          correlationId: req.securityRequestId,
-          entityId: id,
-          count: dbInstance.automations.length
-        });
-
-        return res.json({
-          success: true,
-          message: 'Templates de automação salvos e sincronizados com sucesso.',
-          automations: dbInstance.automations,
-          updatedAt: dbInstance.automationConfigUpdatedAt
-        });
-      } catch (error) {
-        safeLog('error', 'api.automations.templates', 'error', {
-          correlationId: req.securityRequestId,
-          error
-        });
-        return res.status(500).json(apiError(req, 'Erro interno ao salvar templates de automação.'));
-      }
-    }
-  );
 
   // Trigger Supabase database synchronization
   app.post(
