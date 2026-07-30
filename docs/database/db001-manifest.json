@@ -307,6 +307,18 @@
       "remoteConfirmation": "pending"
     },
     {
+      "name": "public.automacoes_eventos",
+      "kind": "table",
+      "evidenceStatus": "runtime_contract",
+      "purpose": "Outbox de eventos de automação consumido pelo motor de automações.",
+      "columnsObserved": ["id", "automacao", "appointment_id", "customer_id", "deduplication_key", "status", "created_at", "processed_at"],
+      "constraintsAndDefaults": "Estado remoto, tipos, chave primária, constraints e defaults não confirmados.",
+      "relationships": "Vínculos lógicos com agendamentos e clientes observados no contrato de runtime.",
+      "rls": "Desconhecido.",
+      "consumers": ["src/db/automationEngine.ts"],
+      "remoteConfirmation": "pending"
+    },
+    {
       "name": "public.vehicle_models",
       "kind": "table",
       "evidenceStatus": "runtime_contract_and_local_sql",
