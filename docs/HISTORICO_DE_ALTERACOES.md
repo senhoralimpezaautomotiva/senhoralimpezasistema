@@ -737,3 +737,52 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Para reverter o código, publicar um novo commit que reverta `e00bfe3`.
 - Não reenviar nem reprocessar a execução desta etapa; ela já terminou com
   sucesso técnico.
+
+## 2026-07-30-011 — Confirmação de entrega no aparelho autorizado
+
+### Tarefa, conversa ou etapa relacionada
+
+- Conclusão da Noite 2 — Controle “Envios 24 horas”.
+
+### Objetivo
+
+- Registrar o recebimento real da mensagem de teste e encerrar a validação de
+  ponta a ponta da Noite 2.
+
+### Trabalho realizado
+
+- O usuário confirmou que a mensagem chegou ao aparelho autorizado.
+- A Noite 2 foi marcada como **Validada** no cronograma.
+- A próxima ação foi atualizada para a Noite 3 — Mensagens imediatas.
+- Nenhuma nova mensagem foi enviada nesta etapa.
+
+### Arquivos alterados
+
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma alteração adicional foi aplicada ao Supabase, Render ou Make.
+- Nenhuma nova publicação funcional foi necessária.
+
+### Verificações e resultados
+
+- Sistema: uma execução concluída com sucesso e uma única tentativa.
+- Make: uma única execução concluída com sucesso e dois módulos processados.
+- Provedor: resposta HTTP 200.
+- Aparelho autorizado: recebimento confirmado pelo usuário.
+- Duplicidade: nenhuma segunda execução ou tentativa foi observada.
+
+### Riscos, limitações e pendências
+
+- O modo de envios por 24 horas permanece ligado para os testes noturnos.
+- Credenciais que tenham ficado visíveis durante a operação assistida devem ser
+  rotacionadas posteriormente; nenhum valor foi registrado.
+- Próxima etapa: iniciar e validar a Noite 3 — Mensagens imediatas.
+
+### Como desfazer
+
+- Esta etapa altera somente documentação. Eventuais correções devem ser feitas
+  por uma nova entrada, sem apagar esta.
+- Não há alteração de banco, hospedagem ou serviço externo a desfazer.
