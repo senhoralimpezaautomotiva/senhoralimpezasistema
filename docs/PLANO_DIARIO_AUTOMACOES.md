@@ -5,12 +5,15 @@ Limpeza Estética Automotiva.
 
 ## Ponto de retomada
 
-**Próxima ação:** obter acesso a uma conta autenticada do Portal do Cliente e
-validar um agendamento feito pelo próprio cliente.
+**Próxima ação:** confirmar no aparelho autorizado o recebimento da mensagem do
+agendamento feito pelo Portal do Cliente e da mensagem de boas-vindas do novo
+cliente.
 **Estado atual:** Noite 3 em andamento; agendamento pelo operador, serviço
 iniciado e serviço finalizado foram confirmados no aparelho. Novo cliente foi
-aceito pelo provedor, mas não teve entrega física confirmada. Falta também o
-agendamento pelo Portal.
+aceito pelo provedor, mas não teve entrega física confirmada. O agendamento pelo
+Portal foi validado tecnicamente com um evento, uma execução em sucesso, uma
+tentativa e uma execução correspondente no Make, sem duplicidade; a entrega
+física dessa mensagem ainda precisa ser confirmada.
 **Última noite validada:** Noite 2 — Controle “Envios 24 horas”.
 **Render:** publicado e ativo no plano gratuito.
 **Bloqueios conhecidos:** o dry-run Docker permanece indisponível nesta máquina;

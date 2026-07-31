@@ -973,3 +973,65 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Esta etapa altera somente documentação. Correções devem ser registradas por
   uma nova entrada, sem apagar esta.
 - Não há alteração externa a desfazer.
+
+## 2026-07-30-015 — Agendamento autenticado pelo Portal do Cliente
+
+### Tarefa, conversa ou etapa relacionada
+
+- Validação do agendamento pelo cliente na Noite 3 das mensagens imediatas.
+
+### Objetivo
+
+- Comprovar que um agendamento criado por uma conta autenticada do Portal do
+  Cliente produz exatamente uma mensagem automática.
+
+### Trabalho realizado
+
+- Foi criado um único agendamento controlado pelo Portal do Cliente para o
+  contato autorizado de teste.
+- O registro foi acompanhado no Supabase até o processamento do evento e a
+  conclusão da execução.
+- O histórico do cenário no Make foi conferido sem repetir ou reprocessar a
+  execução.
+- O ponto de retomada do cronograma foi atualizado.
+
+### Arquivos alterados
+
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Supabase: criado somente o agendamento de teste e os registros automáticos
+  associados a ele.
+- Make/provedor: uma nova execução automática foi realizada pelo fluxo já
+  publicado.
+- Render e configurações externas: nenhuma alteração.
+
+### Verificações e resultados
+
+- Portal do Cliente: criação concluída com tela de sucesso.
+- Outbox: exatamente um evento `novo_agendamento`, com processamento concluído.
+- Fila: exatamente uma execução `novo_agendamento`, estado `sucesso` e uma
+  tentativa.
+- Deduplicação: chave única correspondente ao agendamento.
+- Make: exatamente uma execução nova no horário do teste, estado `Success`, com
+  dois módulos e duas operações.
+- Não foi observado envio duplicado.
+
+### Riscos, limitações e pendências
+
+- O sucesso técnico e a aceitação pelo provedor não substituem a confirmação de
+  chegada no aparelho.
+- Permanecem pendentes as confirmações físicas da mensagem deste agendamento e
+  da mensagem de boas-vindas do novo cliente.
+- A Noite 3 permanece **Em andamento** até essas confirmações.
+
+### Como desfazer
+
+- Se for necessário limpar o laboratório, remover somente o agendamento de
+  teste criado nesta etapa; os registros automáticos associados seguem as
+  regras de relacionamento do banco.
+- Não remover registros de outros agendamentos e não reprocessar mensagens.
+- Para desfazer apenas a documentação, criar uma nova entrada corretiva e
+  restaurar o ponto de retomada, sem apagar este histórico.
