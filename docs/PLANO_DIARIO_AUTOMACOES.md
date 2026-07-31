@@ -5,9 +5,11 @@ Limpeza Estética Automotiva.
 
 ## Ponto de retomada
 
-**Próxima ação:** iniciar a Noite 3 — Mensagens imediatas.
-**Estado atual:** Noite 2 validada de ponta a ponta, incluindo confirmação no
-aparelho autorizado.
+**Próxima ação:** obter acesso a uma conta autenticada do Portal do Cliente e
+validar um agendamento feito pelo próprio cliente.
+**Estado atual:** Noite 3 em andamento; novo cliente, agendamento pelo operador,
+serviço iniciado e serviço finalizado passaram tecnicamente com uma execução
+por fato. Falta o agendamento pelo Portal e a confirmação física das mensagens.
 **Última noite validada:** Noite 2 — Controle “Envios 24 horas”.
 **Render:** publicado e ativo no plano gratuito.
 **Bloqueios conhecidos:** o dry-run Docker permanece indisponível nesta máquina;
@@ -46,7 +48,7 @@ de retomada estiverem atualizados.
 | --- | --- | --- | --- |
 | 1 | Etapa 1 | Verificação do ambiente real | **Validada** |
 | 2 | Etapa 1 | Controle “Envios 24 horas” | **Validada** |
-| 3 | Etapa 2 | Mensagens imediatas | **Pendente** |
+| 3 | Etapa 2 | Mensagens imediatas | **Em andamento** |
 | 4 | Etapa 2 | Lembrete configurável e fuso horário | **Pendente** |
 | 5 | Etapa 2 | Segurança do lembrete | **Pendente** |
 | 6 | Etapa 2 | Cliente inativo | **Pendente** |

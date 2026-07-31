@@ -786,3 +786,90 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Esta etapa altera somente documentação. Eventuais correções devem ser feitas
   por uma nova entrada, sem apagar esta.
 - Não há alteração de banco, hospedagem ou serviço externo a desfazer.
+
+## 2026-07-30-012 — Início da Noite 3 e correções das mensagens imediatas
+
+### Tarefa, conversa ou etapa relacionada
+
+- Noite 3 — Mensagens imediatas.
+
+### Objetivo
+
+- Validar novo cliente, agendamento pelo cliente, agendamento pelo operador,
+  serviço iniciado e serviço finalizado, exigindo exatamente uma mensagem para
+  cada fato.
+
+### Trabalho realizado
+
+- A auditoria encontrou apenas uma das quatro automações imediatas configurada
+  no Supabase.
+- Criada migration idempotente que acrescenta somente automações ausentes e
+  preserva integralmente qualquer entrada existente.
+- O teste real pelo painel administrativo criou um agendamento controlado,
+  iniciou o atendimento e tentou finalizá-lo.
+- A tentativa inicial de finalização revelou que a interface mostrava sucesso,
+  mas enviava ao banco um estado não aceito pelo schema; o erro também era
+  absorvido pelo componente superior.
+- Corrigido o mapeamento de finalização para o estado persistido aceito pelo
+  Supabase e removida a absorção silenciosa das falhas de atualização.
+- A correção foi publicada e o mesmo atendimento foi finalizado novamente com
+  persistência confirmada.
+- Criado um cliente estritamente técnico, usando apenas um telefone autorizado,
+  para validar o evento de novo cliente.
+
+### Arquivos criados ou alterados
+
+- Criado:
+  `supabase/migrations/20260731001000_automacoes_imediatas_defaults.sql`.
+- Alterados: `src/App.tsx`, `src/db/localDb.ts`,
+  `tests/stabilization-regressions.test.ts`,
+  `tests/db001-baseline.test.ts` e `docs/database/db001-manifest.json`.
+- Alterados: `docs/PLANO_DIARIO_AUTOMACOES.md` e
+  `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e serviços externos
+
+- Migration `20260731001000` aplicada e registrada no Supabase de laboratório.
+- A configuração passou de uma para quatro automações imediatas ativas com
+  templates válidos; a entrada preexistente manteve o mesmo tamanho, indicando
+  que não foi sobrescrita.
+- Um cliente técnico e um agendamento controlado foram criados no Supabase.
+- O agendamento controlado terminou persistido como concluído.
+- Commits `4f45f31` e `b1c78e1` publicados no branch `piloto-2026`.
+- O Render publicou o commit `b1c78e1` com estado `live`.
+- O Make não foi configurado nem alterado nesta etapa.
+
+### Verificações e resultados
+
+- Tipagem TypeScript: aprovada.
+- Testes de estabilização: 16 de 16 aprovados.
+- Testes DB-001: 11 de 11 aprovados.
+- Build de produção e validações do artefato: aprovados.
+- Supabase: dois gatilhos nativos presentes, modo 24 horas ativo, quatro
+  automações imediatas ativas e migration registrada uma vez.
+- Novo cliente: um evento processado e uma execução com sucesso.
+- Agendamento pelo operador: um evento processado e uma execução com sucesso.
+- Serviço iniciado: um evento processado e uma execução com sucesso.
+- Serviço finalizado: um evento processado e uma execução com sucesso.
+- Duplicidades técnicas: nenhuma nos quatro fatos testados.
+
+### Riscos, limitações e pendências
+
+- O agendamento pelo Portal do Cliente ainda depende de uma conta de cliente
+  autenticada; credenciais administrativas não substituem esse teste.
+- O recebimento físico das quatro mensagens desta etapa ainda precisa ser
+  confirmado pelo responsável.
+- A Noite 3 permanece **Em andamento** até concluir o teste do Portal e a
+  confirmação física.
+- O modo de envios por 24 horas continua ligado para os testes noturnos.
+
+### Como desfazer
+
+- Reverter os commits `b1c78e1` e `4f45f31` por novos commits e publicar
+  novamente no Render.
+- Para desfazer a migration, remover apenas as três entradas acrescentadas que
+  ainda conservem os valores padrão da migration; não substituir o array
+  completo nem apagar personalizações.
+- Os registros técnicos podem ser removidos por seus identificadores
+  específicos após o encerramento dos testes; não executar exclusão ampla.
+- Correções deste registro devem ser feitas em nova entrada, sem apagar esta.
