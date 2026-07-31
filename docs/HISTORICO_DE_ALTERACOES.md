@@ -1332,3 +1332,73 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Banco: a coluna é aditiva e pode permanecer sem impacto em versões anteriores;
   qualquer remoção deverá ser feita por migration corretiva posterior, somente
   após confirmar que nenhuma versão publicada ainda a consome.
+
+## 2026-07-30-021 — Validação publicada e encerramento da Noite 4
+
+### Tarefa, conversa ou etapa relacionada
+
+- Validação em ambiente publicado da antecedência configurável.
+
+### Objetivo
+
+- Confirmar a publicação, a persistência dos três valores previstos e a
+  disponibilidade do gatilho de lembrete sem gerar envio durante o teste.
+
+### Trabalho realizado
+
+- A versão da Noite 4 foi publicada no Render.
+- A interface publicada foi inspecionada com sessão administrativa autorizada.
+- Foi identificado que a configuração parcial existente não continha
+  `lembrete_agendamento`.
+- A migration foi complementada com uma inclusão aditiva e idempotente do
+  gatilho, preservando todas as automações existentes.
+- O gatilho foi incluído no Supabase, ativo e com template não vazio.
+- Foram salvos e recarregados, em sequência, os valores 1, 2 e 10 horas.
+- Ao final, a antecedência foi restaurada para 1 hora.
+- A Noite 4 foi marcada como **Validada**.
+
+### Arquivos alterados
+
+- `supabase/migrations/20260731010000_automacoes_lembrete_configuravel.sql`
+- `tests/night4-reminder.test.ts`
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Supabase: adicionado somente o item ausente `lembrete_agendamento` ao JSON de
+  automações; nenhuma entrada existente foi substituída.
+- Supabase: `reminder_advance_hours` foi alternado entre 1, 2 e 10 durante a
+  validação e terminou novamente em 1.
+- Render: commit da implementação publicado e estado `live` confirmado após o
+  health check.
+- Make/provedor: nenhuma alteração.
+
+### Verificações e resultados
+
+- Render: build remoto aprovado, verificações do pipeline aprovadas e serviço
+  saudável.
+- Interface: opções 1, 2 e 10 horas presentes.
+- Persistência: 1 hora carregou após o deploy; 2 e 10 horas permaneceram após
+  recarregamentos independentes.
+- Gatilho: ativo, visível e com template não vazio após novo carregamento.
+- Segurança do teste: a consulta à fila mostrou somente dois lembretes antigos;
+  nenhuma execução nova foi criada e nenhuma mensagem foi enviada.
+- Configuração final: 1 hora.
+
+### Riscos, limitações e pendências
+
+- O teste confirmou cálculo e persistência, mas não antecipou artificialmente o
+  relógio do ambiente publicado.
+- Reagendamento, cancelamento e revalidação imediatamente antes do envio são
+  objetivos da Noite 5.
+- Não há pendência restante na Noite 4.
+
+### Como desfazer
+
+- Aplicação: publicar novamente a versão estável anterior.
+- Configuração: o valor final 1 preserva o comportamento de uma hora.
+- Gatilho: se houver necessidade comprovada, desativá-lo pela interface é a
+  reversão operacional preferida; não apagar as outras automações.
+- Banco: manter a coluna é compatível com versões anteriores; eventual remoção
+  exige migration corretiva posterior.

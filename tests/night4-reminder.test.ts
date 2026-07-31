@@ -60,4 +60,7 @@ test('configuração é carregada e salva no Supabase e consumida pelo worker', 
   assert.match(engine, /isWithinReminderWindow/);
   assert.match(migration, /reminder_advance_hours INTEGER NOT NULL DEFAULT 1/);
   assert.match(migration, /BETWEEN 1 AND 168/);
+  assert.match(migration, /'event', 'lembrete_agendamento'/);
+  assert.match(migration, /existing\.item->>'event' = 'lembrete_agendamento'/);
+  assert.match(migration, /\|\| jsonb_build_array/);
 });
