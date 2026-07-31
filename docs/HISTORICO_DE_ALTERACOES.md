@@ -1200,3 +1200,56 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Mensagens já aceitas pelo provedor não podem ser recolhidas.
 - Para corrigir a documentação, adicionar uma nova entrada corretiva; nunca
   apagar ou reescrever esta entrada.
+
+## 2026-07-30-019 — Confirmação física das boas-vindas e encerramento da Noite 3
+
+### Tarefa, conversa ou etapa relacionada
+
+- Confirmação final do reteste de novo cliente e fechamento da Noite 3.
+
+### Objetivo
+
+- Registrar a chegada da mensagem de boas-vindas no aparelho autorizado e
+  encerrar a validação das mensagens imediatas.
+
+### Trabalho realizado
+
+- O usuário confirmou o recebimento físico da nova mensagem de boas-vindas.
+- O cronograma foi atualizado para marcar a Noite 3 como **Validada**.
+- O ponto de retomada foi direcionado para a Noite 4.
+- Nenhuma mensagem foi reenviada e nenhum dado foi alterado nesta confirmação.
+
+### Arquivos alterados
+
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma alteração foi aplicada ao Supabase, Render, Make, cenário ou
+  provedor nesta confirmação.
+
+### Verificações e resultados
+
+- Novo cliente: um evento, uma execução em `sucesso`, uma tentativa e
+  deduplicação preservada.
+- Make/provedor: uma execução automática, HTTP 200 e identificadores de
+  mensagem.
+- Entrega física das boas-vindas: confirmada pelo usuário.
+- Demais fluxos da Noite 3: agendamento pelo cliente, agendamento pelo operador,
+  serviço iniciado e serviço finalizado já estavam confirmados.
+- Resultado consolidado: cinco fluxos imediatos validados de ponta a ponta, sem
+  ausência ou duplicidade observada.
+
+### Riscos, limitações e pendências
+
+- O laboratório mantém os registros controlados usados nos testes anteriores.
+- O acompanhamento de confirmação automática de entrega do provedor continua
+  previsto para uma etapa posterior do cronograma.
+- Não há pendência restante na Noite 3.
+
+### Como desfazer
+
+- Esta confirmação altera somente documentação. Se houver correção posterior,
+  adicionar uma nova entrada e ajustar o cronograma sem apagar este histórico.
+- Não há mensagem, banco ou configuração externa a desfazer nesta etapa.

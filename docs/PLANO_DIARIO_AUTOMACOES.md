@@ -5,16 +5,13 @@ Limpeza Estética Automotiva.
 
 ## Ponto de retomada
 
-**Próxima ação:** obter do usuário a confirmação de recebimento físico da nova
-mensagem de boas-vindas no aparelho autorizado.
-**Estado atual:** Noite 3 em andamento; agendamento pelo operador, serviço
-iniciado e serviço finalizado foram confirmados no aparelho. O agendamento pelo
-Portal foi validado de ponta a ponta, sem duplicidade. Um novo cadastro
-controlado pelo Portal gerou exatamente um evento e uma execução de
-`novo_cliente`; a fila registrou sucesso em uma tentativa e o Make concluiu uma
-única execução com HTTP 200 e identificadores do provedor. A confirmação física
-desta nova mensagem de boas-vindas ainda está pendente.
-**Última noite validada:** Noite 2 — Controle “Envios 24 horas”.
+**Próxima ação:** iniciar a Noite 4 — lembrete configurável e padronização do
+fuso horário em `America/Sao_Paulo`.
+**Estado atual:** Noite 3 validada. As mensagens de novo cliente, agendamento
+pelo cliente, agendamento pelo operador, serviço iniciado e serviço finalizado
+foram validadas de ponta a ponta em testes autorizados, com execução única, sem
+ausência ou duplicidade e com recebimento confirmado no aparelho.
+**Última noite validada:** Noite 3 — Mensagens imediatas.
 **Render:** publicado e ativo no plano gratuito.
 **Bloqueios conhecidos:** o dry-run Docker permanece indisponível nesta máquina;
 o Supabase descartável foi usado como laboratório com autorização explícita.
@@ -52,7 +49,7 @@ de retomada estiverem atualizados.
 | --- | --- | --- | --- |
 | 1 | Etapa 1 | Verificação do ambiente real | **Validada** |
 | 2 | Etapa 1 | Controle “Envios 24 horas” | **Validada** |
-| 3 | Etapa 2 | Mensagens imediatas | **Em andamento** |
+| 3 | Etapa 2 | Mensagens imediatas | **Validada** |
 | 4 | Etapa 2 | Lembrete configurável e fuso horário | **Pendente** |
 | 5 | Etapa 2 | Segurança do lembrete | **Pendente** |
 | 6 | Etapa 2 | Cliente inativo | **Pendente** |
