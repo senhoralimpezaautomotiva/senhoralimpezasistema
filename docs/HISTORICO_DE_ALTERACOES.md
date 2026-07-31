@@ -927,3 +927,49 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Esta etapa altera somente documentação. Correções devem ser registradas por
   uma nova entrada, sem apagar esta.
 - Não há alteração externa ou reenvio a desfazer.
+
+## 2026-07-30-014 — Confirmação física do serviço finalizado
+
+### Tarefa, conversa ou etapa relacionada
+
+- Validação de entrega das mensagens imediatas da Noite 3.
+
+### Objetivo
+
+- Registrar a confirmação de recebimento da mensagem de serviço finalizado.
+
+### Trabalho realizado
+
+- O usuário confirmou que a mensagem de serviço finalizado chegou ao aparelho
+  autorizado.
+- O cronograma foi atualizado para refletir três fluxos validados de ponta a
+  ponta.
+- Nenhuma mensagem foi reenviada.
+
+### Arquivos alterados
+
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma alteração foi aplicada ao Supabase, Render, Make ou provedor.
+
+### Verificações e resultados
+
+- Agendamento pelo operador: entrega física confirmada.
+- Serviço iniciado: entrega física confirmada.
+- Serviço finalizado: entrega física confirmada.
+- Duplicidade: não observada.
+
+### Riscos, limitações e pendências
+
+- A mensagem de novo cliente ainda não teve entrega física confirmada.
+- O agendamento pelo Portal do Cliente ainda depende de uma conta autenticada.
+- A Noite 3 permanece **Em andamento**.
+
+### Como desfazer
+
+- Esta etapa altera somente documentação. Correções devem ser registradas por
+  uma nova entrada, sem apagar esta.
+- Não há alteração externa a desfazer.
