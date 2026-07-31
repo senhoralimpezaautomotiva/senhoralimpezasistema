@@ -1089,3 +1089,51 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Esta etapa altera somente documentação. Correções devem ser registradas em uma
   nova entrada, sem apagar esta.
 - Não há mensagem, banco ou configuração externa a desfazer.
+
+## 2026-07-30-017 — Confirmação física do agendamento pelo Portal
+
+### Tarefa, conversa ou etapa relacionada
+
+- Validação de entrega do agendamento autenticado pelo Portal do Cliente na
+  Noite 3.
+
+### Objetivo
+
+- Registrar a confirmação de recebimento físico da mensagem gerada pelo
+  agendamento do Portal.
+
+### Trabalho realizado
+
+- O usuário confirmou o recebimento da mensagem no aparelho autorizado.
+- O cronograma foi atualizado para considerar o fluxo validado de ponta a
+  ponta.
+- Nenhuma mensagem foi reenviada.
+
+### Arquivos alterados
+
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma alteração foi aplicada ao Supabase, Render, Make ou provedor.
+
+### Verificações e resultados
+
+- Portal do Cliente: agendamento criado com sucesso.
+- Outbox e fila: exatamente um evento e uma execução.
+- Execução: estado `sucesso`, uma tentativa e deduplicação preservada.
+- Entrega física: confirmada pelo usuário.
+- Duplicidade: não observada.
+
+### Riscos, limitações e pendências
+
+- A mensagem de boas-vindas permanece como não entregue, apesar da aceitação
+  técnica pelo provedor.
+- A Noite 3 permanece **Em andamento** somente por essa pendência.
+
+### Como desfazer
+
+- Esta etapa altera somente documentação. Correções devem ser registradas em uma
+  nova entrada, sem apagar esta.
+- Não há mensagem, banco ou configuração externa a desfazer.

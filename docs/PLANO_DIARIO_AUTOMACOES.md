@@ -5,16 +5,15 @@ Limpeza Estética Automotiva.
 
 ## Ponto de retomada
 
-**Próxima ação:** confirmar no aparelho autorizado o recebimento da mensagem do
-agendamento feito pelo Portal do Cliente e diagnosticar a não entrega da
-mensagem de boas-vindas antes de autorizar um novo teste controlado.
+**Próxima ação:** diagnosticar a não entrega da mensagem de boas-vindas antes de
+autorizar um novo teste controlado.
 **Estado atual:** Noite 3 em andamento; agendamento pelo operador, serviço
 iniciado e serviço finalizado foram confirmados no aparelho. Novo cliente foi
 aceito pelo provedor, que retornou HTTP 200 e identificadores de mensagem, mas o
 usuário confirmou que não recebeu a mensagem de boas-vindas. O agendamento pelo
 Portal foi validado tecnicamente com um evento, uma execução em sucesso, uma
-tentativa e uma execução correspondente no Make, sem duplicidade; a entrega
-física dessa mensagem ainda precisa ser confirmada.
+tentativa e uma execução correspondente no Make, sem duplicidade; o recebimento
+físico dessa mensagem foi confirmado.
 **Última noite validada:** Noite 2 — Controle “Envios 24 horas”.
 **Render:** publicado e ativo no plano gratuito.
 **Bloqueios conhecidos:** o dry-run Docker permanece indisponível nesta máquina;
