@@ -286,3 +286,16 @@ test('configuração parcial recebe as quatro automações imediatas sem sobresc
   assert.match(migration, /\|\| missing_array\.items/);
   assert.doesNotMatch(migration, /SET automations = missing_array\.items/);
 });
+
+test('finalização usa o estado aceito pelo Supabase e a interface não engole falhas de persistência', () => {
+  const localDb = projectFile('src', 'db', 'localDb.ts');
+  const app = projectFile('src', 'App.tsx');
+
+  assert.match(localDb, /finalizado:\s*'Concluído'/);
+  assert.doesNotMatch(localDb, /finalizado:\s*'Finalizado'/);
+
+  const updateHandlers = app.match(
+    /onUpdateAppointment=\{async \(id, updated\) => \{[\s\S]*?throw e;[\s\S]*?\}\}/g
+  );
+  assert.equal(updateHandlers?.length, 2);
+});

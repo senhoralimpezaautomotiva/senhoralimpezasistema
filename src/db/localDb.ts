@@ -951,7 +951,10 @@ export function mapFrontendAppointmentToDb(a: Partial<Appointment>): any {
       em_andamento: 'Em andamento',
       aguardando_aprovacao: 'Aguardando aprovação',
       aguardando_peca: 'Aguardando peça',
-      finalizado: 'Finalizado',
+      // O schema remoto usa "Concluído" como estado persistido de finalização.
+      // mapDbAppointmentToFrontend normaliza esse valor novamente para
+      // "finalizado" na interface.
+      finalizado: 'Concluído',
       entregue: 'Entregue',
       cancelado: 'Cancelado'
     };

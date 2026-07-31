@@ -597,6 +597,7 @@ export default function App() {
                 syncWithDatabase();
               } catch (e) {
                 safeLog('error', 'appointment.update', 'error', { entityId: id, error: e });
+                throw e;
               }
             }}
             onDeleteAppointment={handleDeleteAppointment}
@@ -648,6 +649,7 @@ export default function App() {
                 syncWithDatabase();
               } catch (e) {
                 safeLog('error', 'appointment.update', 'error', { entityId: id, error: e });
+                throw e;
               }
             }}
           />
