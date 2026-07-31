@@ -19,6 +19,11 @@ import {
 } from './automationEventPolicy';
 import { classifyQueuedAutomation } from './automationExecutionPolicy';
 import {
+  classifyReminderDelivery,
+  ReminderDeliveryDecision
+} from './reminderDeliveryPolicy';
+import { mapDbAppointmentToFrontend } from './localDb';
+import {
   getPartsInTimezone,
   isWithinOperationalWindow,
   getNextStartTime,
@@ -474,6 +479,29 @@ export class AutomationEngine {
         continue;
       }
 
+      if (exec.automacao === 'lembrete_agendamento') {
+        const reminderDecision = await this.revalidateReminderExecution(exec);
+        if (reminderDecision.action === 'retry') {
+          const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+          exec.status = 'pendente';
+          exec.data_execucao = retryAt;
+          exec.data_proxima_tentativa = retryAt;
+          exec.resposta_api = 'Lembrete adiado: não foi possível revalidar o agendamento atual.';
+          exec.updated_at = new Date().toISOString();
+          await this.persistClaimedExecution(exec, logs);
+          logs.push(`[Reminder Safety] Execução ${exec.id} adiada para revalidação.`);
+          continue;
+        }
+        if (reminderDecision.action === 'cancel') {
+          exec.status = 'cancelada';
+          exec.resposta_api = `Lembrete cancelado na revalidação: ${reminderDecision.reason}.`;
+          exec.updated_at = new Date().toISOString();
+          await this.persistClaimedExecution(exec, logs);
+          logs.push(`[Reminder Safety] Execução ${exec.id} cancelada: ${reminderDecision.reason}.`);
+          continue;
+        }
+      }
+
       processedCount++;
       logs.push(`[Queue Processor] Processando execução ${exec.id} (${exec.automacao}).`);
 
@@ -549,6 +577,42 @@ export class AutomationEngine {
     }
 
     return processedCount;
+  }
+
+  private async revalidateReminderExecution(
+    exec: ClaimedAutomationExecution
+  ): Promise<ReminderDeliveryDecision> {
+    let appointment = exec.appointment_id
+      ? dbInstance.appointments.find(item => item.id === exec.appointment_id)
+      : undefined;
+    let appointmentLoadFailed = false;
+
+    if (dbInstance.config.useRealSupabase && exec.appointment_id) {
+      const supabase = dbInstance.getSupabaseClient();
+      const { data, error } = await supabase
+        .from('agendamentos')
+        .select(
+          'id,cliente_id,veiculo_id,servico_id,data_agendamento,hora_agendamento,status,valor_servico,tempo_real,observacoes,created_at,updated_at'
+        )
+        .eq('id', exec.appointment_id)
+        .maybeSingle();
+
+      appointmentLoadFailed = Boolean(error);
+      appointment = data && !error
+        ? mapDbAppointmentToFrontend(data)
+        : undefined;
+    }
+
+    return classifyReminderDelivery({
+      appointmentId: exec.appointment_id,
+      deduplicationKey: exec.deduplication_key,
+      appointmentFound: Boolean(appointment),
+      appointmentLoadFailed,
+      appointmentStatus: appointment?.status,
+      appointmentDateTime: appointment?.dateTime,
+      now: new Date(),
+      advanceHours: dbInstance.config.reminderAdvanceHours || 1
+    });
   }
 
   private mapClaimedExecution(row: any): ClaimedAutomationExecution {

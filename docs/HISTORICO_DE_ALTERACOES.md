@@ -1402,3 +1402,68 @@ As alterações funcionais e migrations estão relacionadas na entrada
   reversão operacional preferida; não apagar as outras automações.
 - Banco: manter a coluna é compatível com versões anteriores; eventual remoção
   exige migration corretiva posterior.
+
+## 2026-07-30-022 — Implementação local da segurança do lembrete
+
+### Tarefa, conversa ou etapa relacionada
+
+- Noite 5 — cancelamento, reagendamento, conclusão e deduplicação.
+
+### Objetivo
+
+- Impedir que uma execução já enfileirada envie lembrete depois que o
+  agendamento deixa de ser válido ou muda de horário.
+
+### Trabalho realizado
+
+- Criada uma política isolada para decidir envio, cancelamento ou nova tentativa
+  de revalidação.
+- A chave de deduplicação do lembrete passou a incluir o identificador e o
+  horário atual do agendamento.
+- O worker passou a consultar diretamente o registro atual no Supabase depois
+  do claim e imediatamente antes de chamar o transporte.
+- Agendamentos ausentes, cancelados, iniciados, finalizados, entregues,
+  reagendados ou fora da janela cancelam a execução sem envio.
+- Falha temporária ao carregar o agendamento devolve a execução à fila para
+  nova tentativa, sem enviar com contexto incompleto.
+- Execuções antigas, cuja chave não contém o horário, são canceladas de forma
+  conservadora.
+
+### Arquivos criados
+
+- `src/db/reminderDeliveryPolicy.ts`
+- `tests/night5-reminder-safety.test.ts`
+
+### Arquivos alterados
+
+- `src/db/automationEngine.ts`
+- `src/db/localDb.ts`
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma alteração aplicada ao Supabase nesta entrada.
+- Render ainda não atualizado nesta entrada.
+- Make/provedor não foi acionado.
+
+### Verificações e resultados
+
+- Testes da Noite 5: seis cenários aprovados.
+- Regressões selecionadas, incluindo a Noite 4: 26 testes aprovados.
+- TypeScript: `tsc --noEmit` aprovado.
+- Build de produção: aprovado, incluindo validações do artefato e do Portal.
+- Casos cobertos: agendamento ativo, cancelado, em andamento, finalizado,
+  entregue, reagendado, ausente, fora da janela, chave antiga e falha de leitura.
+
+### Riscos, limitações e pendências
+
+- A versão ainda precisa ser publicada e exercitada no laboratório.
+- A consulta imediatamente antes do transporte reduz a janela de corrida, mas
+  nenhum provedor externo oferece transação atômica conjunta com o banco.
+- Não foi criada ou enviada mensagem nesta entrada.
+
+### Como desfazer
+
+- Reverter o commit desta etapa e publicar novamente a versão estável anterior.
+- Nenhuma reversão de banco ou serviço externo é necessária para esta entrada.

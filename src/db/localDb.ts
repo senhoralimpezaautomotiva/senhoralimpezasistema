@@ -37,6 +37,7 @@ import {
   isWithinReminderWindow,
   parseAppointmentDateTime
 } from '../utils/operationalWindow';
+import { buildReminderDeduplicationKey } from './reminderDeliveryPolicy';
 export { getServicePrice } from '../utils/servicePricing';
 
 // Constants for Local Storage Keys
@@ -2427,7 +2428,12 @@ class LocalDatabase {
       servico_iniciado: context.appointment?.id ? `servico_iniciado:${context.appointment.id}` : undefined,
       servico_finalizado: context.appointment?.id ? `servico_finalizado:${context.appointment.id}` : undefined,
       pagamento_recebido: context.appointment?.id ? `pagamento_recebido:${context.appointment.id}` : undefined,
-      lembrete_agendamento: context.appointment?.id ? `lembrete_agendamento:${context.appointment.id}` : undefined,
+      lembrete_agendamento: context.appointment?.id && context.appointment.dateTime
+        ? buildReminderDeduplicationKey(
+            context.appointment.id,
+            context.appointment.dateTime
+          )
+        : undefined,
       aniversario: context.customer?.id ? `aniversario:${context.customer.id}:${new Date().getFullYear()}` : undefined,
     };
     const deduplicationKey = dedupKeyMap[event];
