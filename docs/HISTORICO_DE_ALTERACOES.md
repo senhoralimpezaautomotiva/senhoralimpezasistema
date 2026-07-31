@@ -1467,3 +1467,74 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 - Reverter o commit desta etapa e publicar novamente a versão estável anterior.
 - Nenhuma reversão de banco ou serviço externo é necessária para esta entrada.
+
+## 2026-07-30-023 — Validação publicada e encerramento da Noite 5
+
+### Tarefa, conversa ou etapa relacionada
+
+- Noite 5 — segurança do lembrete em ambiente publicado.
+
+### Objetivo
+
+- Confirmar que lembretes inválidos são interrompidos antes do transporte e que
+  a deduplicação também é garantida atomicamente pelo banco.
+
+### Trabalho realizado
+
+- A implementação de revalidação foi publicada no Render e ficou saudável.
+- Foi inserida uma execução temporária vinculada a um agendamento já concluído.
+- O worker reconsultou o agendamento e cancelou a execução antes do transporte.
+- Foi criado um índice único parcial para `deduplication_key`.
+- Duas inserções controladas com a mesma chave resultaram em somente um
+  registro.
+- Todos os registros temporários da validação foram removidos.
+- A Noite 5 foi marcada como **Validada**.
+
+### Arquivos criados
+
+- `supabase/migrations/20260731020000_automacoes_deduplicacao_unica.sql`
+
+### Arquivos alterados
+
+- `tests/night5-reminder-safety.test.ts`
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Supabase: criado índice único parcial e idempotente sobre chaves de
+  deduplicação não nulas.
+- Supabase: dois registros exclusivamente temporários foram criados em testes
+  separados e removidos ao final; clientes e agendamentos não foram alterados.
+- Render: a implementação da Noite 5 foi publicada e o estado `live` foi
+  confirmado após o health check.
+- Make/provedor: nenhuma execução nova foi recebida durante o teste de bloqueio.
+
+### Verificações e resultados
+
+- Auditoria prévia: nenhuma chave duplicada existente.
+- Testes automatizados selecionados: 27 aprovados e nenhum reprovado.
+- TypeScript: `tsc --noEmit` aprovado.
+- Build de produção e validações de artefato: aprovados.
+- Teste publicado: execução terminou `cancelada`, com zero tentativas e motivo
+  `appointment_not_active`.
+- Deduplicação publicada: duas tentativas com a mesma chave produziram uma única
+  linha.
+- Make: a execução mais recente permaneceu anterior ao teste.
+- Limpeza: os dois registros temporários foram removidos com alvo restrito.
+
+### Riscos, limitações e pendências
+
+- A consulta imediatamente antes do transporte reduz a janela de corrida, mas
+  banco e provedor externo não compartilham uma transação atômica.
+- O índice é parcial: registros sem chave continuam permitidos por
+  compatibilidade; eventos que exigem deduplicação devem sempre gerar a chave.
+- Não há pendência restante na Noite 5.
+
+### Como desfazer
+
+- Aplicação: publicar novamente a versão estável anterior.
+- Banco: preferir manter o índice, pois ele é compatível com a aplicação. Se uma
+  necessidade comprovada exigir a reversão, criar uma migration corretiva que
+  remova somente `automacoes_execucoes_deduplication_key_uidx`, após auditar que
+  não existem ciclos concorrentes dependentes da proteção.

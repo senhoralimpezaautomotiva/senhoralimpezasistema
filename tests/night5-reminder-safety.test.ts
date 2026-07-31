@@ -98,3 +98,25 @@ test('worker revalida no Supabase depois do claim e antes do transporte', () => 
   assert.match(engine, /\.from\('agendamentos'\)/);
   assert.match(engine, /\.maybeSingle\(\)/);
 });
+
+test('migration garante deduplicacao atomica no banco', () => {
+  const migration = fs.readFileSync(
+    path.join(
+      process.cwd(),
+      'supabase',
+      'migrations',
+      '20260731020000_automacoes_deduplicacao_unica.sql'
+    ),
+    'utf8'
+  );
+
+  assert.match(
+    migration,
+    /create\s+unique\s+index\s+if\s+not\s+exists\s+automacoes_execucoes_deduplication_key_uidx/i
+  );
+  assert.match(
+    migration,
+    /on\s+public\.automacoes_execucoes\s*\(\s*deduplication_key\s*\)/i
+  );
+  assert.match(migration, /where\s+deduplication_key\s+is\s+not\s+null/i);
+});

@@ -5,13 +5,12 @@ Limpeza Estética Automotiva.
 
 ## Ponto de retomada
 
-**Próxima ação:** publicar a proteção da Noite 5 e validar no laboratório que
-lembretes cancelados, concluídos ou de horários antigos não chegam ao provedor.
-**Estado atual:** Noite 5 em andamento. A revalidação imediatamente antes do
-envio e a deduplicação por agendamento mais horário foram implementadas. Os
-testes locais, a tipagem e o build passaram; falta a validação controlada na
-versão publicada.
-**Última noite validada:** Noite 4 — Lembrete configurável e fuso horário.
+**Próxima ação:** iniciar a Noite 6 e definir os critérios operacionais para
+clientes inativos antes de criar qualquer fila.
+**Estado atual:** Noite 5 validada. A versão publicada revalidou um lembrete
+controlado, cancelou-o antes do transporte e manteve zero tentativas. O banco
+também bloqueou atomicamente uma segunda inserção com a mesma chave.
+**Última noite validada:** Noite 5 — Segurança do lembrete.
 **Render:** publicado e ativo no plano gratuito.
 **Bloqueios conhecidos:** o dry-run Docker permanece indisponível nesta máquina;
 o Supabase descartável foi usado como laboratório com autorização explícita.
@@ -51,7 +50,7 @@ de retomada estiverem atualizados.
 | 2 | Etapa 1 | Controle “Envios 24 horas” | **Validada** |
 | 3 | Etapa 2 | Mensagens imediatas | **Validada** |
 | 4 | Etapa 2 | Lembrete configurável e fuso horário | **Validada** |
-| 5 | Etapa 2 | Segurança do lembrete | **Em andamento** |
+| 5 | Etapa 2 | Segurança do lembrete | **Validada** |
 | 6 | Etapa 2 | Cliente inativo | **Pendente** |
 | 7 | Etapa 2 | Aniversários | **Pendente** |
 | 8 | Etapa 3 | Provedor, tentativas e confirmação | **Pendente** |
