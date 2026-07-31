@@ -265,3 +265,24 @@ test('modo 24 horas persiste no Supabase e mantém compatibilidade com o Make', 
   assert.match(transport, /formattedMessage:\s*payload\.message/);
   assert.match(migration, /automation_24_hours BOOLEAN NOT NULL DEFAULT FALSE/);
 });
+
+test('configuração parcial recebe as quatro automações imediatas sem sobrescrever entradas existentes', () => {
+  const migration = projectFile(
+    'supabase',
+    'migrations',
+    '20260731001000_automacoes_imediatas_defaults.sql'
+  );
+
+  for (const event of [
+    'novo_cliente',
+    'novo_agendamento',
+    'servico_iniciado',
+    'servico_finalizado'
+  ]) {
+    assert.match(migration, new RegExp(`'event', '${event}'`));
+  }
+
+  assert.match(migration, /existing\.item->>'event' = defaults\.item->>'event'/);
+  assert.match(migration, /\|\| missing_array\.items/);
+  assert.doesNotMatch(migration, /SET automations = missing_array\.items/);
+});

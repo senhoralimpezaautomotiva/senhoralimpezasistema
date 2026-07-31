@@ -89,7 +89,8 @@ test('supabase/migrations é a única fonte oficial e contém a baseline remota 
     '20260729223000_automacoes_claim_backfill.sql',
     '20260729230000_automacoes_riscos_residuais.sql',
     '20260730225000_configuracoes_empresa_runtime.sql',
-    '20260730233000_automacoes_janela_24h.sql'
+    '20260730233000_automacoes_janela_24h.sql',
+    '20260731001000_automacoes_imediatas_defaults.sql'
   ]);
 
   const pattern = new RegExp(manifest.expectedBaselineFilenamePattern);
