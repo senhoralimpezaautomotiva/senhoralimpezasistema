@@ -1137,3 +1137,66 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Esta etapa altera somente documentação. Correções devem ser registradas em uma
   nova entrada, sem apagar esta.
 - Não há mensagem, banco ou configuração externa a desfazer.
+
+## 2026-07-30-018 — Novo cadastro pelo Portal para reteste de boas-vindas
+
+### Tarefa, conversa ou etapa relacionada
+
+- Reteste controlado da mensagem de novo cliente na Noite 3.
+
+### Objetivo
+
+- Validar novamente o fluxo de boas-vindas desde um cadastro novo no Portal até
+  a aceitação da mensagem pelo provedor, sem ausência ou duplicidade.
+
+### Trabalho realizado
+
+- Foi criado pelo Portal um cliente exclusivamente de teste, com dados
+  autorizados pelo usuário.
+- Foi cadastrado um veículo fictício para concluir o fluxo funcional do Portal.
+- Foram inspecionados o evento, a execução da fila e a execução correspondente
+  no Make, sem reprocessamento manual.
+- O ponto de retomada do cronograma foi atualizado para aguardar somente a
+  confirmação de recebimento no aparelho autorizado.
+
+### Arquivos alterados
+
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Supabase: criados somente o cliente controlado, o veículo fictício e os
+  registros automáticos associados ao fluxo de boas-vindas.
+- Make/provedor: ocorreu uma única execução automática do cenário já publicado;
+  nenhuma configuração foi alterada e nenhum reprocessamento foi realizado.
+- Render: nenhuma publicação ou alteração de configuração nesta etapa.
+
+### Verificações e resultados
+
+- Outbox: exatamente um evento `novo_cliente`, processado uma única vez.
+- Fila: exatamente uma execução `novo_cliente`, estado `sucesso`, uma tentativa
+  e chave de deduplicação única.
+- Veículo: o cadastro fictício não gerou automação adicional.
+- Make: exatamente uma execução nova no horário do teste, estado `Success`, com
+  dois módulos e duas operações.
+- Provedor: resposta HTTP 200 com identificadores de mensagem.
+- Entrega física: ainda depende da confirmação do usuário no aparelho
+  autorizado.
+
+### Riscos, limitações e pendências
+
+- HTTP 200 e os identificadores comprovam aceitação técnica, não entrega no
+  WhatsApp.
+- A Noite 3 permanece **Em andamento** até a confirmação física desta nova
+  mensagem.
+- O laboratório contém o cliente e o veículo fictício criados neste teste.
+
+### Como desfazer
+
+- Se for necessário limpar o laboratório, remover de forma direcionada somente
+  o cliente controlado e o veículo fictício desta etapa, respeitando os
+  relacionamentos do banco e sem apagar outros registros.
+- Mensagens já aceitas pelo provedor não podem ser recolhidas.
+- Para corrigir a documentação, adicionar uma nova entrada corretiva; nunca
+  apagar ou reescrever esta entrada.
