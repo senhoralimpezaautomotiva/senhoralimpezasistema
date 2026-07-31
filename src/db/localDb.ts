@@ -30,7 +30,13 @@ import { getCurrentDateStr } from '../utils/dateUtils';
 import { sanitizeLegacyConfigStorage, toPublicSystemConfig } from '../security/publicConfig';
 import { maskPhone, safeLog } from '../security/safeOutput';
 import { getPublicSupabaseEnvironment } from '../config/publicEnvironment';
-import { isWithinOperationalWindow, getNextStartTime } from '../utils/operationalWindow';
+import {
+  AUTOMATION_TIME_ZONE,
+  getNextStartTime,
+  isWithinOperationalWindow,
+  isWithinReminderWindow,
+  parseAppointmentDateTime
+} from '../utils/operationalWindow';
 export { getServicePrice } from '../utils/servicePricing';
 
 // Constants for Local Storage Keys
@@ -203,6 +209,7 @@ const DEFAULT_CONFIG: SystemConfig = {
   automationStartHour: '08:00',
   automationEndHour: '20:00',
   automation24Hours: false,
+  reminderAdvanceHours: 1,
   theme: 'dark',
   agenda: {
     days: [
@@ -347,7 +354,7 @@ const DEFAULT_AUTOMATIONS: AutomationTrigger[] = [
   {
     id: 'at_lembrete_agendamento',
     name: 'Lembrete de Agendamento',
-    description: 'Envia uma mensagem automática lembrando o cliente sobre seu agendamento iminente (60 minutos antes).',
+    description: 'Envia uma mensagem automática com a antecedência configurada para o lembrete.',
     event: 'lembrete_agendamento',
     isActive: true,
     template: 'Olá, *{nome}*! Passando para lembrar que seu agendamento está agendado para hoje às *{data_hora}* com o veículo *{veiculo}* (Serviço: *{servico}*). Estamos te aguardando no endereço: Av. das Nações Unidas, 14205! ✨🚗'
@@ -1126,6 +1133,7 @@ class LocalDatabase {
         'automation_start_hour',
         'automation_end_hour',
         'automation_24_hours',
+        'reminder_advance_hours',
         'agenda',
         'automations',
         'updated_at'
@@ -1154,6 +1162,9 @@ class LocalDatabase {
           automationStartHour: data.automation_start_hour || this.config.automationStartHour,
           automationEndHour: data.automation_end_hour || this.config.automationEndHour,
           automation24Hours: data.automation_24_hours === true,
+          reminderAdvanceHours: Number.isInteger(data.reminder_advance_hours)
+            ? data.reminder_advance_hours
+            : this.config.reminderAdvanceHours,
           agenda: data.agenda ? (typeof data.agenda === 'string' ? JSON.parse(data.agenda) : data.agenda) : this.config.agenda
         };
         
@@ -1217,6 +1228,7 @@ class LocalDatabase {
         automation_start_hour: this.config.automationStartHour || '08:00',
         automation_end_hour: this.config.automationEndHour || '20:00',
         automation_24_hours: this.config.automation24Hours === true,
+        reminder_advance_hours: this.config.reminderAdvanceHours || 1,
         agenda: this.config.agenda ? JSON.stringify(this.config.agenda) : undefined
       });
       
@@ -2244,8 +2256,7 @@ class LocalDatabase {
     let sent = 0;
 
     const now = new Date();
-    // 60 minutes ahead
-    const limit = new Date(now.getTime() + 60 * 60 * 1000);
+    const advanceHours = this.config.reminderAdvanceHours || 1;
 
     // Active lembrete automation
     const automation = this.automations.find(a => a.event === 'lembrete_agendamento');
@@ -2262,20 +2273,11 @@ class LocalDatabase {
       if (appt.status === 'cancelado') return false;
       if (appt.reminderSent) return false;
 
-      try {
-        const apptDate = new Date(appt.dateTime);
-        // Ensure it is a valid date
-        if (isNaN(apptDate.getTime())) return false;
-
-        // Check if between now and 60 minutes ahead
-        return apptDate >= now && apptDate <= limit;
-      } catch (e) {
-        return false;
-      }
+      return isWithinReminderWindow(appt.dateTime, now, advanceHours);
     });
 
     checked = eligibleAppts.length;
-    logs.push(`[Reminder Engine] Encontrados ${checked} agendamentos pendentes nas próximas 1 hora.`);
+    logs.push(`[Reminder Engine] Encontrados ${checked} agendamentos pendentes nas próximas ${advanceHours} hora(s).`);
 
     for (const appt of eligibleAppts) {
       const customer = this.customers.find(c => c.id === appt.customerId);
@@ -3037,7 +3039,10 @@ export function renderAndNormalizeMessage(
   text = text.replace(/{servico}/g, resolvedServiceName);
 
   if (context.appointment) {
-    const formattedDate = new Date(context.appointment.dateTime).toLocaleString('pt-BR');
+    const formattedDate = parseAppointmentDateTime(context.appointment.dateTime).toLocaleString(
+      'pt-BR',
+      { timeZone: AUTOMATION_TIME_ZONE }
+    );
     text = text.replace(/{data_hora}/g, formattedDate);
     text = text.replace(/{valor}/g, typeof context.appointment.value === 'number' ? context.appointment.value.toFixed(2) : String(context.appointment.value));
   } else {

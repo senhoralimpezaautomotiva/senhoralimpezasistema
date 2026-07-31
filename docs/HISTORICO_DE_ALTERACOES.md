@@ -1253,3 +1253,82 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Esta confirmação altera somente documentação. Se houver correção posterior,
   adicionar uma nova entrada e ajustar o cronograma sem apagar este histórico.
 - Não há mensagem, banco ou configuração externa a desfazer nesta etapa.
+
+## 2026-07-30-020 — Implementação do lembrete configurável da Noite 4
+
+### Tarefa, conversa ou etapa relacionada
+
+- Noite 4 — antecedência configurável e fuso horário.
+
+### Objetivo
+
+- Permitir lembretes com antecedência configurável e eliminar a dependência do
+  fuso horário do servidor ao interpretar os horários dos agendamentos.
+
+### Trabalho realizado
+
+- Adicionada configuração pública validada para a antecedência do lembrete.
+- O painel de automações passou a oferecer as opções de 1, 2 e 10 horas e a
+  mostrar a janela atualmente selecionada.
+- O worker e a verificação auxiliar passaram a consumir a mesma regra de
+  elegibilidade.
+- Valores de agendamento sem offset agora são interpretados explicitamente em
+  `America/Sao_Paulo`; valores com `Z` ou offset são preservados.
+- A data e a hora inseridas nas mensagens também passaram a ser formatadas no
+  fuso de São Paulo.
+- Criada e aplicada a migration
+  `20260731010000_automacoes_lembrete_configuravel.sql`.
+
+### Arquivos criados
+
+- `supabase/migrations/20260731010000_automacoes_lembrete_configuravel.sql`
+- `tests/night4-reminder.test.ts`
+
+### Arquivos alterados
+
+- `src/components/AutomacoesTab.tsx`
+- `src/db/automationEngine.ts`
+- `src/db/localDb.ts`
+- `src/security/publicConfig.ts`
+- `src/types.ts`
+- `src/utils/operationalWindow.ts`
+- `tests/db001-baseline.test.ts`
+- `docs/database/db001-manifest.json`
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Supabase: migration aplicada no projeto do laboratório; criada a coluna
+  `reminder_advance_hours`, com padrão 1 e restrição de 1 a 168.
+- Verificação após aplicação: a configuração da empresa retornou o valor 1.
+- Render: ainda não atualizado nesta entrada.
+- Make/provedor: nenhuma alteração e nenhuma mensagem gerada.
+
+### Verificações e resultados
+
+- Testes da Noite 4: quatro testes aprovados, cobrindo fuso, janelas de 1, 2 e
+  10 horas, valores inválidos e contrato de persistência.
+- Regressões selecionadas e baseline: 31 testes aprovados.
+- TypeScript: `tsc --noEmit` aprovado.
+- Build de produção: aprovado, inclusive políticas do artefato e presença do
+  Portal seguro.
+- Supabase: migration executada e valor padrão consultado com sucesso.
+- Dry-run PostgreSQL isolado: não executado porque o ambiente Docker local
+  permanece indisponível; a migration é aditiva e foi verificada no laboratório
+  autorizado.
+
+### Riscos, limitações e pendências
+
+- Ainda falta publicar o código no Render e validar a interface real.
+- A persistência após recarregamento/reinício será validada no ambiente
+  publicado antes de marcar a Noite 4 como concluída.
+- O teste desta entrada não criou agendamentos nem enviou mensagens.
+
+### Como desfazer
+
+- Aplicação: reverter o commit desta etapa e publicar uma nova versão estável.
+- Configuração: manter o valor 1 restaura o comportamento anterior de uma hora.
+- Banco: a coluna é aditiva e pode permanecer sem impacto em versões anteriores;
+  qualquer remoção deverá ser feita por migration corretiva posterior, somente
+  após confirmar que nenhuma versão publicada ainda a consome.

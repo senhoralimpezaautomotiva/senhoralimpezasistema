@@ -5,12 +5,13 @@ Limpeza Estética Automotiva.
 
 ## Ponto de retomada
 
-**Próxima ação:** iniciar a Noite 4 — lembrete configurável e padronização do
-fuso horário em `America/Sao_Paulo`.
-**Estado atual:** Noite 3 validada. As mensagens de novo cliente, agendamento
-pelo cliente, agendamento pelo operador, serviço iniciado e serviço finalizado
-foram validadas de ponta a ponta em testes autorizados, com execução única, sem
-ausência ou duplicidade e com recebimento confirmado no aparelho.
+**Próxima ação:** publicar a implementação da Noite 4 no Render e validar na
+interface a persistência das opções de 1, 2 e 10 horas após recarregamento.
+**Estado atual:** Noite 4 em andamento. A antecedência configurável e a
+interpretação explícita dos agendamentos em `America/Sao_Paulo` foram
+implementadas; a migration foi aplicada no Supabase e os testes locais de 1, 2
+e 10 horas, tipagem e build passaram. A validação publicada ainda está
+pendente.
 **Última noite validada:** Noite 3 — Mensagens imediatas.
 **Render:** publicado e ativo no plano gratuito.
 **Bloqueios conhecidos:** o dry-run Docker permanece indisponível nesta máquina;
@@ -50,7 +51,7 @@ de retomada estiverem atualizados.
 | 1 | Etapa 1 | Verificação do ambiente real | **Validada** |
 | 2 | Etapa 1 | Controle “Envios 24 horas” | **Validada** |
 | 3 | Etapa 2 | Mensagens imediatas | **Validada** |
-| 4 | Etapa 2 | Lembrete configurável e fuso horário | **Pendente** |
+| 4 | Etapa 2 | Lembrete configurável e fuso horário | **Em andamento** |
 | 5 | Etapa 2 | Segurança do lembrete | **Pendente** |
 | 6 | Etapa 2 | Cliente inativo | **Pendente** |
 | 7 | Etapa 2 | Aniversários | **Pendente** |

@@ -21,10 +21,16 @@ import { classifyQueuedAutomation } from './automationExecutionPolicy';
 import {
   getPartsInTimezone,
   isWithinOperationalWindow,
-  getNextStartTime
+  getNextStartTime,
+  isWithinReminderWindow
 } from '../utils/operationalWindow';
 
-export { getPartsInTimezone, isWithinOperationalWindow, getNextStartTime };
+export {
+  getPartsInTimezone,
+  isWithinOperationalWindow,
+  getNextStartTime,
+  isWithinReminderWindow
+};
 
 type ClaimedAutomationExecution = AutomationExecution & {
   claim_token?: string;
@@ -229,19 +235,15 @@ export class AutomationEngine {
   private async scanAndGenerateExecutions(logs: string[]): Promise<number> {
     let count = 0;
 
-    // --- 1. LEMBRETE DE AGENDAMENTO (60 minutos antes) ---
+    // --- 1. LEMBRETE DE AGENDAMENTO (antecedência configurável) ---
     const reminderTrigger = dbInstance.automations.find(a => a.event === 'lembrete_agendamento');
     if (reminderTrigger && reminderTrigger.isActive) {
       const now = new Date();
-      const limit = new Date(now.getTime() + 60 * 60 * 1000); // 60 minutes ahead
+      const advanceHours = dbInstance.config.reminderAdvanceHours || 1;
 
       const eligibleAppts = dbInstance.appointments.filter(appt => {
         if (appt.status === 'cancelado' || appt.status === 'finalizado' || appt.status === 'entregue') return false;
-        
-        const apptDate = new Date(appt.dateTime);
-        // Is within the next 60 minutes and is in the future
-        const isImminent = apptDate > now && apptDate <= limit;
-        if (!isImminent) return false;
+        if (!isWithinReminderWindow(appt.dateTime, now, advanceHours)) return false;
 
         // Check duplicate
         const hasBeenQueued = dbInstance.executions.some(e => 

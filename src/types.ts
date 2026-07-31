@@ -150,6 +150,7 @@ export interface PublicSystemConfig {
   automationStartHour?: string; // e.g., "08:00"
   automationEndHour?: string;   // e.g., "20:00"
   automation24Hours?: boolean;
+  reminderAdvanceHours?: number; // e.g., 1, 2 or 10 hours
 
   // Agenda settings
   agenda?: AgendaConfig;

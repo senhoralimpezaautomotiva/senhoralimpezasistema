@@ -20,7 +20,8 @@
     "20260729230000_automacoes_riscos_residuais.sql",
     "20260730225000_configuracoes_empresa_runtime.sql",
     "20260730233000_automacoes_janela_24h.sql",
-    "20260731001000_automacoes_imediatas_defaults.sql"
+    "20260731001000_automacoes_imediatas_defaults.sql",
+    "20260731010000_automacoes_lembrete_configuravel.sql"
   ],
   "sqlArtifacts": [
     {
@@ -121,6 +122,15 @@
       "idempotent": "yes",
       "risk": "low",
       "recommendation": "Aplicar após a configuração da janela e validar quatro eventos ativos com templates não vazios."
+    },
+    {
+      "path": "supabase/migrations/20260731010000_automacoes_lembrete_configuravel.sql",
+      "category": ["official-migration", "automation", "configuration", "timezone"],
+      "purpose": "Persiste a antecedência configurável do lembrete; o runtime interpreta agendamentos no fuso America/Sao_Paulo.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Aplicar após as configurações de automação e validar os valores de 1, 2 e 10 horas."
     },
     {
       "path": "configuracoes_empresa.sql",
