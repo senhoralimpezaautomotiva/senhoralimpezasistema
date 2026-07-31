@@ -1035,3 +1035,57 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Não remover registros de outros agendamentos e não reprocessar mensagens.
 - Para desfazer apenas a documentação, criar uma nova entrada corretiva e
   restaurar o ponto de retomada, sem apagar este histórico.
+
+## 2026-07-30-016 — Não entrega da mensagem de boas-vindas
+
+### Tarefa, conversa ou etapa relacionada
+
+- Validação física da mensagem de novo cliente na Noite 3.
+
+### Objetivo
+
+- Registrar o resultado real da entrega e diferenciar execução técnica de
+  recebimento no WhatsApp.
+
+### Trabalho realizado
+
+- O usuário informou que a mensagem de boas-vindas não chegou ao aparelho
+  autorizado.
+- A execução correspondente foi inspecionada no Make sem reprocessamento.
+- O cronograma foi corrigido para tratar o fluxo como não entregue.
+- Nenhuma mensagem foi reenviada.
+
+### Arquivos alterados
+
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma alteração foi aplicada ao Supabase, Render, Make, cenário ou
+  provedor.
+- Nenhuma nova execução ou mensagem foi criada.
+
+### Verificações e resultados
+
+- Make: execução concluída com dois módulos e duas operações.
+- Provedor: resposta HTTP 200 com identificadores de mensagem.
+- Entrega física: não recebida no aparelho autorizado.
+- Diagnóstico: o estado `Success` comprova a conclusão da chamada HTTP, mas não
+  comprova entrega no WhatsApp.
+
+### Riscos, limitações e pendências
+
+- O fluxo atual não consulta nem persiste confirmação de entrega do provedor.
+- Um reenvio automático poderia produzir duplicidade tardia e não foi
+  realizado.
+- É necessário diagnosticar a entrega e combinar um novo teste controlado.
+- A confirmação física da mensagem do agendamento criado pelo Portal do Cliente
+  também permanece pendente.
+- A Noite 3 permanece **Em andamento**.
+
+### Como desfazer
+
+- Esta etapa altera somente documentação. Correções devem ser registradas em uma
+  nova entrada, sem apagar esta.
+- Não há mensagem, banco ou configuração externa a desfazer.
