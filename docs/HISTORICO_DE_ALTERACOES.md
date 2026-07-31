@@ -873,3 +873,57 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Os registros técnicos podem ser removidos por seus identificadores
   específicos após o encerramento dos testes; não executar exclusão ampla.
 - Correções deste registro devem ser feitas em nova entrada, sem apagar esta.
+
+## 2026-07-30-013 — Confirmação física parcial das mensagens da Noite 3
+
+### Tarefa, conversa ou etapa relacionada
+
+- Validação de entrega das mensagens imediatas da Noite 3.
+
+### Objetivo
+
+- Distinguir sucesso técnico no provedor de entrega efetivamente confirmada no
+  aparelho autorizado.
+
+### Trabalho realizado
+
+- O usuário confirmou o recebimento da mensagem de agendamento e da mensagem de
+  serviço iniciado.
+- O histórico do Make foi auditado sem reprocessar nenhuma execução.
+- Nenhum código, banco, configuração, cenário ou ambiente externo foi alterado.
+
+### Arquivos alterados
+
+- `docs/PLANO_DIARIO_AUTOMACOES.md`
+- `docs/HISTORICO_DE_ALTERACOES.md`
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma alteração adicional foi aplicada ao Supabase, Render, Make ou
+  provedor.
+- Nenhuma mensagem foi reenviada.
+
+### Verificações e resultados
+
+- Agendamento pelo operador: entrega física confirmada.
+- Serviço iniciado: entrega física confirmada.
+- Serviço finalizado: Make concluiu uma execução com sucesso, dois módulos e
+  resposta HTTP 200, mas a entrega física não foi confirmada.
+- Novo cliente: Make concluiu uma execução com sucesso, dois módulos e resposta
+  HTTP 200, mas a entrega física não foi confirmada.
+- Não foram observadas execuções duplicadas para os quatro fatos.
+
+### Riscos, limitações e pendências
+
+- Resposta HTTP 200 indica aceitação pelo provedor, não prova entrega no
+  WhatsApp.
+- Novo cliente e serviço finalizado continuam pendentes de nova validação
+  controlada de entrega.
+- O agendamento pelo Portal do Cliente ainda depende de uma conta autenticada.
+- A Noite 3 permanece **Em andamento**.
+
+### Como desfazer
+
+- Esta etapa altera somente documentação. Correções devem ser registradas por
+  uma nova entrada, sem apagar esta.
+- Não há alteração externa ou reenvio a desfazer.

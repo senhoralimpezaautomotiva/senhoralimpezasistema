@@ -7,9 +7,10 @@ Limpeza Estética Automotiva.
 
 **Próxima ação:** obter acesso a uma conta autenticada do Portal do Cliente e
 validar um agendamento feito pelo próprio cliente.
-**Estado atual:** Noite 3 em andamento; novo cliente, agendamento pelo operador,
-serviço iniciado e serviço finalizado passaram tecnicamente com uma execução
-por fato. Falta o agendamento pelo Portal e a confirmação física das mensagens.
+**Estado atual:** Noite 3 em andamento; agendamento pelo operador e serviço
+iniciado foram confirmados no aparelho. Novo cliente e serviço finalizado foram
+aceitos pelo provedor, mas não tiveram entrega física confirmada. Falta também o
+agendamento pelo Portal.
 **Última noite validada:** Noite 2 — Controle “Envios 24 horas”.
 **Render:** publicado e ativo no plano gratuito.
 **Bloqueios conhecidos:** o dry-run Docker permanece indisponível nesta máquina;
