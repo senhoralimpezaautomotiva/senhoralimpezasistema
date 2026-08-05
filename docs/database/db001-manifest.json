@@ -21,7 +21,10 @@
     "20260730225000_configuracoes_empresa_runtime.sql",
     "20260730233000_automacoes_janela_24h.sql",
     "20260731001000_automacoes_imediatas_defaults.sql",
-    "20260731010000_automacoes_lembrete_configuravel.sql"
+    "20260805220000_lembrete_seguranca.sql",
+    "20260805230000_cliente_inativo_seguranca.sql",
+    "20260805233000_automacoes_monitoramento_operacional.sql",
+    "20260805234000_orcamentos_automacoes.sql"
   ],
   "sqlArtifacts": [
     {
@@ -124,13 +127,40 @@
       "recommendation": "Aplicar após a configuração da janela e validar quatro eventos ativos com templates não vazios."
     },
     {
-      "path": "supabase/migrations/20260731010000_automacoes_lembrete_configuravel.sql",
-      "category": ["official-migration", "automation", "configuration", "timezone"],
-      "purpose": "Persiste a antecedência configurável do lembrete; o runtime interpreta agendamentos no fuso America/Sao_Paulo.",
+      "path": "supabase/migrations/20260805220000_lembrete_seguranca.sql",
+      "category": ["official-migration", "automation", "reminder", "data-migration"],
+      "purpose": "Invalida lembretes pendentes obsoletos e passa a deduplicar por agendamento e horário.",
       "rerunnable": "yes",
       "idempotent": "yes",
-      "risk": "low",
-      "recommendation": "Aplicar após as configurações de automação e validar os valores de 1, 2 e 10 horas."
+      "risk": "medium",
+      "recommendation": "Aplicar após backup e dry-run; validar cancelamento, reagendamento e histórico legado antes de liberar o worker."
+    },
+    {
+      "path": "supabase/migrations/20260805230000_cliente_inativo_seguranca.sql",
+      "category": ["official-migration", "automation", "inactive-customer", "data-migration"],
+      "purpose": "Reconcilia execuções legadas e garante uma chave por cliente e ciclo de inatividade.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "medium",
+      "recommendation": "Aplicar após a migration de lembretes, com backup e dry-run do histórico de cliente inativo."
+    },
+    {
+      "path": "supabase/migrations/20260805233000_automacoes_monitoramento_operacional.sql",
+      "category": ["official-migration", "automation", "monitoring", "data-migration"],
+      "purpose": "Coloca claims expirados em quarentena e restringe novos claims a execuções pendentes.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "medium",
+      "recommendation": "Aplicar somente após backup, dry-run e janela sem worker ativo; revisar cada claim expirado antes de qualquer reenvio."
+    },
+    {
+      "path": "supabase/migrations/20260805234000_orcamentos_automacoes.sql",
+      "category": ["official-migration", "automation", "budgets", "schema"],
+      "purpose": "Cria orçamentos e itens, vincula o outbox e a fila e instala os eventos de envio e acompanhamentos de 7 e 14 dias.",
+      "rerunnable": "no",
+      "idempotent": "no",
+      "risk": "medium",
+      "recommendation": "Aplicar somente após backup e dry-run em clone; não há backfill nem envio retroativo."
     },
     {
       "path": "configuracoes_empresa.sql",
@@ -221,6 +251,15 @@
       "idempotent": "yes",
       "risk": "medium",
       "recommendation": "Não executar no Supabase real; usar somente no banco efêmero do dry-run."
+    },
+    {
+      "path": "scripts/automations/dry-run-monitoring-assertions.sql",
+      "category": ["official-diagnostic", "automation", "monitoring", "test"],
+      "purpose": "Valida que claim vencido entra em quarentena e somente pendências recebem novo claim.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Executar somente no banco efêmero após aplicar a migration de monitoramento da Noite 9."
     },
     {
       "path": "scripts/automations/dry-run-fixture.sql",
@@ -433,7 +472,7 @@
       "kind": "table",
       "evidenceStatus": "runtime_contract_and_embedded_sql",
       "purpose": "Fila e histórico operacional de automações.",
-      "columnsObserved": ["id", "empresa_id", "automacao", "appointment_id", "customer_id", "telefone", "mensagem", "status", "tentativas", "resposta_api", "data_execucao", "data_proxima_tentativa", "created_at", "updated_at"],
+      "columnsObserved": ["id", "empresa_id", "automacao", "appointment_id", "orcamento_id", "customer_id", "telefone", "mensagem", "status", "tentativas", "resposta_api", "data_execucao", "data_proxima_tentativa", "created_at", "updated_at"],
       "constraintsAndDefaults": "DDL embutido propõe PK varchar, FKs, defaults e índices; estado remoto desconhecido.",
       "relationships": "appointment_id -> agendamentos.id; customer_id -> clientes.id segundo DDL embutido.",
       "rls": "Desconhecido.",
@@ -445,11 +484,35 @@
       "kind": "table",
       "evidenceStatus": "runtime_contract",
       "purpose": "Outbox de eventos de automação consumido pelo motor de automações.",
-      "columnsObserved": ["id", "automacao", "appointment_id", "customer_id", "deduplication_key", "status", "created_at", "processed_at"],
+      "columnsObserved": ["id", "automacao", "appointment_id", "orcamento_id", "customer_id", "deduplication_key", "status", "created_at", "processed_at"],
       "constraintsAndDefaults": "Estado remoto, tipos, chave primária, constraints e defaults não confirmados.",
       "relationships": "Vínculos lógicos com agendamentos e clientes observados no contrato de runtime.",
       "rls": "Desconhecido.",
       "consumers": ["src/db/automationEngine.ts"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.orcamentos",
+      "kind": "table",
+      "evidenceStatus": "planned_official_migration_and_runtime_contract",
+      "purpose": "Cabeçalho, estado, valores, validade e marco de envio dos orçamentos.",
+      "columnsObserved": ["id", "numero", "cliente_id", "veiculo_id", "status", "subtotal", "desconto", "total", "validade", "observacoes", "sent_at", "created_by", "created_at", "updated_at"],
+      "constraintsAndDefaults": "Definidos na migration local 20260805234000; aplicação remota ainda não confirmada.",
+      "relationships": "cliente_id -> clientes.id; veiculo_id -> veiculos.id; created_by -> auth.users.id.",
+      "rls": "Migration local limita operações a equipe autenticada e ativa.",
+      "consumers": ["src/db/localDb.ts", "src/db/automationEngine.ts", "src/components/OrcamentosModule.tsx"],
+      "remoteConfirmation": "pending"
+    },
+    {
+      "name": "public.orcamento_itens",
+      "kind": "table",
+      "evidenceStatus": "planned_official_migration_and_runtime_contract",
+      "purpose": "Itens, quantidades e valores unitários dos orçamentos.",
+      "columnsObserved": ["id", "orcamento_id", "servico_id", "descricao", "quantidade", "valor_unitario", "total", "created_at"],
+      "constraintsAndDefaults": "Definidos na migration local 20260805234000; aplicação remota ainda não confirmada.",
+      "relationships": "orcamento_id -> orcamentos.id; servico_id -> servicos_disponiveis.id.",
+      "rls": "Migration local limita operações a equipe autenticada e ativa.",
+      "consumers": ["src/db/localDb.ts", "src/db/automationEngine.ts", "src/components/OrcamentosModule.tsx"],
       "remoteConfirmation": "pending"
     },
     {
