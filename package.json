@@ -22,6 +22,7 @@
     "test:sec005": "tsx --test tests/sec005-security-baseline.test.ts",
     "test:db001": "tsx --test tests/db001-baseline.test.ts",
     "test:stabilization": "tsx --test tests/stabilization-regressions.test.ts",
+    "test:automations": "tsx --test tests/automation-behavior.test.ts",
     "test:pilot": "tsx --test tests/pilot-readiness.test.ts",
     "test:portal001": "tsx --test tests/portal001-auth-isolation.test.ts",
     "test:go-live001": "tsx --test tests/go-live001-deployment.test.ts",
@@ -38,7 +39,7 @@
     "security:dependencies": "npm run security:lockfile && bun audit --audit-level=high && npm run security:licenses",
     "security:outdated": "bun outdated",
     "security:unused": "tsx scripts/security/check-unused-dependencies.ts",
-    "security:ci": "npm run build && npm run build && npm run test:sec002 && npm run test:sec003 && npm run test:sec004 && npm run test:sec005 && npm run test:db001 && npm run test:stabilization && npm run test:pilot && npm run test:portal001 && npm run test:go-live001 && npm run security:secrets && npm run security:dependencies"
+    "security:ci": "npm run build && npm run build && npm run test:sec002 && npm run test:sec003 && npm run test:sec004 && npm run test:sec005 && npm run test:db001 && npm run test:automations && npm run test:stabilization && npm run test:pilot && npm run test:portal001 && npm run test:go-live001 && npm run security:secrets && npm run security:dependencies"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.5",

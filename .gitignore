@@ -13,6 +13,7 @@ coverage/
 *.tar.gz
 *.tgz
 *.tmp
+.tmp/
 server.js
 server.cjs
 server.cjs.map
