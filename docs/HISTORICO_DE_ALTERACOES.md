@@ -3096,3 +3096,48 @@ As alterações funcionais e migrations estão relacionadas na entrada
   schema for indispensável, criar uma migration corretiva após confirmar que a
   aplicação anterior está ativa; não apagar o ledger nem a migration aplicada.
 - GitHub: usar um novo commit de reversão na branch, preservando todo o histórico.
+
+## 2026-08-05-040 — Alinhamento do Render ao commit documental final
+
+### Tarefa relacionada
+
+- Complemento da publicação registrada em `2026-08-05-039`.
+
+### Objetivo
+
+- Garantir que o serviço publicado também apontasse para o commit que contém o
+  registro completo da implantação.
+
+### Resumo do que foi feito
+
+- Após o push do commit documental `068220c`, foi executado um segundo deploy
+  manual no Render.
+- O serviço `senhora-limpeza-piloto` foi confirmado como `live` no commit
+  `068220c`.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md` para registrar esta
+  confirmação posterior.
+- Nenhum arquivo funcional foi criado, alterado ou removido nesta etapa.
+
+### Banco, hospedagem e serviços externos
+
+- Render: commit `068220c` publicado e confirmado como `live`.
+- Supabase, Make e provedor de mensagens: nenhuma alteração adicional.
+
+### Verificações e resultados
+
+- Build remoto aprovado, incluindo validação de artefato e presença do portal.
+- Estado final do deploy no painel do Render: `live`.
+
+### Riscos, limitações e pendências
+
+- O commit gerado por esta própria entrada é exclusivamente documental e não
+  precisa de novo deploy para alterar o comportamento em execução.
+- Permanecem apenas as limitações operacionais registradas em
+  `2026-08-05-039`.
+
+### Como desfazer
+
+- Aplicar as mesmas orientações de rollback descritas em `2026-08-05-039`.
