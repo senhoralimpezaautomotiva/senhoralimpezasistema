@@ -154,6 +154,25 @@ test('resposta externa preserva apenas status técnico e redige conteúdo legado
   const redacted = redactExternalResponse(legacyResponse);
   assert.equal(redacted, 'Resposta externa redigida');
   assert.doesNotMatch(redacted, /z-api|token|Pessoa|5511/);
+
+  assert.equal(
+    redactExternalResponse(
+      'Provedor Make: webhook aceito na fila do Make; entrega ainda não confirmada. HTTP 200.'
+    ),
+    'Provedor Make: solicitação aceita; entrega não confirmada. HTTP 200.'
+  );
+  assert.equal(
+    redactExternalResponse(
+      '[RESULTADO AMBÍGUO] Provedor Z-API: resultado ambíguo; repetição automática bloqueada para evitar duplicidade.'
+    ),
+    'Provedor Z-API: resultado ambíguo; retry automático bloqueado.'
+  );
+  assert.equal(
+    redactExternalResponse(
+      '[CLAIM ABANDONADO] Reconciliação necessária: contato protegido.'
+    ),
+    'Reconciliação necessária: claim expirado; reenvio automático bloqueado.'
+  );
 });
 
 test('API administrativa redige PII, mensagens e respostas externas e correlaciona erros', () => {
@@ -183,13 +202,14 @@ test('caminhos auditados não enviam objetos brutos ao console', () => {
 test('proteções SEC-002 e SEC-003 permanecem conectadas aos fluxos administrativos', () => {
   const serverSource = projectFile('server.ts');
   const engineSource = projectFile('src', 'db', 'automationEngine.ts');
+  const transportSource = projectFile('src', 'server', 'automationTransport.ts');
   const publicConfigSource = projectFile('src', 'security', 'publicConfig.ts');
 
   assert.match(serverSource, /authenticateAdministrativeApi/);
   assert.match(serverSource, /requireAccess/);
   assert.match(serverSource, /createRateLimit/);
-  assert.match(engineSource, /getIntegrationSecrets/);
-  assert.doesNotMatch(engineSource, /import\.meta\.env/);
+  assert.match(transportSource, /getIntegrationSecrets/);
+  assert.doesNotMatch(engineSource + transportSource, /import\.meta\.env/);
   assert.match(publicConfigSource, /PUBLIC_SYSTEM_CONFIG_KEYS/);
   assert.match(publicConfigSource, /sanitizeLegacyConfigStorage/);
 });

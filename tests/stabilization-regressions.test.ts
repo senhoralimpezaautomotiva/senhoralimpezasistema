@@ -264,6 +264,8 @@ test('modo 24 horas persiste no Supabase e mantém compatibilidade com o Make', 
   assert.match(transport, /telefone:\s*payload\.phone/);
   assert.match(transport, /formattedMessage:\s*payload\.message/);
   assert.match(migration, /automation_24_hours BOOLEAN NOT NULL DEFAULT FALSE/);
+  const dryRun = projectFile('scripts', 'automations', 'run-dry-run.ps1');
+  assert.match(dryRun, /20260730233000_automacoes_janela_24h\.sql/);
 });
 
 test('configuração parcial recebe as quatro automações imediatas sem sobrescrever entradas existentes', () => {
@@ -287,6 +289,63 @@ test('configuração parcial recebe as quatro automações imediatas sem sobresc
   assert.doesNotMatch(migration, /SET automations = missing_array\.items/);
 });
 
+test('lembretes são deduplicados por horário e invalidados por mudança do agendamento', () => {
+  const engine = projectFile('src', 'db', 'automationEngine.ts');
+  const localDb = projectFile('src', 'db', 'localDb.ts');
+  const migration = projectFile(
+    'supabase',
+    'migrations',
+    '20260805220000_lembrete_seguranca.sql'
+  );
+
+  assert.match(engine, /validateReminderBeforeSend/);
+  assert.match(engine, /buildReminderDeduplicationKey\(appt\.id, appt\.dateTime\)/);
+  assert.match(localDb, /buildReminderDeduplicationKey/);
+  assert.match(migration, /AFTER UPDATE OF status, data_agendamento, hora_agendamento/);
+  assert.match(migration, /automacao = 'lembrete_agendamento'/);
+  assert.match(migration, /status = 'cancelada'/);
+  assert.match(migration, /legacy_reminder_pending:/);
+});
+
+test('cliente inativo usa cadência 0, 7 e 21 sem backfill do ciclo legado', () => {
+  const engine = projectFile('src', 'db', 'automationEngine.ts');
+  const localDb = projectFile('src', 'db', 'localDb.ts');
+  const policy = projectFile('src', 'db', 'inactiveCustomerPolicy.ts');
+  const documentation = projectFile('docs', 'CLIENTE_INATIVO_CADENCIA.md');
+  const portalMigration = projectFile(
+    'supabase',
+    'migrations',
+    '20260724213000_portal001_client_auth_and_isolation.sql'
+  );
+  const migration = projectFile(
+    'supabase',
+    'migrations',
+    '20260805230000_cliente_inativo_seguranca.sql'
+  );
+
+  assert.match(engine, /evaluateInactiveCustomer/);
+  assert.match(engine, /evaluateInactiveCustomerCadence/);
+  assert.match(engine, /validateInactiveCustomerBeforeSend/);
+  assert.match(engine, /const minServices = inactiveTrigger\.minServices/);
+  assert.match(engine, /inactiveDays,\s*minServices,\s*now/);
+  assert.match(localDb, /cliente_inativo:\s*buildInactiveCustomerDeduplicationKey/);
+  assert.match(localDb, /context\.inactiveCustomerStage \?\? 1/);
+  assert.match(localDb, /from\('agendamentos'\)\.insert/);
+  assert.match(localDb, /createdAt:\s*row\.created_at/);
+  assert.match(portalMigration, /insert into public\.agendamentos/);
+  assert.match(policy, /2:\s*7/);
+  assert.match(policy, /3:\s*21/);
+  assert.match(policy, /legacy_cycle/);
+  assert.match(policy, /appointment_after_first_message/);
+  assert.match(policy, /:etapa:\$\{stage\}/);
+  assert.match(documentation, /produtor único/);
+  assert.match(documentation, /Portal do Cliente ou pelo profissional/);
+  assert.match(documentation, /não envia acompanhamentos retroativos/);
+  assert.match(migration, /cliente_inativo:/);
+  assert.match(migration, /legacy_inactive_pending:/);
+  assert.doesNotMatch(migration, /INSERT INTO public\.automacoes_execucoes/);
+});
+
 test('finalização usa o estado aceito pelo Supabase e a interface não engole falhas de persistência', () => {
   const localDb = projectFile('src', 'db', 'localDb.ts');
   const app = projectFile('src', 'App.tsx');
@@ -298,4 +357,99 @@ test('finalização usa o estado aceito pelo Supabase e a interface não engole 
     /onUpdateAppointment=\{async \(id, updated\) => \{[\s\S]*?throw e;[\s\S]*?\}\}/g
   );
   assert.equal(updateHandlers?.length, 2);
+});
+
+test('aniversario usa politica de Sao Paulo, chave anual e guarda antes do envio', () => {
+  const engine = projectFile('src', 'db', 'automationEngine.ts');
+  const localDb = projectFile('src', 'db', 'localDb.ts');
+  const policy = projectFile('src', 'db', 'birthdayPolicy.ts');
+
+  assert.match(engine, /evaluateBirthday/);
+  assert.match(engine, /validateBirthdayBeforeSend/);
+  assert.match(engine, /automationReferenceDate: now/);
+  assert.match(localDb, /buildBirthdayDeduplicationKey/);
+  assert.match(policy, /America\/Sao_Paulo/);
+  assert.match(policy, /deduplication_key_mismatch/);
+  assert.doesNotMatch(engine, /birthDate\.slice\(5, 10\)/);
+  assert.doesNotMatch(engine, /new Date\(\)\.toISOString\(\)\.slice\(5, 10\)/);
+});
+
+test('provedor distingue aceitação de entrega e bloqueia retry ambíguo', () => {
+  const transport = projectFile('src', 'server', 'automationTransport.ts');
+  const policy = projectFile('src', 'db', 'automationProviderPolicy.ts');
+  const engine = projectFile('src', 'db', 'automationEngine.ts');
+  const module = projectFile('src', 'components', 'AutomacoesModule.tsx');
+  const tab = projectFile('src', 'components', 'AutomacoesTab.tsx');
+
+  assert.match(transport, /outcome: 'permanent_failure'/);
+  assert.match(transport, /provider: 'unconfigured'/);
+  assert.doesNotMatch(transport, /provider: 'simulated'/);
+  assert.doesNotMatch(transport, /success: true,[\s\S]*Envio simulado/);
+  assert.match(policy, /ambiguous_failure/);
+  assert.match(policy, /retry_exhausted/);
+  assert.match(policy, /repetição automática bloqueada para evitar duplicidade/);
+  assert.match(engine, /entrega não confirmada/);
+  assert.match(engine, /accepted && persisted/);
+  assert.match(engine, /Persistência no banco não confirmada; não repita o teste automaticamente/);
+  assert.match(transport, /outcome === 'accepted' \? 'success' : 'error'/);
+  assert.match(module, /Aceitas pelo provedor/);
+  assert.match(tab, /Aceitas pelo provedor/);
+  assert.match(module, /result\.success/);
+  assert.match(module, /Solicitação não aceita pelo provedor/);
+  assert.match(tab, /result\.success/);
+  assert.match(tab, /Solicitação não aceita pelo provedor/);
+  assert.doesNotMatch(module, /Enviadas \(Sucesso\)/);
+  assert.doesNotMatch(tab, /Mensagens Enviadas/);
+  assert.doesNotMatch(tab, /Executado com sucesso/);
+});
+
+test('monitoramento coloca claim vencido em quarentena sem recriá-lo', () => {
+  const migration = projectFile(
+    'supabase',
+    'migrations',
+    '20260805233000_automacoes_monitoramento_operacional.sql'
+  );
+  const monitoring = projectFile('src', 'db', 'automationMonitoring.ts');
+  const server = projectFile('server.ts');
+  const module = projectFile('src', 'components', 'AutomacoesModule.tsx');
+  const tab = projectFile('src', 'components', 'AutomacoesTab.tsx');
+
+  assert.match(migration, /\[CLAIM ABANDONADO\]/);
+  assert.match(migration, /Estado anterior preservado/);
+  assert.match(migration, /claim_expires_at <= now\(\)/);
+  assert.match(migration, /execution\.status = 'pendente'/);
+  assert.match(migration, /FOR UPDATE SKIP LOCKED/);
+  assert.doesNotMatch(migration, /OR \(\s*execution\.status = 'processando'/);
+  assert.doesNotMatch(migration, /claimed_at = NULL/);
+  assert.doesNotMatch(migration, /claim_expires_at = NULL/);
+  assert.match(monitoring, /STALLED_QUEUE_AFTER_MS/);
+  assert.match(monitoring, /abandonedClaimCount/);
+  assert.match(server, /summarizeAutomationOperations/);
+  assert.match(server, /background_worker\.automation_health/);
+  assert.match(module, /reconciliationRequiredCount/);
+  assert.match(tab, /reconciliationRequiredCount/);
+});
+
+test('módulo de orçamento mantém outbox, isolamento, deduplicação e migration aditiva', () => {
+  const migration = projectFile('supabase', 'migrations', '20260805234000_orcamentos_automacoes.sql');
+  const engine = projectFile('src', 'db', 'automationEngine.ts');
+  const localDb = projectFile('src', 'db', 'localDb.ts');
+  const policy = projectFile('src', 'db', 'budgetPolicy.ts');
+
+  assert.match(migration, /CREATE TABLE public\.orcamentos/);
+  assert.match(migration, /CREATE TABLE public\.orcamento_itens/);
+  assert.match(migration, /INSERT INTO public\.automacoes_eventos/);
+  assert.doesNotMatch(migration, /INSERT INTO public\.automacoes_execucoes/);
+  assert.match(migration, /EXCEPTION WHEN OTHERS/);
+  assert.match(migration, /ON CONFLICT \(deduplication_key\) DO NOTHING/);
+  assert.match(migration, /fn_enviar_orcamento/);
+  assert.match(migration, /O evento de envio não foi confirmado no outbox/);
+  assert.match(migration, /WHERE NOT coalesce\(usuario\.permissions/);
+  assert.match(engine, /validateBudgetBeforeSend/);
+  assert.match(engine, /orcamento_followup_7d/);
+  assert.match(engine, /orcamento_followup_14d/);
+  assert.match(localDb, /buildBudgetDeduplicationKey/);
+  assert.match(localDb, /orcamento_id: execution\.budget_id/);
+  assert.match(policy, /appointment_after_budget_send/);
+  assert.match(policy, /seven_day_window_missed/);
 });

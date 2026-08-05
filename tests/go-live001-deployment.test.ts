@@ -22,6 +22,7 @@ const goLiveEnvironment = {
   RENDER_EXTERNAL_URL: 'https://senhora-limpeza-piloto.onrender.com',
   SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
   SUPABASE_ANON_KEY: publicKey,
+  SUPABASE_SERVICE_ROLE_KEY: 'service-role-placeholder',
   VITE_SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
   VITE_SUPABASE_ANON_KEY: publicKey,
   VITE_ENABLE_CLIENT_PORTAL: 'true',

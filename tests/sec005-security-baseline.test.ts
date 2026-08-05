@@ -27,6 +27,7 @@ const productionEnvironment = {
   PORT: '3000',
   SUPABASE_URL: 'https://project-ref.supabase.co',
   SUPABASE_ANON_KEY: 'public-anon-placeholder',
+  SUPABASE_SERVICE_ROLE_KEY: 'service-role-placeholder',
   VITE_SUPABASE_URL: 'https://project-ref.supabase.co',
   VITE_SUPABASE_ANON_KEY: 'public-anon-placeholder'
 };
@@ -123,6 +124,10 @@ test('ambientes staging e produção exigem configuração própria e coerente',
   assert.equal(loaded.appEnvironment, 'production');
   assert.equal(loaded.nodeEnvironment, 'production');
   assert.equal(loaded.supabaseUrl, productionEnvironment.SUPABASE_URL);
+  assert.equal(
+    loaded.supabaseServiceRoleKey,
+    productionEnvironment.SUPABASE_SERVICE_ROLE_KEY
+  );
 
   assert.throws(
     () => loadServerEnvironment({ NODE_ENV: 'production' }),
@@ -135,6 +140,15 @@ test('ambientes staging e produção exigem configuração própria e coerente',
     (error: unknown) =>
       error instanceof EnvironmentConfigurationError &&
       error.code === 'ENV_NODE_ENV_MISMATCH'
+  );
+  assert.throws(
+    () => loadServerEnvironment({
+      ...productionEnvironment,
+      SUPABASE_SERVICE_ROLE_KEY: ''
+    }),
+    (error: unknown) =>
+      error instanceof EnvironmentConfigurationError &&
+      error.code === 'ENV_REQUIRED_SUPABASE_SERVICE_ROLE_KEY'
   );
 });
 

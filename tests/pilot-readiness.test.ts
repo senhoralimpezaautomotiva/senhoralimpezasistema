@@ -15,6 +15,7 @@ const productionEnvironment = {
   NODE_ENV: 'production',
   SUPABASE_URL: 'https://project-ref.supabase.co',
   SUPABASE_ANON_KEY: 'public-anon-placeholder',
+  SUPABASE_SERVICE_ROLE_KEY: 'service-role-placeholder',
   VITE_SUPABASE_URL: 'https://project-ref.supabase.co',
   VITE_SUPABASE_ANON_KEY: 'public-anon-placeholder',
   VITE_ENABLE_CLIENT_PORTAL: 'true'
