@@ -7,7 +7,7 @@ import {
   mapDbVehicleToFrontend,
   mapFrontendVehicleToDb
 } from '../db/localDb';
-import type { Appointment, Customer, Service, Vehicle } from '../types';
+import type { AgendaConfig, Appointment, Customer, Service, Vehicle } from '../types';
 
 const PORTAL_AUTH_STORAGE_KEY = 'sl_portal_auth_session';
 
@@ -25,6 +25,13 @@ export interface PortalData {
     tempo_estimado_minutos: number;
   }>;
   busyAppointments: Appointment[];
+  referralProgress: number;
+  portalSettings: {
+    catalogSource: 'system' | 'whatsapp';
+    whatsappCatalogUrl: string;
+    loyaltyTarget: number;
+    agenda?: AgendaConfig;
+  };
 }
 
 const assertNoError = (error: { message?: string } | null, fallback: string): void => {
@@ -102,7 +109,9 @@ export async function loadPortalData(date?: string): Promise<PortalData> {
     serviceResult,
     appointmentResult,
     priceResult,
-    busyResult
+    busyResult,
+    settingsResult,
+    referralProgressResult
   ] = await Promise.all([
     client.from('clientes').select('id,created_at,nome,telefone,data_aniversario').maybeSingle(),
     client.from('veiculos').select('id,cliente_id,placa,modelo,cor,marca,porte').order('placa'),
@@ -114,7 +123,13 @@ export async function loadPortalData(date?: string): Promise<PortalData> {
     client.from('servicos_precos').select('servico_id,porte,preco,tempo_estimado_minutos'),
     date
       ? client.rpc('portal_busy_intervals', { p_date: date })
-      : Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: [], error: null }),
+    client
+      .from('configuracoes_empresa')
+      .select('portal_catalog_source,whatsapp_catalog_url,loyalty_referral_target,agenda')
+      .eq('id', 'c0000000-0000-0000-0000-000000000000')
+      .maybeSingle(),
+    client.rpc('portal_referral_progress')
   ]);
 
   assertNoError(customerResult.error, 'Não foi possível carregar o cliente.');
@@ -123,6 +138,9 @@ export async function loadPortalData(date?: string): Promise<PortalData> {
   assertNoError(appointmentResult.error, 'Não foi possível carregar os agendamentos.');
   assertNoError(priceResult.error, 'Não foi possível carregar os preços.');
   assertNoError(busyResult.error, 'Não foi possível consultar a disponibilidade.');
+
+  assertNoError(settingsResult.error, 'Nao foi possivel carregar as configuracoes do portal.');
+  assertNoError(referralProgressResult.error, 'Nao foi possivel carregar o cartao fidelidade.');
 
   const busyAppointments = (busyResult.data || []).map((row: any, index: number) =>
     ({
@@ -153,7 +171,16 @@ export async function loadPortalData(date?: string): Promise<PortalData> {
       preco: Number(row.preco),
       tempo_estimado_minutos: Number(row.tempo_estimado_minutos)
     })),
-    busyAppointments
+    busyAppointments,
+    referralProgress: Math.max(0, Number(referralProgressResult.data) || 0),
+    portalSettings: {
+      catalogSource: settingsResult.data?.portal_catalog_source === 'whatsapp' ? 'whatsapp' : 'system',
+      whatsappCatalogUrl: String(settingsResult.data?.whatsapp_catalog_url || ''),
+      loyaltyTarget: Math.max(1, Number(settingsResult.data?.loyalty_referral_target) || 10),
+      agenda: settingsResult.data?.agenda
+        ? (typeof settingsResult.data.agenda === 'string' ? JSON.parse(settingsResult.data.agenda) : settingsResult.data.agenda)
+        : undefined
+    }
   };
 }
 

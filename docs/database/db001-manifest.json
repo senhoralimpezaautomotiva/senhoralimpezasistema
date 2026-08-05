@@ -24,7 +24,8 @@
     "20260805220000_lembrete_seguranca.sql",
     "20260805230000_cliente_inativo_seguranca.sql",
     "20260805233000_automacoes_monitoramento_operacional.sql",
-    "20260805234000_orcamentos_automacoes.sql"
+    "20260805234000_orcamentos_automacoes.sql",
+    "20260805235000_portal_cliente_experiencia.sql"
   ],
   "sqlArtifacts": [
     {
@@ -161,6 +162,15 @@
       "idempotent": "no",
       "risk": "medium",
       "recommendation": "Aplicar somente após backup e dry-run em clone; não há backfill nem envio retroativo."
+    },
+    {
+      "path": "supabase/migrations/20260805235000_portal_cliente_experiencia.sql",
+      "category": ["official-migration", "portal", "configuration", "security"],
+      "purpose": "Configura a fonte do catalogo e a meta de fidelidade e expoe somente a contagem agregada de indicacoes concluidas ao cliente autenticado.",
+      "rerunnable": "partial",
+      "idempotent": "partial",
+      "risk": "low",
+      "recommendation": "Aplicar antes do codigo do novo portal e validar configuracao, grants e retorno agregado sob sessao autenticada."
     },
     {
       "path": "configuracoes_empresa.sql",

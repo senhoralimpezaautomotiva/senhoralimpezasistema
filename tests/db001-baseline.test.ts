@@ -94,7 +94,8 @@ test('supabase/migrations é a única fonte oficial e contém a baseline remota 
     '20260805220000_lembrete_seguranca.sql',
     '20260805230000_cliente_inativo_seguranca.sql',
     '20260805233000_automacoes_monitoramento_operacional.sql',
-    '20260805234000_orcamentos_automacoes.sql'
+    '20260805234000_orcamentos_automacoes.sql',
+    '20260805235000_portal_cliente_experiencia.sql'
   ]);
 
   const pattern = new RegExp(manifest.expectedBaselineFilenamePattern);
@@ -117,7 +118,7 @@ test('migrations futuras têm nomes únicos, compatíveis e ordem determinístic
 test('todos os SQL do projeto estão classificados e nenhum legado é oficial', () => {
   const sqlFiles = walk(root)
     .filter(file => file.endsWith('.sql'))
-    .filter(file => !file.includes(`${path.sep}.tmp${path.sep}`))
+    .filter(file => !path.relative(root, file).startsWith(`.tmp${path.sep}`))
     .filter(file => !file.includes(`${path.sep}.git${path.sep}`))
     .filter(file => !file.includes(`${path.sep}node_modules${path.sep}`))
     .filter(file => !file.includes(`${path.sep}dist${path.sep}`))

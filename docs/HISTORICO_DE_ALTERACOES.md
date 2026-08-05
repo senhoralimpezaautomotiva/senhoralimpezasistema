@@ -974,567 +974,2051 @@ As alterações funcionais e migrations estão relacionadas na entrada
   uma nova entrada, sem apagar esta.
 - Não há alteração externa a desfazer.
 
-## 2026-07-30-015 — Agendamento autenticado pelo Portal do Cliente
+## 2026-08-05-015 — Verificação do ponto de retomada
 
 ### Tarefa, conversa ou etapa relacionada
 
-- Validação do agendamento pelo cliente na Noite 3 das mensagens imediatas.
+- Retomada da auditoria e implementação das automações.
 
 ### Objetivo
 
-- Comprovar que um agendamento criado por uma conta autenticada do Portal do
-  Cliente produz exatamente uma mensagem automática.
+- Confirmar, sem modificar a implementação, onde o trabalho foi interrompido
+  e quais validações ainda estão pendentes.
 
 ### Trabalho realizado
 
-- Foi criado um único agendamento controlado pelo Portal do Cliente para o
-  contato autorizado de teste.
-- O registro foi acompanhado no Supabase até o processamento do evento e a
-  conclusão da execução.
-- O histórico do cenário no Make foi conferido sem repetir ou reprocessar a
+- Lidas as entradas mais recentes deste histórico e o plano diário das
+  automações.
+- Confirmada a presença local da arquitetura de produtor único via outbox,
+  claim atômico, retry explícito, finalização por token e atualização
+  concorrente das automações.
+- Confirmado que o histórico registra publicação anterior no Render e aplicação
+  das migrations de laboratório até a etapa das mensagens imediatas.
+- Nenhum código, banco de dados, configuração, hospedagem ou serviço externo
+  foi modificado nesta verificação.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md` para registrar esta
+  verificação obrigatória.
+- Nenhum arquivo de execução, migration ou configuração foi alterado.
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma ação foi executada no Supabase, Render, Make, Z-API ou GitHub.
+- Não foi realizado commit, push, deploy, migration ou envio de mensagem.
+
+### Verificações e resultados
+
+- Noite 1: validada.
+- Noite 2: validada.
+- Noite 3: em andamento.
+- Agendamento pelo operador, serviço iniciado e serviço finalizado: recebimento
+  físico confirmado sem duplicidade observada.
+- Novo cliente: aceito tecnicamente pelo provedor, mas sem confirmação física
+  registrada.
+- Agendamento pelo Portal do Cliente: ainda não validado por falta de uma conta
+  de cliente autenticada.
+- A pipeline completa de segurança iniciada na sessão anterior foi interrompida
+  antes de produzir resultado final; não deve ser considerada aprovada por essa
+  execução incompleta.
+- O dry-run PostgreSQL local continua indisponível por ausência de Docker/psql
+  utilizável nesta máquina.
+
+### Riscos, limitações e pendências
+
+- Não há repositório Git detectável neste diretório de trabalho; portanto não
+  foi possível comparar o conteúdo local com o commit publicado no Render.
+- Ainda falta confirmar fisicamente a mensagem de novo cliente.
+- Ainda falta testar o agendamento criado pelo Portal do Cliente autenticado.
+- Ainda falta reexecutar até o fim a pipeline completa e obter um dry-run real
+  das migrations antes de um novo veredito de produção.
+- As Noites 4 a 10 permanecem pendentes.
+
+### Como desfazer
+
+- Esta entrada altera somente documentação. Se houver informação incorreta,
+  registrar uma nova entrada corretiva sem apagar ou reescrever o histórico.
+- Não há alteração funcional ou externa a desfazer.
+
+## 2026-08-05-016 — Confirmação física de cinco mensagens de automação
+
+### Tarefa, conversa ou etapa relacionada
+
+- Continuação da validação das mensagens imediatas e do lembrete de
+  agendamento.
+
+### Objetivo
+
+- Registrar as confirmações de recebimento informadas pelo usuário sem inferir
+  validações técnicas que não foram explicitamente executadas.
+
+### Trabalho realizado
+
+- Registrada a confirmação física das mensagens de novo cliente, agendamento,
+  serviço iniciado, serviço finalizado e lembrete de agendamento.
+- Atualizado o ponto de retomada do plano diário.
+- Nenhum código, banco de dados, configuração, hospedagem ou serviço externo
+  foi modificado.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterados: `docs/PLANO_DIARIO_AUTOMACOES.md` e
+  `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo de execução, teste, migration ou configuração foi alterado.
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma ação foi executada no Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem foi reenviada nesta etapa.
+
+### Verificações e resultados
+
+- Novo cliente: recebimento físico confirmado.
+- Agendamento: recebimento físico confirmado.
+- Serviço iniciado: recebimento físico confirmado.
+- Serviço finalizado: recebimento físico confirmado.
+- Lembrete de agendamento: recebimento físico confirmado.
+
+### Riscos, limitações e pendências
+
+- A confirmação da mensagem de agendamento não identifica sua origem; por isso
+  o fluxo específico criado por uma conta autenticada do Portal do Cliente
+  continua pendente até confirmação explícita.
+- O recebimento do lembrete não valida sozinho antecedências configuráveis,
+  persistência das configurações ou cálculos de fuso horário da Noite 4.
+- A Noite 3 permanece em andamento e a Noite 4 permanece pendente.
+- A pipeline completa e o dry-run PostgreSQL real continuam pendentes conforme
+  a entrada anterior.
+
+### Como desfazer
+
+- Esta etapa altera somente documentação. Se alguma confirmação tiver sido
+  registrada incorretamente, adicionar uma nova entrada corretiva sem apagar
+  esta.
+- Não há alteração funcional ou externa a desfazer.
+
+## 2026-08-05-017 — Critérios para validar Portal e Noite 4
+
+### Tarefa, conversa ou etapa relacionada
+
+- Esclarecimento das validações ainda pendentes após a confirmação física das
+  mensagens.
+
+### Objetivo
+
+- Definir evidências objetivas para aprovar o agendamento originado pelo Portal
+  do Cliente e o lembrete configurável com fuso horário.
+
+### Trabalho realizado
+
+- Auditado o fluxo `createPortalAppointment` até a RPC
+  `portal_create_agendamento`.
+- Confirmado que agendamentos criados pelo Portal recebem o metadado
+  `portalCreated: true`, permitindo comprovar sua origem.
+- Auditado o worker de lembretes e constatado que a antecedência permanece
+  fixada em 60 minutos no backend e na visualização administrativa.
+- Confirmado que os utilitários da janela operacional usam
+  `America/Sao_Paulo`, mas a comparação do horário do agendamento no scanner de
+  lembretes usa `Date` diretamente, sem conversão explícita do horário local.
+- Nenhum código, banco de dados, configuração, hospedagem ou serviço externo
+  foi modificado.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md` para registrar a decisão
+  técnica.
+- Nenhum arquivo de execução, migration, configuração ou teste foi alterado.
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma ação foi executada no Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem ou migration foi disparada.
+
+### Verificações e resultados
+
+- O Portal exige usuário autenticado vinculado a um cliente por
+  `portal_client_identities` e cria o agendamento pela RPC protegida.
+- A origem pode ser provada pelo metadado `portalCreated: true` nas observações
+  persistidas.
+- A Noite 4 não pode ser aprovada no estado atual: ainda não existe parâmetro
+  persistido de antecedência consumido pelo worker e o limite continua fixo em
+  60 minutos.
+- O recebimento de um lembrete comprova entrega daquele caso, mas não comprova
+  antecedências de uma, duas e dez horas nem a virada de data no fuso oficial.
+
+### Riscos, limitações e pendências
+
+- Para concluir a Noite 3 ainda é necessário criar um agendamento usando uma
+  conta autenticada do Portal e confirmar uma única execução e entrega.
+- Para iniciar a validação da Noite 4 é necessário implementar e persistir a
+  antecedência configurável e normalizar o instante do agendamento em
+  `America/Sao_Paulo`.
+- Depois da implementação, devem ser testadas as antecedências de uma, duas e
+  dez horas, persistência após reinicialização, virada do dia e ausência de
+  disparo antecipado ou duplicado.
+
+### Como desfazer
+
+- Esta entrada altera somente documentação. Correções devem ser feitas por uma
+  nova entrada, sem apagar esta.
+- Não há alteração funcional ou externa a desfazer.
+
+## 2026-08-05-018 — Validação do agendamento pelo Portal e encerramento da Noite 3
+
+### Tarefa, conversa ou etapa relacionada
+
+- Validação final das mensagens imediatas da Noite 3.
+
+### Objetivo
+
+- Registrar que o agendamento confirmado teve origem no Portal do Cliente e
+  encerrar a etapa de mensagens imediatas.
+
+### Trabalho realizado
+
+- O usuário confirmou explicitamente que o agendamento foi criado pelo Portal
+  do Cliente.
+- O usuário confirmou o recebimento das mensagens de novo cliente e de
+  agendamento desse fluxo.
+- O plano diário foi atualizado para marcar a Noite 3 como validada e indicar a
+  Noite 4 como próxima etapa.
+- Nenhum código, banco de dados, configuração, hospedagem ou serviço externo
+  foi modificado.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterados: `docs/PLANO_DIARIO_AUTOMACOES.md` e
+  `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo de execução, teste, migration ou configuração foi alterado.
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma ação foi executada no Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem foi reenviada nesta etapa.
+
+### Verificações e resultados
+
+- Novo cliente pelo fluxo autenticado: recebimento confirmado.
+- Agendamento criado pelo Portal do Cliente: recebimento confirmado.
+- Agendamento pelo operador, serviço iniciado e serviço finalizado já tinham
+  recebimento confirmado nas entradas anteriores.
+- Noite 3 — Mensagens imediatas: **Validada**.
+
+### Riscos, limitações e pendências
+
+- A confirmação do lembrete fixo não valida a Noite 4.
+- A antecedência permanece fixada em 60 minutos no código atual e ainda precisa
+  ser tornada configurável e persistente.
+- O cálculo do instante do agendamento ainda precisa ser normalizado
+  explicitamente em `America/Sao_Paulo`.
+- A pipeline completa e o dry-run PostgreSQL real continuam pendentes conforme
+  as entradas anteriores.
+
+### Como desfazer
+
+- Esta etapa altera somente documentação. Se a origem ou a confirmação tiver
+  sido registrada incorretamente, adicionar nova entrada corretiva sem apagar
+  esta.
+- Não há alteração funcional ou externa a desfazer.
+
+## 2026-08-05-019 — Validação parcial do lembrete com uma hora
+
+### Tarefa, conversa ou etapa relacionada
+
+- Noite 4 — Lembrete configurável e fuso horário.
+
+### Objetivo
+
+- Registrar o recebimento do lembrete com uma hora de antecedência e planejar
+  os intervalos restantes para a fase de uso diário.
+
+### Trabalho realizado
+
+- O usuário confirmou o recebimento da mensagem de lembrete com uma hora de
+  antecedência.
+- Os testes de duas e dez horas foram deliberadamente programados para quando o
+  sistema começar a ser usado no dia a dia.
+- O plano diário foi atualizado para marcar a Noite 4 como em andamento.
+- Nenhum código, banco de dados, configuração, hospedagem ou serviço externo
+  foi modificado.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterados: `docs/PLANO_DIARIO_AUTOMACOES.md` e
+  `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo de execução, teste, migration ou configuração foi alterado.
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma ação foi executada no Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem foi reenviada nesta etapa.
+
+### Verificações e resultados
+
+- Lembrete com uma hora de antecedência: recebimento físico confirmado.
+- Noite 4: validação parcial, estado **Em andamento**.
+
+### Riscos, limitações e pendências
+
+- As antecedências de duas e dez horas ainda não foram validadas.
+- O recebimento de uma hora não comprova sozinho a persistência de diferentes
+  configurações nem todos os casos de virada de data em
+  `America/Sao_Paulo`.
+- A auditoria anterior encontrou o limite de 60 minutos fixado no código local;
+  antes de testar duas e dez horas, deve ser confirmado que a versão em uso
+  possui configuração persistida realmente consumida pelo worker.
+- A pipeline completa e o dry-run PostgreSQL real continuam pendentes.
+
+### Como desfazer
+
+- Esta etapa altera somente documentação. Se a confirmação ou o planejamento
+  tiver sido registrado incorretamente, adicionar uma nova entrada corretiva
+  sem apagar esta.
+- Não há alteração funcional ou externa a desfazer.
+
+## 2026-08-05-020 — Critérios restantes para concluir a Noite 4
+
+### Tarefa, conversa ou etapa relacionada
+
+- Noite 4 — Lembrete configurável e fuso horário.
+
+### Objetivo
+
+- Consolidar os critérios mínimos restantes para declarar a etapa validada.
+
+### Trabalho realizado
+
+- Definidos os critérios de antecedência, persistência, consumo pelo worker,
+  fuso horário e deduplicação.
+- Nenhum código, banco de dados, configuração, hospedagem ou serviço externo
+  foi modificado.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo funcional foi alterado.
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma ação foi executada no Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem foi enviada.
+
+### Verificações e resultados
+
+- Uma hora: recebimento já confirmado.
+- Duas e dez horas: testes reais ainda pendentes.
+- Para cada intervalo, a configuração deve permanecer após recarregar o painel
+  e reiniciar o Render.
+- O worker deve usar o valor persistido, sem permanecer limitado ao valor fixo
+  de 60 minutos.
+- Um caso próximo à virada do dia deve confirmar o cálculo em
+  `America/Sao_Paulo`, independentemente do UTC do Render.
+- Antes da antecedência não deve existir envio; ao entrar na janela deve existir
+  exatamente uma execução e uma entrega.
+
+### Riscos, limitações e pendências
+
+- O código local auditado ainda apresenta 60 minutos fixos; duas e dez horas
+  não podem ser consideradas confirmadas até a versão efetivamente usada pelo
+  worker consumir uma configuração persistida.
+- Recebimento físico isolado não comprova persistência, horário correto ou
+  ausência de duplicidade.
+- A Noite 4 permanece em andamento.
+
+### Como desfazer
+
+- Esta entrada altera somente documentação. Eventuais correções devem ser
+  registradas por nova entrada, sem apagar esta.
+- Não há alteração funcional ou externa a desfazer.
+
+## 2026-08-05-021 — Validação diferida da Noite 4 e escopo da Noite 5
+
+### Tarefa, conversa ou etapa relacionada
+
+- Planejamento das Noites 4 e 5 das automações.
+
+### Objetivo
+
+- Tornar explícito que os testes restantes da Noite 4 serão realizados durante
+  o uso diário e detalhar os casos de segurança do lembrete da Noite 5.
+
+### Trabalho realizado
+
+- Adicionada ao plano a lista de evidências que deverá ser confirmada para os
+  lembretes de duas e dez horas.
+- Detalhados os casos de cancelamento, reagendamento, estados concluídos,
+  concorrência e rastreabilidade que compõem a Noite 5.
+- Nenhum código, banco de dados, configuração, hospedagem ou serviço externo
+  foi modificado.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterados: `docs/PLANO_DIARIO_AUTOMACOES.md` e
+  `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo funcional foi alterado.
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma ação foi executada no Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem, migration, commit ou deploy foi realizado.
+
+### Verificações e resultados
+
+- Uma hora permanece confirmada.
+- Duas e dez horas permanecem pendentes e serão atualizadas nos documentos
+  durante a operação diária.
+- A Noite 5 passa a ter critérios explícitos de aprovação no plano.
+
+### Riscos, limitações e pendências
+
+- A Noite 4 continua em andamento até a confirmação das evidências restantes.
+- A Noite 5 ainda não foi iniciada nem validada.
+- Nenhum dos critérios documentados nesta entrada representa execução real de
+  teste.
+
+### Como desfazer
+
+- Esta etapa altera somente documentação. Ajustes devem ser registrados por
+  nova entrada sem apagar esta.
+- Não há alteração funcional ou externa a desfazer.
+
+## 2026-08-05-022 — Implementação local da Noite 5: segurança do lembrete
+
+### Tarefa, conversa ou etapa relacionada
+
+- Noite 5 do plano diário das automações.
+
+### Objetivo
+
+- Impedir lembretes obsoletos ou duplicados após cancelamento, reagendamento,
+  início/finalização do atendimento e ciclos concorrentes do worker.
+- Preservar o fluxo unificado existente, sem publicar código nem aplicar
+  migration em banco externo.
+
+### Trabalho realizado
+
+- A deduplicação do lembrete passou de `agendamento` para
+  `agendamento + data/hora canônica`, permitindo um novo lembrete legítimo após
+  reagendamento sem duplicar o mesmo horário.
+- O scanner passou a considerar elegíveis somente os estados `agendado` e
+  `confirmado`.
+- Antes de chamar Make/Z-API, o worker agora consulta diretamente no Supabase o
+  estado, a data e a hora atuais. Mudança de horário ou estado inelegível
+  cancela a execução; erro de leitura adia sem enviar.
+- Criada migration progressiva para cancelar pendências legadas sem horário,
+  invalidar lembretes pendentes em cancelamento, reagendamento e estados
+  inelegíveis e ampliar o trigger para alterações de data e hora.
+- O backfill preserva histórico enviado e coloca somente pendências ambíguas em
+  quarentena. Nenhuma mensagem ou execução histórica de sucesso é apagada.
+- O dry-run foi ampliado com casos de pendência legada, reagendamento e
+  finalização.
+- A allowlist e o tipo público receberam a propriedade já usada em runtime
+  `automation24Hours`; trata-se de correção de tipagem sem mudança de regra.
+- A expectativa de teste do estado `finalizado` foi alinhada ao valor de banco
+  já adotado pelo runtime, `Concluído`.
+
+### Arquivos criados, alterados ou removidos
+
+- Criados:
+  - `src/db/reminderPolicy.ts`;
+  - `supabase/migrations/20260805220000_lembrete_seguranca.sql`.
+- Alterados:
+  - `src/db/automationEngine.ts`;
+  - `src/db/localDb.ts`;
+  - `src/types.ts`;
+  - `src/security/publicConfig.ts`;
+  - `scripts/automations/dry-run-fixture.sql`;
+  - `scripts/automations/dry-run-pre-claim.sql`;
+  - `scripts/automations/dry-run-assertions.sql`;
+  - `scripts/automations/run-dry-run.ps1`;
+  - `tests/automation-behavior.test.ts`;
+  - `tests/db001-baseline.test.ts`;
+  - `tests/stabilization-regressions.test.ts`;
+  - `docs/database/db001-manifest.json`;
+  - `docs/PLANO_DIARIO_AUTOMACOES.md`;
+  - `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo foi removido.
+
+### Banco, hospedagem e serviços externos
+
+- A nova migration existe somente no workspace local e **não foi aplicada**.
+- Nenhuma alteração foi executada em Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem, commit ou deploy foi realizado.
+- Para liberar espaço mínimo do executor, dois caches temporários antigos do
+  ambiente foram movidos, sem exclusão, para uma pasta de recuperação no disco
+  D: fora do projeto.
+
+### Verificações e resultados
+
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo validação do artefato de segurança e do
+  Portal do Cliente.
+- `npm run test:automations`: 14 de 14 aprovados.
+- Testes SEC-002, SEC-003, SEC-004 e SEC-005: 44 de 44 aprovados.
+- Testes de piloto, Portal e go-live: 29 de 29 aprovados.
+- `npm run security:secrets`, `security:lockfile` e `security:unused`:
+  aprovados.
+- `test:stabilization`: 16 de 17 aprovados. A única falha é preexistente: o
+  teste procura a migration ausente
+  `20260730233000_automacoes_janela_24h.sql`; o novo teste da Noite 5 passou.
+- `test:db001`: 9 de 11 aprovados. As duas falhas são preexistentes: manifesto
+  exige a migration 24h ausente e ainda classifica cópias SQL de uma pasta
+  temporária que já não existe.
+- `security:licenses`: bloqueado porque o verificador não localiza os pacotes
+  instalados na pasta compartilhada de dependências; o build usa essas mesmas
+  dependências com sucesso.
+- Dry-run PostgreSQL: não executado; Docker, Supabase CLI e `psql` não estão
+  disponíveis nesta máquina. O script confirmou que nenhuma migration foi
+  aplicada.
+
+### Auto-revisão, riscos, limitações e pendências
+
+- A arquitetura de criação da fila permanece unificada por
+  `queueAutomation`; não foi reintroduzido produtor SQL de execuções.
+- O índice único já existente continua sendo a barreira atômica contra dois
+  workers criarem a mesma chave `agendamento + horário`.
+- Claims já em processamento não são alterados pelo trigger. A guarda do worker
+  faz a revalidação autoritativa antes do provedor e os encerra com o token do
+  claim, evitando disputa de propriedade.
+- Existe uma janela residual inevitável entre a última leitura do agendamento e
+  a aceitação pelo provedor. Eliminar totalmente essa janela exigiria uma
+  transação distribuída com o WhatsApp, indisponível na integração atual.
+- A migration ainda precisa de dry-run PostgreSQL e backup antes de produção.
+- O repositório local está sem a migration 24h que o manifesto e o histórico
+  tratam como oficial/aplicada. Esse inventário deve ser reconciliado antes de
+  qualquer `supabase db push`, sem fabricar ou reaplicar migration já executada.
+- A Noite 5 está **Implementada**, mas não **Validada** nem publicada.
+
+### Como desfazer
+
+- Enquanto a migration não foi aplicada, desfazer consiste em reverter somente
+  os arquivos locais desta entrada, preservando o histórico por meio de nova
+  entrada corretiva.
+- Se a migration vier a ser aplicada, não apagar registros nem reescrever o
+  histórico de migrations. Criar uma migration posterior que restaure o trigger
+  anterior e definir explicitamente o tratamento das chaves por horário.
+- Não há mudança externa atual a desfazer.
+
+## 2026-08-05-023 — Implementação local da Noite 6: cliente inativo
+
+### Tarefa, conversa ou etapa relacionada
+
+- Noite 6 do plano diário das automações.
+
+### Objetivo
+
+- Fazer a automação `cliente_inativo` considerar somente atendimentos
+  concluídos, respeitar dias e mínimo de atendimentos, ignorar retorno futuro e
+  impedir repetição no mesmo ciclo de inatividade.
+
+### Trabalho realizado
+
+- Criada política isolada para avaliar elegibilidade de cliente inativo.
+- Somente agendamentos `finalizado` e `entregue`, ocorridos no passado, contam
+  como atendimentos concluídos.
+- O cálculo passou a usar o atendimento concluído mais recente, o mínimo
+  configurado e a antecedência `inactiveDays`.
+- Datas sem offset são convertidas explicitamente pelo fuso
+  `America/Sao_Paulo`, independentemente do fuso do processo no Render.
+- Retorno futuro, atendimento em andamento, período ainda não atingido e mínimo
+  insuficiente impedem a entrada na fila.
+- A chave `cliente_inativo:<cliente>:<último atendimento concluído>` limita a
+  automação a uma execução por episódio de inatividade e usa o índice único já
+  existente como barreira entre workers concorrentes.
+- O worker reconsulta todos os agendamentos do cliente imediatamente antes do
+  provedor. Falha de leitura gera retry sem envio; mudança dos critérios ou do
+  episódio cancela a execução com motivo explícito.
+- Criada migration progressiva para associar histórico legado ao episódio atual
+  e cancelar pendências antigas ambíguas ou duplicadas. A migration não insere
+  execuções e preserva o produtor único da aplicação.
+- O dry-run e as suítes comportamentais receberam casos de legado, mínimo,
+  período, retorno futuro, atendimento ativo, fuso e ciclos repetidos.
+- A regra de repetição adotada é conservadora: um episódio produz no máximo uma
+  execução, independentemente do resultado final. Somente um novo atendimento
+  concluído cria outro episódio automaticamente.
+
+### Arquivos criados, alterados ou removidos
+
+- Criados:
+  - `src/db/inactiveCustomerPolicy.ts`;
+  - `supabase/migrations/20260805230000_cliente_inativo_seguranca.sql`.
+- Alterados:
+  - `src/db/automationEngine.ts`;
+  - `src/db/localDb.ts`;
+  - `scripts/automations/dry-run-pre-claim.sql`;
+  - `scripts/automations/dry-run-assertions.sql`;
+  - `scripts/automations/run-dry-run.ps1`;
+  - `tests/automation-behavior.test.ts`;
+  - `tests/db001-baseline.test.ts`;
+  - `tests/stabilization-regressions.test.ts`;
+  - `docs/database/db001-manifest.json`;
+  - `docs/PLANO_DIARIO_AUTOMACOES.md`;
+  - `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo foi removido.
+
+### Banco, hospedagem e serviços externos
+
+- A migration da Noite 6 existe somente no workspace local e **não foi
+  aplicada**.
+- Nenhuma alteração foi executada em Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem, publicação, commit ou deploy foi realizado.
+
+### Verificações e resultados
+
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo validação do artefato de segurança e do
+  Portal do Cliente.
+- `npm run test:automations`: 21 de 21 aprovados; sete casos específicos de
+  cliente inativo, incluindo repetição de ciclo, ficaram verdes.
+- Testes SEC-002, SEC-003, SEC-004 e SEC-005: 44 de 44 aprovados.
+- Testes de piloto, Portal e go-live: 29 de 29 aprovados.
+- `npm run security:secrets`, `security:lockfile` e `security:unused`:
+  aprovados.
+- `test:stabilization`: 17 de 18 aprovados. O teste novo da Noite 6 passou; a
+  única falha permanece sendo a migration ausente
+  `20260730233000_automacoes_janela_24h.sql`.
+- `test:db001`: 9 de 11 aprovados. Permanecem as duas inconsistências
+  preexistentes do inventário: migration 24h ausente e referências a cópias SQL
+  de uma pasta temporária já inexistente.
+- Dry-run PostgreSQL: não executado porque Docker, Supabase CLI e `psql` não
+  estão disponíveis. O script encerrou antes de aplicar qualquer migration.
+- O bloqueio preexistente do verificador de licenças, que não localiza os
+  pacotes na pasta compartilhada de dependências, não foi alterado nesta etapa.
+
+### Auto-revisão, riscos, limitações e pendências
+
+- A aplicação continua sendo a única criadora de `automacoes_execucoes`; a nova
+  migration somente reconcilia registros existentes.
+- A configuração ativa, o template, a janela operacional, o mínimo e os dias
+  permanecem respeitados pelo fluxo comum da fila.
+- A revalidação autoritativa impede o envio quando o cliente marcou retorno ou
+  iniciou atendimento depois de a mensagem entrar na fila.
+- Uma execução cancelada ou falha continua ocupando a chave do episódio. Isso é
+  intencional para evitar campanhas repetidas; reabrir automaticamente o mesmo
+  episódio exigirá uma regra de negócio explícita futura.
+- Permanece uma janela residual entre a última consulta ao Supabase e a
+  aceitação pelo provedor, impossível de eliminar sem transação distribuída com
+  o WhatsApp.
+- A migration precisa de backup e dry-run PostgreSQL antes de produção.
+- O inventário de migrations deve ser reconciliado antes de `supabase db push`,
+  sem fabricar ou reaplicar a migration 24h que o histórico indica como já
+  aplicada em ambiente de testes.
+- A Noite 6 está **Implementada**, mas não **Validada** nem publicada.
+
+### Como desfazer
+
+- Enquanto a migration não foi aplicada, reverter somente os arquivos locais
+  desta entrada e registrar a reversão em uma nova entrada de histórico.
+- Se a migration vier a ser aplicada, não apagar execuções nem reescrever o
+  histórico. Criar migration posterior que remova ou transforme de forma
+  explícita apenas as chaves `cliente_inativo` introduzidas nesta etapa.
+- Não há alteração externa atual a desfazer.
+
+## 2026-08-05-024 — Implementação local da Noite 7: aniversários
+
+### Tarefa, conversa ou etapa relacionada
+
+- Noite 7 do plano diário das automações.
+
+### Objetivo
+
+- Fazer a automação `aniversario` usar o calendário de São Paulo, rejeitar
+  datas ausentes ou inválidas e produzir no máximo uma execução por cliente e
+  ano, sem envio fora do dia correto.
+
+### Trabalho realizado
+
+- Criada política isolada para validar datas de nascimento, avaliar o dia do
+  aniversário e construir a chave anual.
+- O scanner deixou de usar UTC e ano local do processo; dia e ano agora são
+  calculados em `America/Sao_Paulo`.
+- Scanner e `queueAutomation` usam a mesma data de referência, evitando chaves
+  divergentes durante a virada do ano.
+- O formato legado `aniversario:<cliente>:<ano>` foi preservado e continua
+  protegido pelo índice único existente em `deduplication_key`.
+- Datas futuras, malformadas e datas impossíveis são rejeitadas. A regra para 29 de
+  fevereiro é estrita: somente envia no próprio dia em ano bissexto.
+- Antes de Make/Z-API, o worker reconsulta diretamente no Supabase a data do
+  cliente. Erro de leitura gera retry sem envio; cliente ausente, data
+  ausente/inválida, dia divergente ou chave anual incoerente cancelam a
   execução.
-- O ponto de retomada do cronograma foi atualizado.
+- Adicionados testes de fuso, virada de dia/ano, datas inválidas, ano bissexto,
+  revalidação e ciclos repetidos.
+- A auto-revisão confirmou que `queueAutomation` permanece como produtor único
+  e que nenhuma migration é necessária para esta etapa.
 
-### Arquivos alterados
+### Arquivos criados, alterados ou removidos
 
-- `docs/PLANO_DIARIO_AUTOMACOES.md`
-- `docs/HISTORICO_DE_ALTERACOES.md`
+- Criado:
+  - `src/db/birthdayPolicy.ts`.
+- Alterados:
+  - `src/db/automationEngine.ts`;
+  - `src/db/localDb.ts`;
+  - `tests/automation-behavior.test.ts`;
+  - `tests/stabilization-regressions.test.ts`;
+  - `docs/PLANO_DIARIO_AUTOMACOES.md`;
+  - `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo foi removido.
 
 ### Banco, hospedagem e serviços externos
 
-- Supabase: criado somente o agendamento de teste e os registros automáticos
-  associados a ele.
-- Make/provedor: uma nova execução automática foi realizada pelo fluxo já
-  publicado.
-- Render e configurações externas: nenhuma alteração.
+- Nenhuma migration, alteração de schema ou backfill foi criado ou aplicado.
+- Nenhuma alteração foi executada em Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem, publicação, commit ou deploy foi realizado.
 
 ### Verificações e resultados
 
-- Portal do Cliente: criação concluída com tela de sucesso.
-- Outbox: exatamente um evento `novo_agendamento`, com processamento concluído.
-- Fila: exatamente uma execução `novo_agendamento`, estado `sucesso` e uma
-  tentativa.
-- Deduplicação: chave única correspondente ao agendamento.
-- Make: exatamente uma execução nova no horário do teste, estado `Success`, com
-  dois módulos e duas operações.
-- Não foi observado envio duplicado.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo validação do artefato de segurança e do
+  Portal do Cliente.
+- `npm run test:automations`: 27 de 27 aprovados; os cinco novos casos de
+  aniversário passaram.
+- Testes SEC-002, SEC-003, SEC-004 e SEC-005: 44 de 44 aprovados.
+- Testes de piloto, Portal e go-live: 29 de 29 aprovados.
+- `security:headers`, `security:secrets`, `security:lockfile` e
+  `security:unused`: aprovados.
+- `test:stabilization`: 18 de 19 aprovados. O teste novo da Noite 7 passou; a
+  única falha continua sendo a migration ausente
+  `20260730233000_automacoes_janela_24h.sql`.
+- `test:db001`: 9 de 11 aprovados. Permanecem as duas falhas preexistentes do
+  inventário: migration 24h ausente e referências a cópias SQL de uma pasta
+  temporária inexistente.
+- `security:licenses`: permanece bloqueado porque o verificador não localiza os
+  pacotes instalados na pasta compartilhada de dependências; o build usa essas
+  mesmas dependências com sucesso.
 
-### Riscos, limitações e pendências
+### Auto-revisão, riscos, limitações e pendências
 
-- O sucesso técnico e a aceitação pelo provedor não substituem a confirmação de
-  chegada no aparelho.
-- Permanecem pendentes as confirmações físicas da mensagem deste agendamento e
-  da mensagem de boas-vindas do novo cliente.
-- A Noite 3 permanece **Em andamento** até essas confirmações.
+- A aplicação continua sendo a única produtora de execuções; não foi criado
+  trigger SQL nem outro caminho de fila.
+- Automação ativa, template, telefone, janela operacional e deduplicação
+  continuam sendo validados pelo fluxo comum.
+- Execuções antigas mantêm chaves compatíveis e bloqueiam corretamente uma
+  segunda execução no mesmo ano, independentemente do status final.
+- Se uma falha de leitura persistir até o fim do aniversário, a execução será
+  cancelada no ciclo seguinte em vez de enviar atrasada. Isso prioriza não
+  disparar em dia incorreto.
+- Uma alteração da data de nascimento depois de a execução ser criada cancela
+  a pendência. A chave anual permanece ocupada para impedir uma segunda
+  mensagem no mesmo ano.
+- A Noite 7 ainda requer cenário controlado com contato autorizado antes de ser
+  marcada como validada ou publicada.
+- As inconsistências preexistentes do inventário de migrations devem ser
+  reconciliadas antes de qualquer `supabase db push`.
 
 ### Como desfazer
 
-- Se for necessário limpar o laboratório, remover somente o agendamento de
-  teste criado nesta etapa; os registros automáticos associados seguem as
-  regras de relacionamento do banco.
-- Não remover registros de outros agendamentos e não reprocessar mensagens.
-- Para desfazer apenas a documentação, criar uma nova entrada corretiva e
-  restaurar o ponto de retomada, sem apagar este histórico.
+- Reverter somente a política de aniversário e as integrações locais desta
+  entrada, preservando o histórico por meio de nova entrada corretiva.
+- Não há migration, dado externo, mensagem ou publicação a desfazer.
 
-## 2026-07-30-016 — Não entrega da mensagem de boas-vindas
+## 2026-08-05-025 — Implementação local e auto-revisão da Noite 8
 
 ### Tarefa, conversa ou etapa relacionada
 
-- Validação física da mensagem de novo cliente na Noite 3.
+- Noite 8 do plano diário das automações: provedor, tentativas e confirmação.
 
 ### Objetivo
 
-- Registrar o resultado real da entrega e diferenciar execução técnica de
-  recebimento no WhatsApp.
+- Eliminar sucesso simulado, exigir provedor configurado, impedir retentativas
+  que possam duplicar mensagens e apresentar corretamente a diferença entre
+  aceitação do provedor e entrega no WhatsApp.
 
 ### Trabalho realizado
 
-- O usuário informou que a mensagem de boas-vindas não chegou ao aparelho
-  autorizado.
-- A execução correspondente foi inspecionada no Make sem reprocessamento.
-- O cronograma foi corrigido para tratar o fluxo como não entregue.
-- Nenhuma mensagem foi reenviada.
-
-### Arquivos alterados
-
-- `docs/PLANO_DIARIO_AUTOMACOES.md`
-- `docs/HISTORICO_DE_ALTERACOES.md`
-
-### Banco, hospedagem e serviços externos
-
-- Nenhuma alteração foi aplicada ao Supabase, Render, Make, cenário ou
+- Criada política única para classificar respostas do Make e da Z-API como
+  aceitas, falhas temporárias comprovadas, falhas permanentes ou resultados
+  ambíguos.
+- A ausência de provedor deixou de produzir sucesso simulado e agora encerra a
+  execução com falha permanente visível.
+- Respostas 2xx do Make passaram a significar somente aceitação na fila do Make.
+  No envio direto pela Z-API, a resposta 2xx também precisa trazer `messageId`.
+- O estado legado `sucesso` foi preservado no banco para não quebrar schema,
+  consultas nem dados existentes, mas o painel passou a exibi-lo como
+  `aceita pelo provedor`, com entrega explicitamente não confirmada.
+- Os dois controles de teste manual agora verificam também `result.success`;
+  uma resposta HTTP válida do servidor que relata rejeição do provedor não é
+  mais apresentada como execução aceita.
+- Retentativas ficaram restritas a HTTP 429 e à resposta exata de fila cheia do
+  Make. O intervalo aceita `Retry-After` válido com limite de uma hora; sem ele,
+  usa cinco e quinze minutos até o limite existente de três tentativas.
+- Timeout, falha de rede, HTTP 5xx e resposta 2xx inválida da Z-API são tratados
+  como ambíguos e não são reenviados automaticamente, evitando duplicidade
+  quando a aceitação externa é desconhecida.
+- Respostas externas continuam limitadas e redigidas. Os resumos controlados de
+  aceitação, falha e ambiguidade podem chegar ao painel sem expor conteúdo do
   provedor.
-- Nenhuma nova execução ou mensagem foi criada.
+- O trace de confirmação da Z-API só recebe estado de sucesso depois de uma
+  resposta 2xx com `messageId`; resposta 2xx inválida fica como ambígua.
+- Falha ao finalizar o claim no banco impede o registro compatível de sucesso e,
+  no teste manual, devolve orientação explícita para não repetir o disparo.
+- Testes de comportamento, saída segura e estabilização receberam cenários da
+  Noite 8. O produtor único via outbox, a deduplicação e os logs
+  `automation.trace` foram mantidos.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado:
+  - `src/db/automationProviderPolicy.ts`.
+- Alterados:
+  - `src/server/automationTransport.ts`;
+  - `src/db/automationEngine.ts`;
+  - `src/security/safeOutput.ts`;
+  - `src/components/AutomacoesModule.tsx`;
+  - `src/components/AutomacoesTab.tsx`;
+  - `server.ts`;
+  - `tests/automation-behavior.test.ts`;
+  - `tests/sec004-safe-outputs.test.ts`;
+  - `tests/stabilization-regressions.test.ts`;
+  - `docs/PLANO_DIARIO_AUTOMACOES.md`;
+  - `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo foi removido.
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma migration, mudança de schema, backfill ou alteração de dados foi
+  criada ou aplicada.
+- Nenhuma configuração foi modificada no Supabase, Render, Make, Z-API ou
+  GitHub.
+- Nenhuma mensagem real, commit, publicação ou deploy foi realizado.
+- O blueprint existente do Make foi apenas inspecionado. Ele não contém módulo
+  de resposta final nem callback de entrega para a aplicação.
 
 ### Verificações e resultados
 
-- Make: execução concluída com dois módulos e duas operações.
-- Provedor: resposta HTTP 200 com identificadores de mensagem.
-- Entrega física: não recebida no aparelho autorizado.
-- Diagnóstico: o estado `Success` comprova a conclusão da chamada HTTP, mas não
-  comprova entrega no WhatsApp.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo artefatos de segurança e do Portal.
+- `npm run test:automations`: 31 de 31 aprovados.
+- Testes SEC-002, SEC-003, SEC-004 e SEC-005: 44 de 44 aprovados.
+- Testes de piloto, Portal e go-live: 29 de 29 aprovados.
+- `security:headers`, `security:secrets`, `security:lockfile` e
+  `security:unused`: aprovados.
+- `test:stabilization`: 19 de 20 aprovados. O cenário novo da Noite 8 passou; a
+  única falha continua sendo a migration preexistente ausente
+  `20260730233000_automacoes_janela_24h.sql`.
+- `test:db001`: 9 de 11 aprovados. Persistem as duas falhas preexistentes do
+  inventário: a mesma migration 24h ausente e referências a cópias SQL de uma
+  pasta temporária inexistente.
+- `security:licenses`: permanece bloqueado porque o verificador não encontra os
+  pacotes na pasta compartilhada de dependências; build e demais verificações
+  usam essas dependências com sucesso.
 
-### Riscos, limitações e pendências
+### Auto-revisão, riscos, limitações e pendências
 
-- O fluxo atual não consulta nem persiste confirmação de entrega do provedor.
-- Um reenvio automático poderia produzir duplicidade tardia e não foi
+- Não foi criado produtor, trigger SQL ou caminho paralelo. A aplicação e a
+  outbox permanecem como fluxo único.
+- O banco ainda usa o nome histórico `sucesso`; trocar esse valor exigiria uma
+  migration e compatibilização de dados. A semântica visível foi corrigida sem
+  esse risco de migração.
+- O Make confirma apenas entrada na fila do webhook. Uma falha posterior no
+  cenário não pode ser observada pela aplicação enquanto não existir resposta
+  final ou callback autenticado. Portanto, a implementação não afirma entrega.
+- Resultados ambíguos são encerrados sem retentativa e continuam ocupando a
+  chave de deduplicação. Isso evita duplicidade, mas exige reconciliação manual
+  antes de um eventual reenvio e será relevante para o monitoramento da Noite 9.
+- Há uma janela inevitável entre a aceitação pelo provedor e a persistência do
+  resultado. Se o banco falhar nesse ponto, a aplicação registra a
+  inconsistência, mas o claim expirado ainda precisará de uma política de
+  reconciliação na Noite 9 para não ser reenviado automaticamente.
+- Uma rejeição temporária não reconhecida pela classificação será tratada como
+  permanente. Esse comportamento conservador pode reter um evento, mas não o
+  perde silenciosamente: ele fica visível como erro definitivo.
+- Nenhum teste real de entrega foi feito nesta etapa. A Noite 8 permanece
+  **Implementada**, não **Validada** nem publicada.
+- As inconsistências preexistentes do inventário de migrations precisam ser
+  resolvidas antes de qualquer `supabase db push`.
+
+### Como desfazer
+
+- Reverter somente a política de provedor e suas integrações locais, preservando
+  o histórico por meio de uma nova entrada corretiva.
+- Como não houve migration, alteração de dados, configuração externa ou deploy,
+  não existe mudança externa a desfazer.
+
+## 2026-08-05-026 — Implementação local e auto-revisão da Noite 9
+
+### Tarefa, conversa ou etapa relacionada
+
+- Noite 9 do plano diário: monitoramento, claims abandonados e preparação
+  operacional para o piloto.
+
+### Objetivo
+
+- Tornar filas paradas, claims vencidos, resultados ambíguos e erros definitivos
+  observáveis, impedindo que um claim abandonado seja reenviado silenciosamente.
+
+### Trabalho realizado
+
+- Criada política pura de monitoramento que separa execução agendada, retry,
+  fila atrasada, claim ativo, claim abandonado, resultado ambíguo, erro
+  definitivo, cancelamento e aceitação.
+- A fila passa a ser considerada atrasada depois de cinco minutos. Claims
+  legados sem lease recebem tolerância de quinze minutos antes do alerta.
+- A API administrativa e os dois painéis de automações receberam indicadores
+  de fila atrasada, retries e reconciliações necessárias. Token, conteúdo da
+  mensagem, cliente e telefone não foram acrescentados às respostas.
+- O worker registra evento estruturado `background_worker.automation_health`
+  quando a situação exige atenção ou está crítica.
+- Criada migration que coloca claims vencidos em `erro_definitivo`, remove o
+  token de posse, preserva `claimed_at`, `claim_expires_at` e até mil caracteres
+  da resposta técnica anterior e impede reenvio automático.
+- `fn_claim_automacoes_execucoes` continua atômica, mas passa a selecionar
+  exclusivamente execuções `pendente`. Execuções `processando` expiradas são
+  colocadas em quarentena na mesma transação.
+- O dry-run recebeu cenário que prova que claim expirado não volta à fila e que
+  uma pendência legítima continua recebendo claim.
+- Criado procedimento operacional com triagem, reconciliação sem reenvio, gates
+  do piloto e ordem segura para aplicar migrations.
+- Manifesto e inventário de testes foram atualizados para classificar os novos
+  artefatos. Nenhum produtor, template ou regra de criação de evento mudou.
+
+### Arquivos criados, alterados ou removidos
+
+- Criados:
+  - `src/db/automationMonitoring.ts`;
+  - `supabase/migrations/20260805233000_automacoes_monitoramento_operacional.sql`;
+  - `scripts/automations/dry-run-monitoring-assertions.sql`;
+  - `docs/AUTOMACOES_OPERACAO.md`.
+- Alterados:
+  - `src/types.ts`;
+  - `src/db/localDb.ts`;
+  - `src/security/safeOutput.ts`;
+  - `src/components/AutomacoesModule.tsx`;
+  - `src/components/AutomacoesTab.tsx`;
+  - `server.ts`;
+  - `scripts/automations/run-dry-run.ps1`;
+  - `docs/database/db001-manifest.json`;
+  - `tests/automation-behavior.test.ts`;
+  - `tests/sec004-safe-outputs.test.ts`;
+  - `tests/stabilization-regressions.test.ts`;
+  - `tests/db001-baseline.test.ts`;
+  - `docs/PLANO_DIARIO_AUTOMACOES.md`;
+  - `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo foi removido.
+
+### Banco, hospedagem e serviços externos
+
+- A migration foi criada somente no workspace; não foi aplicada nem ensaiada em
+  Supabase, PostgreSQL remoto ou produção.
+- Nenhuma linha de banco, configuração, webhook, serviço externo ou ambiente do
+  Render foi modificado.
+- Nenhuma mensagem, chamada real de provedor, commit, publicação ou deploy foi
   realizado.
-- É necessário diagnosticar a entrega e combinar um novo teste controlado.
-- A confirmação física da mensagem do agendamento criado pelo Portal do Cliente
-  também permanece pendente.
-- A Noite 3 permanece **Em andamento**.
-
-### Como desfazer
-
-- Esta etapa altera somente documentação. Correções devem ser registradas em uma
-  nova entrada, sem apagar esta.
-- Não há mensagem, banco ou configuração externa a desfazer.
-
-## 2026-07-30-017 — Confirmação física do agendamento pelo Portal
-
-### Tarefa, conversa ou etapa relacionada
-
-- Validação de entrega do agendamento autenticado pelo Portal do Cliente na
-  Noite 3.
-
-### Objetivo
-
-- Registrar a confirmação de recebimento físico da mensagem gerada pelo
-  agendamento do Portal.
-
-### Trabalho realizado
-
-- O usuário confirmou o recebimento da mensagem no aparelho autorizado.
-- O cronograma foi atualizado para considerar o fluxo validado de ponta a
-  ponta.
-- Nenhuma mensagem foi reenviada.
-
-### Arquivos alterados
-
-- `docs/PLANO_DIARIO_AUTOMACOES.md`
-- `docs/HISTORICO_DE_ALTERACOES.md`
-
-### Banco, hospedagem e serviços externos
-
-- Nenhuma alteração foi aplicada ao Supabase, Render, Make ou provedor.
 
 ### Verificações e resultados
 
-- Portal do Cliente: agendamento criado com sucesso.
-- Outbox e fila: exatamente um evento e uma execução.
-- Execução: estado `sucesso`, uma tentativa e deduplicação preservada.
-- Entrega física: confirmada pelo usuário.
-- Duplicidade: não observada.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo artefatos de segurança e do Portal.
+- `npm run test:automations`: 32 de 32 aprovados.
+- Testes SEC-002, SEC-003, SEC-004 e SEC-005: 44 de 44 aprovados.
+- Testes de piloto, Portal e go-live: 29 de 29 aprovados.
+- `security:headers`, `security:secrets`, `security:lockfile` e
+  `security:unused`: aprovados.
+- `test:stabilization`: 20 de 21 aprovados. O teste novo da Noite 9 passou; a
+  única falha continua sendo a migration preexistente ausente
+  `20260730233000_automacoes_janela_24h.sql`.
+- `test:db001`: 9 de 11 aprovados. A migration nova está classificada; persistem
+  a migration 24h ausente e referências a SQL de uma pasta temporária
+  inexistente.
+- O dry-run encerrou antes de executar SQL porque o comando Docker não está
+  instalado. Nenhuma migration foi aplicada.
+- `security:licenses` permanece bloqueado pelo resolvedor da pasta compartilhada
+  de dependências, sem mudança em relação às noites anteriores.
 
-### Riscos, limitações e pendências
+### Auto-revisão, riscos, limitações e pendências
 
-- A mensagem de boas-vindas permanece como não entregue, apesar da aceitação
-  técnica pelo provedor.
-- A Noite 3 permanece **Em andamento** somente por essa pendência.
+- A arquitetura continua com produtor único via outbox. A migration altera
+  somente aquisição e quarentena de claims, sem criar eventos ou filas.
+- Nenhuma chave de deduplicação é apagada. Claim vencido permanece bloqueado até
+  reconciliação, priorizando não duplicar mesmo quando isso exige análise manual.
+- Claims ativos com lease futuro não são tocados. Registros legados sem lease só
+  entram em quarentena após quinze minutos sem atualização.
+- A migration preserva evidências forenses e não remove execuções. O único dado
+  apagado é o token expirado de posse, que não pode mais autorizar finalização.
+- Existe mudança deliberada de disponibilidade: um worker que morrer antes de
+  chamar o provedor deixará o evento em quarentena, em vez de reenviá-lo. Isso
+  evita duplicidade, mas exige confirmação operacional para determinar se houve
+  perda de envio.
+- Aplicar com worker ativo pode criar disputa desnecessária. O procedimento exige
+  backup, dry-run e janela sem worker antes da migration.
+- A migration ainda precisa ser validada sintaticamente e funcionalmente em
+  PostgreSQL isolado. Ela não está autorizada para produção neste estado.
+- Noite 9 está **Implementada**, não **Validada** nem publicada.
 
 ### Como desfazer
 
-- Esta etapa altera somente documentação. Correções devem ser registradas em uma
-  nova entrada, sem apagar esta.
-- Não há mensagem, banco ou configuração externa a desfazer.
+- Enquanto não aplicada, reverter apenas os arquivos locais desta entrada e
+  registrar a reversão em nova entrada do histórico.
+- Se vier a ser aplicada, não restaurar claims expirados nem apagar quarentenas.
+  Criar migration corretiva posterior para substituir a função, preservando
+  registros e chaves de deduplicação para reconciliação.
+- Não existe alteração externa atual a desfazer.
 
-## 2026-07-30-018 — Novo cadastro pelo Portal para reteste de boas-vindas
+## 2026-08-05-027 — Tratamento das pendências locais antes da Noite 10
 
 ### Tarefa, conversa ou etapa relacionada
 
-- Reteste controlado da mensagem de novo cliente na Noite 3.
+- Separação entre pendências tratáveis no workspace e validações que dependem
+  do uso diário do sistema.
 
 ### Objetivo
 
-- Validar novamente o fluxo de boas-vindas desde um cadastro novo no Portal até
-  a aceitação da mensagem pelo provedor, sem ausência ou duplicidade.
+- Eliminar bloqueios locais de inventário, estabilização e segurança sem
+  simular testes reais, aplicar migrations ou publicar o sistema.
 
 ### Trabalho realizado
 
-- Foi criado pelo Portal um cliente exclusivamente de teste, com dados
-  autorizados pelo usuário.
-- Foi cadastrado um veículo fictício para concluir o fluxo funcional do Portal.
-- Foram inspecionados o evento, a execução da fila e a execução correspondente
-  no Make, sem reprocessamento manual.
-- O ponto de retomada do cronograma foi atualizado para aguardar somente a
-  confirmação de recebimento no aparelho autorizado.
+- Localizado o arquivo original
+  `20260730233000_automacoes_janela_24h.sql` no checkout Git preservado em
+  `.tmp/repo-piloto-2026`.
+- Confirmado que o arquivo está rastreado no commit local preservado e não tem
+  diff nesse checkout. O SHA-256 da fonte e do arquivo restaurado é
+  `838ff2bcddc6666d3a208daea32acc877304f59f87e0a4d2e978201c685f2e6a`.
+- A migration foi restaurada byte a byte no diretório oficial; nenhum SQL foi
+  reconstruído por hipótese e nenhuma migration foi executada.
+- O DB-001 passou a ignorar checkouts temporários ao inventariar SQL e `.tmp/`
+  foi explicitamente adicionado ao `.gitignore`, eliminando dependência de
+  cópias transitórias sem apagar o checkout usado como evidência.
+- A restauração da migration revelou uma regressão real no worker: o
+  processamento da fila ignorava `automation24Hours`. A condição comprovada no
+  checkout preservado foi restaurada.
+- Os aliases `telefone` e `formattedMessage`, ainda exigidos para compatibilidade
+  com o cenário Make já publicado, foram restaurados sem remover o contrato
+  atual `phone` e `message`.
+- O dry-run passou a incluir e reaplicar a migration 24h e ganhou asserções para
+  as três colunas, o default desligado e a idempotência.
+- O verificador de licenças passou a procurar `node_modules` no workspace e em
+  diretórios ancestrais, refletindo a instalação compartilhada realmente usada
+  pelo build, sem aceitar dependência global arbitrária.
+- O plano e o procedimento operacional agora distinguem claramente o que está
+  verde localmente do que será confirmado durante o uso diário.
 
-### Arquivos alterados
+### Arquivos criados, alterados ou removidos
 
-- `docs/PLANO_DIARIO_AUTOMACOES.md`
-- `docs/HISTORICO_DE_ALTERACOES.md`
+- Criado por restauração verificável:
+  - `supabase/migrations/20260730233000_automacoes_janela_24h.sql`.
+- Alterados:
+  - `.gitignore`;
+  - `src/db/automationEngine.ts`;
+  - `src/server/automationTransport.ts`;
+  - `scripts/automations/run-dry-run.ps1`;
+  - `scripts/automations/dry-run-assertions.sql`;
+  - `scripts/security/check-licenses.ts`;
+  - `tests/automation-behavior.test.ts`;
+  - `tests/stabilization-regressions.test.ts`;
+  - `tests/db001-baseline.test.ts`;
+  - `docs/PLANO_DIARIO_AUTOMACOES.md`;
+  - `docs/AUTOMACOES_OPERACAO.md`;
+  - `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo foi removido e o checkout temporário de evidência foi
+  preservado.
 
 ### Banco, hospedagem e serviços externos
 
-- Supabase: criados somente o cliente controlado, o veículo fictício e os
-  registros automáticos associados ao fluxo de boas-vindas.
-- Make/provedor: ocorreu uma única execução automática do cenário já publicado;
-  nenhuma configuração foi alterada e nenhum reprocessamento foi realizado.
-- Render: nenhuma publicação ou alteração de configuração nesta etapa.
+- Nenhuma migration foi aplicada ou marcada no ledger nesta tarefa.
+- Nenhuma leitura ou escrita foi feita em Supabase, Render, Make, Z-API ou
+  GitHub.
+- Nenhuma mensagem real, commit, publicação ou deploy foi realizado.
 
 ### Verificações e resultados
 
-- Outbox: exatamente um evento `novo_cliente`, processado uma única vez.
-- Fila: exatamente uma execução `novo_cliente`, estado `sucesso`, uma tentativa
-  e chave de deduplicação única.
-- Veículo: o cadastro fictício não gerou automação adicional.
-- Make: exatamente uma execução nova no horário do teste, estado `Success`, com
-  dois módulos e duas operações.
-- Provedor: resposta HTTP 200 com identificadores de mensagem.
-- Entrega física: ainda depende da confirmação do usuário no aparelho
-  autorizado.
+- Hash SHA-256 da migration oficial e da fonte preservada: idênticos.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo artefatos de segurança e do Portal.
+- `npm run test:automations`: 32 de 32 aprovados.
+- `npm run test:stabilization`: 21 de 21 aprovados.
+- `npm run test:db001`: 11 de 11 aprovados.
+- Testes SEC-002, SEC-003, SEC-004 e SEC-005: 44 de 44 aprovados.
+- Testes de piloto, Portal e go-live: 29 de 29 aprovados.
+- `security:headers`, `security:secrets`, `security:lockfile`,
+  `security:licenses` e `security:unused`: aprovados. Foram verificadas 17
+  dependências diretas.
+- Dry-run PostgreSQL continua indisponível porque Docker, `psql` e Supabase CLI
+  não estão instalados. O procedimento encerra antes de executar SQL.
 
-### Riscos, limitações e pendências
+### Auto-revisão, riscos, limitações e pendências
 
-- HTTP 200 e os identificadores comprovam aceitação técnica, não entrega no
-  WhatsApp.
-- A Noite 3 permanece **Em andamento** até a confirmação física desta nova
-  mensagem.
-- O laboratório contém o cliente e o veículo fictício criados neste teste.
+- O histórico informa que a migration 24h já foi aplicada no Supabase de testes.
+  Restaurar o arquivo não autoriza reaplicação; o ledger do ambiente alvo deve
+  ser comparado antes de qualquer `db push`.
+- A compatibilidade Make foi apenas preservada. Remover os aliases exige primeiro
+  migrar e validar o cenário publicado.
+- O modo 24 horas agora é respeitado tanto na criação quanto no processamento da
+  fila; desligado, a janela operacional continua obrigatória.
+- A validação sintática e funcional das migrations das Noites 5, 6 e 9 ainda
+  depende de PostgreSQL isolado. Esse é um bloqueio de infraestrutura, não um
+  teste de uso diário.
+- Lembretes de duas e dez horas, cliente inativo, aniversário, entrega posterior
+  do Make e observação contínua da fila dependem de fatos reais e ficam
+  conscientemente reservados para o período de testes do sistema.
+- Nenhum código ou teste automatizado permanece vermelho no workspace.
 
 ### Como desfazer
 
-- Se for necessário limpar o laboratório, remover de forma direcionada somente
-  o cliente controlado e o veículo fictício desta etapa, respeitando os
-  relacionamentos do banco e sem apagar outros registros.
-- Mensagens já aceitas pelo provedor não podem ser recolhidas.
-- Para corrigir a documentação, adicionar uma nova entrada corretiva; nunca
-  apagar ou reescrever esta entrada.
+- Reverter apenas os arquivos desta entrada e registrar uma nova entrada de
+  correção; não apagar o histórico nem o checkout de evidência antes de uma
+  cópia versionada estar confirmada.
+- Como nenhum banco ou serviço externo foi alterado, não há reversão externa.
 
-## 2026-07-30-019 — Confirmação física das boas-vindas e encerramento da Noite 3
+## 2026-08-05-028 — Registro do intervalo mínimo para cliente inativo
 
 ### Tarefa, conversa ou etapa relacionada
 
-- Confirmação final do reteste de novo cliente e fechamento da Noite 3.
+- Regra adicional da Noite 6 para impedir mensagens diárias de cliente inativo.
 
 ### Objetivo
 
-- Registrar a chegada da mensagem de boas-vindas no aparelho autorizado e
-  encerrar a validação das mensagens imediatas.
+- Registrar, sem implementar neste momento, que um cliente deve permanecer pelo
+  menos sete dias completos sem uma nova mensagem de inatividade depois de um
+  envio anterior.
 
 ### Trabalho realizado
 
-- O usuário confirmou o recebimento físico da nova mensagem de boas-vindas.
-- O cronograma foi atualizado para marcar a Noite 3 como **Validada**.
-- O ponto de retomada foi direcionado para a Noite 4.
-- Nenhuma mensagem foi reenviada e nenhum dado foi alterado nesta confirmação.
+- O plano diário passou a declarar o intervalo mínimo de sete dias por cliente.
+- Foi registrado que o controle deve usar o histórico persistido de execuções e
+  continuar válido após novos ciclos do scanner e reinícios do worker.
+- Foi esclarecido que completar sete dias não cria direito automático ao envio:
+  todos os demais critérios de elegibilidade da automação continuam sendo
+  obrigatórios.
+- Foram acrescentados casos controlados para provar que ciclos diários e
+  reinícios não contornam o intervalo.
+- Nenhuma decisão foi tomada sobre periodicidade automática depois do sétimo
+  dia; o requisito recebido define somente o intervalo mínimo entre mensagens.
 
-### Arquivos alterados
+### Arquivos criados, alterados ou removidos
 
-- `docs/PLANO_DIARIO_AUTOMACOES.md`
-- `docs/HISTORICO_DE_ALTERACOES.md`
+- Alterados:
+  - `docs/PLANO_DIARIO_AUTOMACOES.md`;
+  - `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo foi criado ou removido.
 
 ### Banco, hospedagem e serviços externos
 
-- Nenhuma alteração foi aplicada ao Supabase, Render, Make, cenário ou
-  provedor nesta confirmação.
+- Nenhum código, migration, dado, configuração ou comportamento foi alterado.
+- Nenhuma operação foi realizada em Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem, commit, publicação ou deploy foi realizado.
 
 ### Verificações e resultados
 
-- Novo cliente: um evento, uma execução em `sucesso`, uma tentativa e
-  deduplicação preservada.
-- Make/provedor: uma execução automática, HTTP 200 e identificadores de
-  mensagem.
-- Entrega física das boas-vindas: confirmada pelo usuário.
-- Demais fluxos da Noite 3: agendamento pelo cliente, agendamento pelo operador,
-  serviço iniciado e serviço finalizado já estavam confirmados.
-- Resultado consolidado: cinco fluxos imediatos validados de ponta a ponta, sem
-  ausência ou duplicidade observada.
+- Revisão documental concluída: a regra está registrada na Noite 6 e em seus
+  casos controlados pendentes.
+- Testes automatizados não foram executados porque esta tarefa alterou somente
+  documentação e não implementou o requisito.
 
 ### Riscos, limitações e pendências
 
-- O laboratório mantém os registros controlados usados nos testes anteriores.
-- O acompanhamento de confirmação automática de entrega do provedor continua
-  previsto para uma etapa posterior do cronograma.
-- Não há pendência restante na Noite 3.
+- A regra ainda não está implementada nem validada; não deve ser considerada
+  disponível no sistema publicado ou no código local.
+- Antes da Noite 10, será necessário definir a interação com dados existentes,
+  implementar a consulta persistida, cobrir concorrência e executar os testes.
 
 ### Como desfazer
 
-- Esta confirmação altera somente documentação. Se houver correção posterior,
-  adicionar uma nova entrada e ajustar o cronograma sem apagar este histórico.
-- Não há mensagem, banco ou configuração externa a desfazer nesta etapa.
+- Se o requisito de negócio mudar, registrar uma nova entrada corretiva e
+  atualizar o plano sem apagar esta decisão histórica.
+- Não existe mudança externa a desfazer.
 
-## 2026-07-30-020 — Implementação do lembrete configurável da Noite 4
+## 2026-08-05-029 — Registro do módulo futuro de orçamentos
 
 ### Tarefa, conversa ou etapa relacionada
 
-- Noite 4 — antecedência configurável e fuso horário.
+- Novo cenário solicitado fora do escopo original das dez noites: criação,
+  envio e acompanhamento de orçamentos.
 
 ### Objetivo
 
-- Permitir lembretes com antecedência configurável e eliminar a dependência do
-  fuso horário do servidor ao interpretar os horários dos agendamentos.
+- Preservar o requisito de uma tela de orçamentos e de uma mensagem automática
+  de acompanhamento após sete dias, sem iniciar implementação ou modificar o
+  escopo já em validação.
 
 ### Trabalho realizado
 
-- Adicionada configuração pública validada para a antecedência do lembrete.
-- O painel de automações passou a oferecer as opções de 1, 2 e 10 horas e a
-  mostrar a janela atualmente selecionada.
-- O worker e a verificação auxiliar passaram a consumir a mesma regra de
-  elegibilidade.
-- Valores de agendamento sem offset agora são interpretados explicitamente em
-  `America/Sao_Paulo`; valores com `Z` ou offset são preservados.
-- A data e a hora inseridas nas mensagens também passaram a ser formatadas no
-  fuso de São Paulo.
-- Criada e aplicada a migration
-  `20260731010000_automacoes_lembrete_configuravel.sql`.
+- Foi acrescentado ao plano um escopo futuro específico para orçamentos.
+- O fluxo documentado contempla busca de cliente, cadastro pelo fluxo existente
+  quando necessário, criação e persistência do orçamento, envio por WhatsApp e
+  exatamente um acompanhamento automático elegível após sete dias.
+- Foi registrado que a futura automação deverá usar o produtor único via outbox
+  e respeitar template ativo, `isActive`, deduplicação, fila e provedor.
+- Foram listadas decisões que ainda precisam de detalhamento: marco inicial dos
+  sete dias, campos e estados, condições de cancelamento, permissões, texto da
+  mensagem, edição ou reenvio, dados existentes e migration segura.
+- A funcionalidade não recebeu número de noite porque ainda exige detalhamento
+  e planejamento próprios depois do plano atual.
 
-### Arquivos criados
+### Arquivos criados, alterados ou removidos
 
-- `supabase/migrations/20260731010000_automacoes_lembrete_configuravel.sql`
-- `tests/night4-reminder.test.ts`
-
-### Arquivos alterados
-
-- `src/components/AutomacoesTab.tsx`
-- `src/db/automationEngine.ts`
-- `src/db/localDb.ts`
-- `src/security/publicConfig.ts`
-- `src/types.ts`
-- `src/utils/operationalWindow.ts`
-- `tests/db001-baseline.test.ts`
-- `docs/database/db001-manifest.json`
-- `docs/PLANO_DIARIO_AUTOMACOES.md`
-- `docs/HISTORICO_DE_ALTERACOES.md`
+- Alterados:
+  - `docs/PLANO_DIARIO_AUTOMACOES.md`;
+  - `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo foi criado ou removido.
 
 ### Banco, hospedagem e serviços externos
 
-- Supabase: migration aplicada no projeto do laboratório; criada a coluna
-  `reminder_advance_hours`, com padrão 1 e restrição de 1 a 168.
-- Verificação após aplicação: a configuração da empresa retornou o valor 1.
-- Render: ainda não atualizado nesta entrada.
-- Make/provedor: nenhuma alteração e nenhuma mensagem gerada.
+- Nenhum código, banco, migration, configuração, template ou comportamento foi
+  alterado.
+- Nenhuma operação foi realizada em Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem, commit, publicação ou deploy foi realizado.
 
 ### Verificações e resultados
 
-- Testes da Noite 4: quatro testes aprovados, cobrindo fuso, janelas de 1, 2 e
-  10 horas, valores inválidos e contrato de persistência.
-- Regressões selecionadas e baseline: 31 testes aprovados.
-- TypeScript: `tsc --noEmit` aprovado.
-- Build de produção: aprovado, inclusive políticas do artefato e presença do
-  Portal seguro.
-- Supabase: migration executada e valor padrão consultado com sucesso.
-- Dry-run PostgreSQL isolado: não executado porque o ambiente Docker local
-  permanece indisponível; a migration é aditiva e foi verificada no laboratório
-  autorizado.
+- Revisão documental concluída: o fluxo solicitado e as decisões pendentes
+  estão registrados em seção própria do plano.
+- Testes automatizados não foram executados porque não houve implementação.
 
 ### Riscos, limitações e pendências
 
-- Ainda falta publicar o código no Render e validar a interface real.
-- A persistência após recarregamento/reinício será validada no ambiente
-  publicado antes de marcar a Noite 4 como concluída.
-- O teste desta entrada não criou agendamentos nem enviou mensagens.
+- A tela, as tabelas, os estados e a automação ainda não existem no sistema.
+- O instante que inicia a contagem dos sete dias não foi definido; assumir esse
+  marco durante a implementação poderia causar envio antecipado ou atrasado.
+- Os estados que devem cancelar o acompanhamento precisam ser definidos para
+  evitar contato com cliente que já aceitou, recusou ou agendou.
+- A funcionalidade não faz parte da Noite 10 enquanto não houver novo
+  planejamento aprovado.
 
 ### Como desfazer
 
-- Aplicação: reverter o commit desta etapa e publicar uma nova versão estável.
-- Configuração: manter o valor 1 restaura o comportamento anterior de uma hora.
-- Banco: a coluna é aditiva e pode permanecer sem impacto em versões anteriores;
-  qualquer remoção deverá ser feita por migration corretiva posterior, somente
-  após confirmar que nenhuma versão publicada ainda a consome.
+- Se o requisito for cancelado ou alterado, registrar uma entrada corretiva e
+  atualizar a seção futura do plano, preservando este histórico.
+- Não existe mudança externa a desfazer.
 
-## 2026-07-30-021 — Validação publicada e encerramento da Noite 4
+## 2026-08-05-030 — Revisão da cadência de cliente inativo
 
 ### Tarefa, conversa ou etapa relacionada
 
-- Validação em ambiente publicado da antecedência configurável.
+- Complemento da regra da Noite 6 após o registro inicial do intervalo mínimo
+  de sete dias.
 
 ### Objetivo
 
-- Confirmar a publicação, a persistência dos três valores previstos e a
-  disponibilidade do gatilho de lembrete sem gerar envio durante o teste.
+- Registrar a sequência automática de três mensagens de inatividade e sua
+  interrupção imediata quando o cliente realiza um agendamento.
 
 ### Trabalho realizado
 
-- A versão da Noite 4 foi publicada no Render.
-- A interface publicada foi inspecionada com sessão administrativa autorizada.
-- Foi identificado que a configuração parcial existente não continha
-  `lembrete_agendamento`.
-- A migration foi complementada com uma inclusão aditiva e idempotente do
-  gatilho, preservando todas as automações existentes.
-- O gatilho foi incluído no Supabase, ativo e com template não vazio.
-- Foram salvos e recarregados, em sequência, os valores 1, 2 e 10 horas.
-- Ao final, a antecedência foi restaurada para 1 hora.
-- A Noite 4 foi marcada como **Validada**.
+- A Noite 6 voltou de **Implementada** para **Em andamento**, pois a solução
+  local atual cria somente uma mensagem por episódio e não atende à nova
+  sequência solicitada.
+- Foi registrada a primeira mensagem automática ao alcançar o prazo de
+  inatividade configurado.
+- Foi registrada a segunda mensagem automática sete dias completos depois da
+  primeira, condicionada à permanência da elegibilidade.
+- Foi registrada uma terceira mensagem automática no marco informado de 21
+  dias. Como a fala não definiu se esse prazo começa na primeira ou na segunda
+  mensagem, essa referência ficou explicitamente pendente de confirmação antes
+  da implementação.
+- Foi registrado que agendamento criado no Portal ou pelo profissional no
+  sistema interrompe a sequência e deve invalidar suas pendências.
+- Foi registrado que um novo ciclo somente começa depois de novo atendimento e
+  quando o cliente alcançar novamente o prazo de inatividade configurado.
+- Os casos de validação passaram a cobrir deduplicação de cada etapa,
+  persistência, concorrência, reinício e interrupção pelas duas origens de
+  agendamento.
 
-### Arquivos alterados
+### Arquivos criados, alterados ou removidos
 
-- `supabase/migrations/20260731010000_automacoes_lembrete_configuravel.sql`
-- `tests/night4-reminder.test.ts`
-- `docs/PLANO_DIARIO_AUTOMACOES.md`
-- `docs/HISTORICO_DE_ALTERACOES.md`
+- Alterados:
+  - `docs/PLANO_DIARIO_AUTOMACOES.md`;
+  - `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo foi criado ou removido.
 
 ### Banco, hospedagem e serviços externos
 
-- Supabase: adicionado somente o item ausente `lembrete_agendamento` ao JSON de
-  automações; nenhuma entrada existente foi substituída.
-- Supabase: `reminder_advance_hours` foi alternado entre 1, 2 e 10 durante a
-  validação e terminou novamente em 1.
-- Render: commit da implementação publicado e estado `live` confirmado após o
-  health check.
-- Make/provedor: nenhuma alteração.
+- Nenhum código, banco, migration, configuração, template ou comportamento do
+  sistema foi alterado.
+- Nenhuma operação foi realizada em Supabase, Render, Make, Z-API ou GitHub.
+- Nenhuma mensagem, commit, publicação ou deploy foi realizado.
 
 ### Verificações e resultados
 
-- Render: build remoto aprovado, verificações do pipeline aprovadas e serviço
-  saudável.
-- Interface: opções 1, 2 e 10 horas presentes.
-- Persistência: 1 hora carregou após o deploy; 2 e 10 horas permaneceram após
-  recarregamentos independentes.
-- Gatilho: ativo, visível e com template não vazio após novo carregamento.
-- Segurança do teste: a consulta à fila mostrou somente dois lembretes antigos;
-  nenhuma execução nova foi criada e nenhuma mensagem foi enviada.
-- Configuração final: 1 hora.
+- Revisão documental concluída: ponto de retomada, cronograma, regra e casos
+  controlados da Noite 6 refletem a nova cadência.
+- Testes automatizados não foram executados porque não houve implementação.
 
 ### Riscos, limitações e pendências
 
-- O teste confirmou cálculo e persistência, mas não antecipou artificialmente o
-  relógio do ambiente publicado.
-- Reagendamento, cancelamento e revalidação imediatamente antes do envio são
-  objetivos da Noite 5.
-- Não há pendência restante na Noite 4.
+- A sequência de três mensagens ainda não está implementada e não existe no
+  sistema publicado.
+- É obrigatório confirmar o marco dos 21 dias antes de codificar a terceira
+  etapa.
+- Ainda deve ser definido o comportamento quando o agendamento que interrompeu
+  a sequência for cancelado, não resultar em comparecimento ou não for
+  concluído.
+- A Noite 10 não deve validar cliente inativo como concluído enquanto esta regra
+  não for implementada e testada.
 
 ### Como desfazer
 
-- Aplicação: publicar novamente a versão estável anterior.
-- Configuração: o valor final 1 preserva o comportamento de uma hora.
-- Gatilho: se houver necessidade comprovada, desativá-lo pela interface é a
-  reversão operacional preferida; não apagar as outras automações.
-- Banco: manter a coluna é compatível com versões anteriores; eventual remoção
-  exige migration corretiva posterior.
+- Se a cadência mudar, registrar uma nova entrada corretiva e atualizar o plano
+  sem apagar esta decisão histórica.
+- Não existe mudança externa a desfazer.
 
-## 2026-07-30-022 — Implementação local da segurança do lembrete
+## 2026-08-05-031 — Implementação local da cadência de cliente inativo
 
 ### Tarefa, conversa ou etapa relacionada
 
-- Noite 5 — cancelamento, reagendamento, conclusão e deduplicação.
+- Implementação da regra revisada da Noite 6, após documentação e mapeamento do
+  fluxo existente.
 
 ### Objetivo
 
-- Impedir que uma execução já enfileirada envie lembrete depois que o
-  agendamento deixa de ser válido ou muda de horário.
+- Criar uma sequência automática segura nos dias 0, 7 e 21, interrompida por
+  novo agendamento, sem repetição diária, backfill perigoso ou produtor paralelo.
 
 ### Trabalho realizado
 
-- Criada uma política isolada para decidir envio, cancelamento ou nova tentativa
-  de revalidação.
-- A chave de deduplicação do lembrete passou a incluir o identificador e o
-  horário atual do agendamento.
-- O worker passou a consultar diretamente o registro atual no Supabase depois
-  do claim e imediatamente antes de chamar o transporte.
-- Agendamentos ausentes, cancelados, iniciados, finalizados, entregues,
-  reagendados ou fora da janela cancelam a execução sem envio.
-- Falha temporária ao carregar o agendamento devolve a execução à fila para
-  nova tentativa, sem enviar com contexto incompleto.
-- Execuções antigas, cuja chave não contém o horário, são canceladas de forma
-  conservadora.
+- O fluxo anterior foi mapeado antes da alteração: sincronização, scanner,
+  política de elegibilidade, `queueAutomation`, índice único, claim atômico,
+  guarda pré-envio e provedor.
+- Criado documento técnico com o trajeto da mudança, compatibilidade, critérios
+  de validação, riscos e reversão.
+- A política de cliente inativo passou a separar ciclo e etapa. Novos ciclos
+  usam chaves `cliente_inativo:<cliente>:<atendimento>:etapa:<1|2|3>`.
+- A etapa 1 é criada ao alcançar `inactiveDays`; a etapa 2 somente depois de
+  sete dias completos da aceitação da etapa 1; a etapa 3 somente depois de 21
+  dias da etapa 1 e de pelo menos sete dias da etapa 2.
+- A etapa seguinte depende de a anterior estar em `sucesso`, que no modelo
+  atual significa aceitação pelo provedor e não entrega confirmada no WhatsApp.
+- Agendamentos posteriores à primeira mensagem interrompem o ciclo usando
+  `created_at`, independentemente de terem vindo do Portal ou do sistema
+  interno. A guarda consulta novamente o Supabase antes do provedor.
+- Um novo atendimento concluído muda a chave do ciclo e volta a aplicar o prazo
+  de inatividade configurado antes de qualquer nova etapa 1.
+- Chaves da implementação anterior são reconhecidas como ciclos legados
+  encerrados. Nenhuma etapa 2 ou 3 é criada retroativamente para esses dados.
+- O índice único existente continua garantindo deduplicação. Nenhuma tabela,
+  coluna, trigger SQL ou migration nova foi necessária.
+- A auto-revisão identificou que uma etapa 2 atrasada poderia aproximar a etapa
+  3. A política foi reforçada para preservar sempre sete dias completos entre
+  as duas, mantendo 0, 7 e 21 no fluxo normal.
+- A Noite 6 voltou ao estado **Implementada**. Ela não foi marcada como
+  **Validada** porque a migration anterior ainda aguarda dry-run PostgreSQL e os
+  envios reais desta cadência ainda não ocorreram.
 
-### Arquivos criados
+### Arquivos criados, alterados ou removidos
 
-- `src/db/reminderDeliveryPolicy.ts`
-- `tests/night5-reminder-safety.test.ts`
-
-### Arquivos alterados
-
-- `src/db/automationEngine.ts`
-- `src/db/localDb.ts`
-- `docs/PLANO_DIARIO_AUTOMACOES.md`
-- `docs/HISTORICO_DE_ALTERACOES.md`
+- Criado:
+  - `docs/CLIENTE_INATIVO_CADENCIA.md`.
+- Alterados:
+  - `src/db/inactiveCustomerPolicy.ts`;
+  - `src/db/automationEngine.ts`;
+  - `src/db/localDb.ts`;
+  - `tests/automation-behavior.test.ts`;
+  - `tests/stabilization-regressions.test.ts`;
+  - `docs/PLANO_DIARIO_AUTOMACOES.md`;
+  - `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo foi removido.
+- O build regenerou somente `dist/`, que permanece ignorado pelo Git e não é
+  fonte de publicação versionada.
 
 ### Banco, hospedagem e serviços externos
 
-- Nenhuma alteração aplicada ao Supabase nesta entrada.
-- Render ainda não atualizado nesta entrada.
-- Make/provedor não foi acionado.
+- Nenhuma migration, linha de banco, configuração, template ou trigger foi
+  criado ou alterado.
+- Nenhuma operação de escrita foi realizada em Supabase, Render, Make, Z-API ou
+  GitHub.
+- Nenhuma mensagem real, commit, publicação ou deploy foi realizado.
+- A única consulta externa foi o `bun audit`, sem alteração de dependências.
 
 ### Verificações e resultados
 
-- Testes da Noite 5: seis cenários aprovados.
-- Regressões selecionadas, incluindo a Noite 4: 26 testes aprovados.
-- TypeScript: `tsc --noEmit` aprovado.
-- Build de produção: aprovado, incluindo validações do artefato e do Portal.
-- Casos cobertos: agendamento ativo, cancelado, em andamento, finalizado,
-  entregue, reagendado, ausente, fora da janela, chave antiga e falha de leitura.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo artefatos de segurança e do Portal.
+- `npm run test:automations`: 38 de 38 aprovados.
+- `npm run test:stabilization`: 21 de 21 aprovados.
+- `npm run test:db001`: 11 de 11 aprovados.
+- SEC-002, SEC-003, SEC-004 e SEC-005: 44 de 44 aprovados.
+- Piloto, Portal e go-live: 29 de 29 aprovados.
+- `security:headers`, `security:secrets`, `security:lockfile`,
+  `security:licenses` e `security:unused`: aprovados.
+- `bun audit --audit-level=high`: aprovado sem vulnerabilidade de nível alto.
+- Casos novos aprovados: dias 0, 7 e 21; atraso da etapa 2; ordem; ausência de
+  quarta etapa; proteção de histórico legado; interrupção por agendamento;
+  guarda pré-envio; repetição do scanner e deduplicação da etapa 2.
 
-### Riscos, limitações e pendências
+### Auto-revisão, riscos, limitações e pendências
 
-- A versão ainda precisa ser publicada e exercitada no laboratório.
-- A consulta imediatamente antes do transporte reduz a janela de corrida, mas
-  nenhum provedor externo oferece transação atômica conjunta com o banco.
-- Não foi criada ou enviada mensagem nesta entrada.
+- A arquitetura permanece com produtor único via outbox. O scanner seleciona a
+  etapa, mas somente `queueAutomation` renderiza e cria a execução.
+- Não há perda de chaves existentes nem backfill. Como contrapartida segura,
+  execuções legadas não recebem as novas etapas 2 e 3; a cadência completa vale
+  somente para novos ciclos identificados com `etapa:1`.
+- O marco temporal usa aceitação persistida pelo provedor porque o Make ainda
+  não confirma entrega final no WhatsApp.
+- Cancelamento preserva o agendamento e mantém a interrupção. Uma exclusão
+  física remove a evidência consultada e precisa permanecer auditada.
+- A revalidação direta imediatamente antes do provedor reduz a corrida com um
+  novo agendamento; uma chamada já aceita pelo provedor não pode ser recolhida.
+- A migration anterior da Noite 6 continua sem dry-run PostgreSQL nesta máquina.
+  Nenhuma publicação é autorizada até backup, ledger, dry-run e validação
+  controlada.
 
 ### Como desfazer
 
-- Reverter o commit desta etapa e publicar novamente a versão estável anterior.
-- Nenhuma reversão de banco ou serviço externo é necessária para esta entrada.
+- Antes de publicação, reverter somente os arquivos de código e testes desta
+  entrada, preservando o documento e registrando a correção em nova entrada.
+- Depois de publicação, primeiro desativar a automação de cliente inativo;
+  preservar todas as execuções e chaves; então publicar correção posterior sem
+  apagar histórico ou liberar deduplicação.
+- Como nenhum banco ou ambiente externo foi alterado, não há reversão externa
+  nesta tarefa.
 
-## 2026-07-30-023 — Validação publicada e encerramento da Noite 5
+---
 
-### Tarefa, conversa ou etapa relacionada
+## 2026-08-05-032 — Módulo de orçamentos e automações de 7 e 14 dias
 
-- Noite 5 — segurança do lembrete em ambiente publicado.
+### Tarefa e objetivo
+
+- Implementar localmente o módulo de orçamentos confirmado pelo usuário, com
+  cadastro rápido de cliente, itens, valores, desconto, validade, estados e
+  envio por WhatsApp.
+- Manter o produtor único de execuções, templates configuráveis, `isActive`,
+  deduplicação, claim atômico e guardas pré-envio.
+- Criar dois acompanhamentos automáticos: 7 e 14 dias após a aceitação
+  persistida do envio inicial pelo provedor.
+
+### Trabalho realizado
+
+- O trajeto existente foi auditado antes da alteração: configuração,
+  sincronização, outbox, consumidor, `queueAutomation`, claim, guarda pré-envio
+  e integração com o provedor.
+- Criada a tela de orçamentos com busca de cliente, cadastro rápido quando ele
+  não existe, vínculo opcional de veículo, itens de catálogo ou manuais,
+  quantidade, preço por porte, desconto, total, validade, observações e estados.
+- Rascunhos podem ser editados. Depois do envio, valores e itens ficam
+  imutáveis. O envio exige confirmação explícita na interface.
+- Criados os eventos `orcamento_enviado`, `orcamento_followup_7d` e
+  `orcamento_followup_14d`, cada um com template, `isActive` e chave de
+  deduplicação próprios.
+- O envio inicial usa `fn_enviar_orcamento`: template ativo, transição de estado
+  e presença do evento no outbox precisam ser confirmados na mesma transação.
+  Se o outbox falhar, o orçamento continua em rascunho.
+- O trigger SQL registra somente o fato no outbox. Renderização e criação da
+  execução continuam exclusivas de `queueAutomation`; nenhum trigger cria
+  `automacoes_execucoes`.
+- O scanner temporal cria os acompanhamentos a partir da aceitação persistida
+  do envio inicial. Uma etapa atrasada não cria mensagens de 7 e 14 dias juntas.
+- Estados aceito, recusado, cancelado, vencido e convertido, validade expirada
+  ou qualquer agendamento posterior ao envio interrompem os acompanhamentos.
+  Portal e sistema interno são tratados igualmente pela tabela de agendamentos.
+- O orçamento, seus itens, estado e agendamentos são reconsultados imediatamente
+  antes do provedor. A desativação da automação também cancela fila já criada.
+- A migration é aditiva, sem backfill e sem mensagens retroativas. Configurações
+  e permissões existentes são preservadas; somente chaves ausentes recebem
+  defaults.
+- A compatibilidade de implantação permite que o código novo continue
+  consumindo eventos legados antes da migration; campos novos só são enviados à
+  fila quando existe contexto de orçamento.
+- Testes manuais usam chave de deduplicação isolada e não colidem com execuções
+  reais de orçamento.
+- A auto-revisão corrigiu: veículo incorreto em cliente com vários veículos;
+  corrida entre envio e agendamento; contatos de 7 e 14 dias simultâneos após
+  indisponibilidade; alteração de itens enviados; retorno de estado terminal;
+  perda silenciosa do evento inicial; e colisão do teste manual com produção.
+
+### Arquivos criados, alterados ou removidos
+
+- Criados:
+  - `src/components/OrcamentosModule.tsx`;
+  - `src/db/budgetPolicy.ts`;
+  - `supabase/migrations/20260805234000_orcamentos_automacoes.sql`;
+  - `docs/MODULO_ORCAMENTOS_AUTOMACAO.md`.
+- Alterados:
+  - `src/App.tsx`;
+  - `src/components/Sidebar.tsx`;
+  - `src/components/UsuariosModule.tsx`;
+  - `src/db/automationEngine.ts`;
+  - `src/db/automationEventPolicy.ts`;
+  - `src/db/localDb.ts`;
+  - `src/types.ts`;
+  - `tests/automation-behavior.test.ts`;
+  - `tests/stabilization-regressions.test.ts`;
+  - `tests/db001-baseline.test.ts`;
+  - `docs/PLANO_DIARIO_AUTOMACOES.md`;
+  - `docs/database/db001-manifest.json`;
+  - `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo foi removido.
+- `dist/` foi regenerado pelo build e continua sendo somente artefato ignorado,
+  não uma fonte versionada de publicação.
+
+### Banco, hospedagem e serviços externos
+
+- Foi criada uma migration local; ela **não foi aplicada** ao Supabase ou a
+  qualquer outro banco.
+- Nenhuma linha, configuração, template ou permissão remota foi alterada.
+- Nenhuma mensagem real, commit, push, publicação ou deploy foi realizado.
+- Render, Make e Z-API não foram modificados nem acionados com dados reais.
+- `bun audit` consultou somente o registro de dependências e não alterou o
+  projeto.
+
+### Verificações e resultados
+
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo artefatos de segurança e Portal.
+- `npm run test:automations`: 41 de 41 aprovados.
+- `npm run test:stabilization`: 22 de 22 aprovados.
+- `npm run test:db001`: 11 de 11 aprovados.
+- SEC-002, SEC-003, SEC-004 e SEC-005: 44 de 44 aprovados.
+- Piloto, Portal e go-live: 29 de 29 aprovados.
+- `security:headers`, `security:secrets`, `security:lockfile`,
+  `security:licenses` e `security:unused`: aprovados.
+- `bun audit --audit-level=high`: aprovado sem vulnerabilidade alta reportada.
+- Casos novos aprovados: renderização do orçamento; marcos de 7 e 14 dias;
+  deduplicação; interrupção por status e agendamento; outbox sem produtor SQL de
+  execução; confirmação transacional do evento inicial; e ausência de backfill.
+
+### Auto-revisão, riscos, limitações e pendências
+
+- O código e os testes automatizados estão verdes, mas a migration ainda não
+  está liberada para produção: `psql`, Docker e Supabase CLI não existem nesta
+  máquina, portanto não foi possível executar o dry-run PostgreSQL.
+- Antes de publicação são obrigatórios backup, ledger remoto, dry-run em clone,
+  homologação, aplicação da migration antes do código e teste controlado dos
+  três eventos com contato autorizado.
+- `sucesso` continua significando aceitação pelo provedor, não entrega final no
+  WhatsApp. Os dias 7 e 14 são contados desse marco persistido.
+- Se o worker ficar indisponível até depois do marco de 14 dias, o contato de 7
+  dias vencido não é recriado ao lado do contato de 14 dias. Essa escolha evita
+  duas mensagens simultâneas.
+- Uma etapa de 7 dias que já estava em retry bloqueia temporariamente a de 14;
+  se depois for aceita, preserva-se um intervalo mínimo de sete dias antes da
+  próxima mensagem.
+- Existe a corrida residual inevitável entre a última revalidação e a aceitação
+  do provedor: uma mudança ocorrida nesse intervalo não recolhe uma requisição
+  que o provedor já tenha aceitado.
+- Clientes com orçamento ficam protegidos contra exclusão física pelo vínculo
+  referencial. Exclusão de veículo ou serviço apenas remove o vínculo opcional e
+  preserva o conteúdo textual e financeiro já enviado.
+
+### Como desfazer
+
+- Antes de qualquer publicação, reverter somente os arquivos desta entrada e
+  registrar a reversão em nova entrada; nenhum ambiente externo exige rollback.
+- Depois de aplicar a migration, primeiro desativar as três automações de
+  orçamento e preservar outbox e execuções para auditoria.
+- Em seguida, retirar a tela e o scanner em publicação posterior. Não apagar
+  orçamentos, itens, eventos ou execuções já criados.
+- A remoção física das tabelas e colunas não deve fazer parte de rollback
+  emergencial; deve ser avaliada separadamente somente depois de backup e
+  confirmação de que não existe histórico a preservar.
+
+---
+
+## 2026-08-05-033 — Diagnóstico de bloqueio para commit e push
+
+### Tarefa e objetivo
+
+- Preparar commit e push das alterações do módulo de orçamentos para teste,
+  conforme autorização do usuário.
+
+### Trabalho realizado
+
+- Verificada a pasta atual e todos os diretórios pais até a raiz do volume.
+- Confirmado que não existe diretório `.git`, branch atual ou remoto Git
+  configurado nesta cópia do projeto.
+- Verificada a GitHub CLI instalada. A conta registrada localmente não possui
+  mais uma autenticação válida.
+- Procuradas referências ao repositório de origem nos arquivos do projeto e em
+  resultados públicos; nenhuma URL canônica segura foi encontrada.
+- Por segurança, não foi executado `git init`, não foi criado remoto por
+  suposição e nenhum arquivo foi preparado para commit.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md` para registrar o
+  diagnóstico.
+- Nenhum código, teste, banco ou arquivo de configuração foi alterado.
+- Nenhum arquivo foi criado ou removido.
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma operação foi realizada no Supabase, Render, Make ou Z-API.
+- Nenhum commit, push, branch, repositório ou deploy foi criado.
+- Nenhuma migration foi aplicada e nenhuma mensagem foi enviada.
+
+### Verificações e resultados
+
+- `git rev-parse --show-toplevel`: reprovado porque a pasta não pertence a um
+  repositório Git.
+- `git remote -v` e `git branch --show-current`: indisponíveis pelo mesmo motivo.
+- `gh auth status`: GitHub CLI presente, porém a autenticação registrada está
+  inválida.
+- Busca por URL canônica do GitHub no projeto: nenhuma referência encontrada.
+
+### Riscos, limitações e pendências
+
+- É necessário informar ou recuperar a URL exata do repositório GitHub e
+  autenticar novamente a conta antes de qualquer publicação.
+- Também será necessário comparar esta cópia com o branch remoto antes de
+  preparar o commit, evitando substituir trabalho existente ou publicar uma
+  árvore sem histórico.
+
+### Como desfazer
+
+- Esta entrada é apenas documental e não possui efeito externo.
+- Se alguma informação precisar ser corrigida, registrar nova entrada sem
+  apagar este diagnóstico.
+
+---
+
+## 2026-08-05-034 — Commit e push do módulo de orçamentos e automações
+
+### Tarefa e objetivo
+
+- Preparar e publicar no GitHub somente os arquivos obrigatórios para execução
+  das mudanças locais de automações e do módulo de orçamentos.
+- Excluir do commit testes, documentação, scripts de dry-run, manifests e
+  demais arquivos auxiliares que não são necessários à execução no Render.
+
+### Trabalho realizado
+
+- O repositório canônico foi confirmado como
+  `senhoralimpezaautomotiva/senhoralimpezasistema`.
+- A comparação demonstrou que a base correta era a branch remota
+  `piloto-2026`, no commit `f9018bbc0832dac047ac443a8427c4bb61f5a4a8`.
+- Foi criada a branch `orcamentos-automacoes-7-14d` a partir dessa base.
+- Foram preparados exclusivamente 30 arquivos de execução e migrations.
+- Foi criado o commit `128aa17fbfb607af58e11c1ac3940552d4848d93`, com a
+  mensagem `feat: adiciona orcamentos e reforca automacoes`.
+- A nova branch foi publicada no GitHub. Nenhum pull request ou merge foi
+  criado.
+
+### Arquivos criados, alterados ou removidos
+
+- O commit contém exclusivamente os arquivos de servidor, interface em
+  execução, políticas do motor de automações e migrations necessários ao
+  comportamento publicado.
+- Testes, documentação, scripts de dry-run, scripts auxiliares, manifests e
+  arquivos de histórico ficaram fora do commit.
+- Este arquivo de histórico foi alterado somente localmente após o push e não
+  integra o commit publicado.
+
+### Banco, hospedagem e serviços externos
+
+- O GitHub recebeu somente a nova branch
+  `orcamentos-automacoes-7-14d` e o commit `128aa17`.
+- As branches remotas `main` e `piloto-2026` não foram alteradas.
+- Nenhuma migration foi aplicada e nenhum dado foi alterado no Supabase.
+- Nenhuma publicação ou configuração foi realizada no Render.
+- Make e Z-API não foram modificados e nenhuma mensagem real foi enviada.
+
+### Verificações e resultados
+
+- O escopo preparado foi conferido por `git diff --cached --name-status` e
+  continha exatamente 30 arquivos aprovados.
+- O commit possui como pai direto o commit remoto `f9018bb` da branch
+  `piloto-2026`.
+- O push foi confirmado pelo remoto e a branch passou a acompanhar
+  `origin/orcamentos-automacoes-7-14d`.
+- Permanecem válidos os resultados executados antes do commit: build aprovado,
+  147 testes aprovados, verificações de segurança aprovadas e auditoria de
+  dependências sem vulnerabilidade alta reportada.
+- O dry-run PostgreSQL das migrations continua indisponível nesta máquina por
+  ausência de `psql`, Docker e Supabase CLI.
+
+### Riscos, limitações e pendências
+
+- A publicação da branch não equivale a deploy nem autoriza merge.
+- As migrations ainda precisam do fluxo seguro já documentado: backup, ledger,
+  dry-run em clone, aplicação controlada antes do código e validação posterior.
+- O código da branch não deve ser promovido ao ambiente de testes ou produção
+  antes dessa validação das migrations.
+- Há alterações locais auxiliares fora do commit; elas devem permanecer fora de
+  qualquer envio até decisão específica.
+
+### Como desfazer
+
+- Como não houve merge ou deploy, a reversão externa consiste em remover a
+  branch remota somente se isso for explicitamente solicitado; o commit pode
+  permanecer preservado para auditoria.
+- Não há rollback de banco, Render, Make ou Z-API porque nenhum desses ambientes
+  foi alterado.
+
+---
+
+## 2026-08-05-035 — Auditoria pré-deploy de Render e Supabase
+
+### Tarefa e objetivo
+
+- Prosseguir com a publicação da branch de orçamentos no Render, respeitando a
+  ordem segura de migrations antes do código.
+- Confirmar, antes de qualquer mutação, backup, ledger, ferramentas, branch,
+  configuração e viabilidade do build remoto.
+
+### Trabalho realizado
+
+- O serviço `senhora-limpeza-piloto` foi inspecionado de forma somente leitura
+  no Render.
+- Confirmado que o serviço continua configurado para a branch `piloto-2026`,
+  com auto-deploy desativado e build por `npm run build:render`.
+- Confirmado que o deploy mais recente da branch, no commit `f9018bb`, falhou
+  durante o teste DB-001. A versão ativa continua sendo o commit anterior
+  `c893fe0`.
+- A causa do build remoto foi confirmada: divergência entre arquivos SQL e o
+  manifesto versionado.
+- A branch `orcamentos-automacoes-7-14d` não contém os arquivos auxiliares de
+  build que o próprio `build:render` executa. Publicá-la no estado atual
+  repetiria a falha, pois testes, manifesto e scripts foram excluídos do commit
+  anterior conforme o escopo então aprovado.
+- O ambiente do Render contém as chaves obrigatórias esperadas, incluindo a
+  configuração privada de serviço do Supabase, sem que seus valores fossem
+  copiados ou alterados.
+- O projeto Supabase foi inspecionado de forma somente leitura. O ledger remoto
+  registra migrations até `20260731001000_automacoes_imediatas_defaults`.
+- As migrations `20260805220000`, `20260805230000`, `20260805233000` e
+  `20260805234000` ainda não aparecem no ledger.
+- O painel informou que o plano gratuito não inclui backups programados.
+- A máquina continua sem Supabase CLI, `psql`, `pg_dump`, Docker, vínculo local
+  ou variáveis de conexão ao banco.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md` para registrar esta
+  auditoria.
+- Nenhum código, migration, teste, manifesto ou script foi alterado.
+- Nenhum arquivo foi criado ou removido.
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma migration, consulta SQL de escrita, backfill ou alteração de dados foi
+  executada no Supabase.
+- Nenhuma configuração, branch, build, deploy, suspensão ou reinicialização foi
+  realizada no Render.
+- Nenhum commit, push, pull request ou merge adicional foi realizado no GitHub.
+- Make e Z-API não foram acionados ou alterados.
+
+### Verificações e resultados
+
+- Render: serviço ativo confirmado no commit `c893fe0`; deploy `f9018bb`
+  confirmado como falho no teste DB-001.
+- Render: branch configurada `piloto-2026`, auto-deploy desligado, health check
+  `/health` e credenciais obrigatórias presentes.
+- Supabase: ledger confirmado com onze migrations, da baseline até
+  `20260731001000`.
+- Supabase: ausência de backup programado confirmada pelo painel do plano Free.
+- Local: `supabase`, `psql`, `pg_dump` e Docker indisponíveis; projeto não
+  vinculado e sem credenciais de banco no ambiente.
+- Nenhum teste foi reexecutado porque nenhum arquivo funcional foi alterado e o
+  deploy foi interrompido antes de qualquer mudança.
+
+### Riscos, limitações e pendências
+
+- É necessário autorizar um commit complementar com os arquivos de build que
+  haviam sido excluídos, pois o Render os executa obrigatoriamente.
+- É necessário gerar e verificar um backup lógico atual antes de aplicar as
+  quatro migrations novas.
+- Para isso, ainda são necessários binários PostgreSQL, Supabase CLI, vínculo ao
+  projeto e entrada segura da senha do banco, sem registrá-la em arquivo ou
+  conversa.
+- Alterar o build do Render para ignorar testes não é uma alternativa segura e
+  não foi realizado.
+- Aplicar SQL pelo editor do Dashboard contrariaria a fonte oficial e o runbook;
+  essa opção não foi utilizada.
+
+### Como desfazer
+
+- Esta etapa não produziu alteração externa; não há rollback de banco, Render,
+  GitHub, Make ou Z-API.
+- Para desfazer somente o registro local, criar uma nova entrada corretiva sem
+  apagar esta evidência.
+
+---
+
+## 2026-08-05-036 — Aplicação das migrations de automações e orçamentos
+
+### Tarefa e objetivo
+
+- Aplicar no Supabase de testes, pelo navegador e conforme o procedimento já
+  utilizado anteriormente no laboratório, as quatro migrations posteriores à
+  versão `20260731001000`.
+- Manter o Render fora de execução durante a mudança e validar o banco antes de
+  reativar o serviço.
+
+### Trabalho realizado
+
+- Reconfirmado no histórico que o responsável declarou este Supabase como
+  laboratório descartável, sem dados de negócio que exijam backup, e autorizou
+  anteriormente o uso do editor SQL para migrations controladas.
+- Executado diagnóstico agregado sem exposição de dados pessoais.
+- O serviço `senhora-limpeza-piloto` foi suspenso antes de qualquer SQL de
+  escrita.
+- Cada arquivo local foi carregado integralmente, normalizado apenas em memória,
+  conferido byte a byte após a colagem no editor e executado em transação.
+- O registro correspondente no ledger foi incluído na mesma transação de cada
+  migration, evitando schema aplicado sem versão registrada.
+- Aplicadas e registradas, nesta ordem:
+  - `20260805220000_lembrete_seguranca`;
+  - `20260805230000_cliente_inativo_seguranca`;
+  - `20260805233000_automacoes_monitoramento_operacional`;
+  - `20260805234000_orcamentos_automacoes`.
+- O editor repetiu o comportamento histórico de reter parte de uma consulta
+  diagnóstica. A consulta inválida foi recusada por sintaxe antes de qualquer
+  escrita. A partir daí, todo conteúdo foi selecionado, substituído, copiado de
+  volta e comparado integralmente antes de executar.
+- O serviço antigo foi reativado após as validações. O endpoint público
+  `/health` respondeu HTTP 200 com estado `ok`.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md` para registrar a operação.
+- Nenhum código, teste, migration, manifesto ou script local foi alterado.
+- Nenhum arquivo foi criado ou removido.
+
+### Banco, hospedagem e serviços externos
+
+- As quatro migrations foram aplicadas ao projeto Supabase de testes e passaram
+  a constar no ledger `supabase_migrations.schema_migrations`.
+- A migration de orçamentos criou as tabelas, funções, triggers, policies,
+  relacionamentos com outbox/fila, templates e permissões previstos.
+- Não houve backfill de orçamento e nenhuma mensagem foi criada ou enviada.
+- O Render foi suspenso durante a janela e reativado ao final.
+- Nenhum deploy novo foi iniciado; o serviço continua executando a versão
+  anterior ativa.
+- Nenhuma operação foi realizada no Make, Z-API ou GitHub nesta etapa.
+
+### Verificações e resultados
+
+- Estado anterior: 51 execuções em sucesso, 17 em erro definitivo, zero
+  pendências vazias, zero pendências legadas de lembrete, zero inativos
+  ambíguos, zero claims expirados e 15 eventos processados no outbox.
+- Configuração de automações confirmada como array JSON.
+- Migration de lembretes: ledger presente, trigger presente e zero pendências
+  legadas.
+- Migration de cliente inativo: ledger presente, zero pendências ambíguas e
+  zero registros movidos para a quarentena legada.
+- Migration de monitoramento: ledger presente, `service_role` com permissão de
+  claim, função restrita a status pendente e zero claims expirados.
+- Migration de orçamentos: quatro novas versões no ledger, tabelas e RPC de
+  envio presentes, vínculos de fila presentes e zero orçamentos retroativos.
+- Três templates de orçamento presentes, ativos e com texto não vazio.
+- Zero usuários sem a nova permissão e RLS ativo nas duas tabelas.
+- Fila preservada depois da mudança: 51 sucessos, 17 erros definitivos e outbox
+  com 15 eventos processados.
+- Render após reativação: `GET /health` retornou HTTP 200 e `{"status":"ok"}`.
+
+### Riscos, limitações e pendências
+
+- O ambiente permanece no plano gratuito sem backup programado. A aplicação foi
+  realizada porque o laboratório descartável já havia sido explicitamente
+  autorizado nesse modelo; isso não deve ser repetido em produção.
+- O código novo ainda não está publicado no Render. A branch atual precisa de
+  um commit complementar com testes, manifesto e scripts exigidos pelo próprio
+  `build:render`.
+- A versão antiga reativada é compatível com o schema aditivo, mas não oferece a
+  tela nem o fluxo de orçamentos.
+- Ainda faltam build remoto verde, deploy do commit novo, health check da nova
+  versão e teste funcional controlado.
+
+### Como desfazer
+
+- Não remover tabelas, colunas, eventos, execuções ou versões do ledger.
+- Em falha funcional, manter as automações de orçamento desativadas e corrigir
+  para frente com nova migration e novo commit.
+- Como não houve deploy do código novo, não existe rollback de aplicação nesta
+  etapa; o serviço já voltou à versão anteriormente ativa.
+
+---
+
+## 2026-08-05-037 — Publicação do módulo de orçamentos e automações no Render
+
+### Tarefa e objetivo
+
+- Completar no GitHub somente os arquivos exigidos pelo `build:render`, apontar
+  o serviço piloto para a branch `orcamentos-automacoes-7-14d`, publicar a
+  versão validada e executar uma nova revisão operacional pós-deploy.
+- Preservar a arquitetura de produtor único via outbox e as migrations já
+  aplicadas no laboratório Supabase.
+
+### Trabalho realizado
+
+- A conta proprietária do repositório foi autenticada pelo navegador e a branch
+  de implantação recebeu os arquivos complementares exigidos pelas validações
+  do Render.
+- Os 14 arquivos inicialmente complementados foram comparados por Git blob SHA
+  com os arquivos locais e todos ficaram idênticos.
+- Os testes obsoletos `tests/night4-reminder.test.ts` e
+  `tests/night5-reminder-safety.test.ts` foram removidos da branch.
+- O primeiro build remoto foi recusado porque o teste de automações exigia o
+  blueprint sanitizado do Make. O arquivo foi incluído e teve seu SHA conferido.
+- O segundo build remoto foi recusado porque o teste de estabilização detectou
+  que `scripts/automations/run-dry-run.ps1` ainda não referenciava todas as
+  migrations atuais. O arquivo local atualizado foi publicado e teve seu SHA
+  conferido.
+- O terceiro build remoto passou integralmente e o Render promoveu o commit
+  `8b4df940a79b959c0664d6e79567ac66dbd315fb` para estado `live`.
+- A aplicação pública foi aberta no navegador. Os módulos de Orçamentos e
+  Automações carregaram sem erro; Orçamentos informa acompanhamentos automáticos
+  em 7 e 14 dias.
+- Foi executada uma consulta agregada e somente leitura no Supabase após o
+  deploy para conferir a integridade da outbox, da fila e das novas tabelas.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado localmente apenas `docs/HISTORICO_DE_ALTERACOES.md` para registrar
+  esta publicação.
+- Na branch remota, foram criados ou atualizados os seguintes arquivos de apoio
+  obrigatório ao build:
+  - `.gitignore`;
+  - `package.json`;
+  - `make-blueprints/Integration Webhooks.blueprint.json`;
+  - `scripts/pilot/run-render-build.ts`;
+  - `scripts/security/check-licenses.ts`;
+  - `scripts/automations/dry-run-monitoring-assertions.sql`;
+  - `scripts/automations/run-dry-run.ps1`;
+  - `docs/database/db001-manifest.json`;
+  - `docs/CLIENTE_INATIVO_CADENCIA.md`;
+  - `tests/automation-behavior.test.ts`;
+  - `tests/db001-baseline.test.ts`;
+  - `tests/go-live001-deployment.test.ts`;
+  - `tests/pilot-readiness.test.ts`;
+  - `tests/sec004-safe-outputs.test.ts`;
+  - `tests/sec005-security-baseline.test.ts`;
+  - `tests/stabilization-regressions.test.ts`.
+- Removidos somente da branch remota os dois testes obsoletos da Noite 4 e da
+  Noite 5 citados acima.
+- Nenhum arquivo funcional adicional foi alterado durante a correção dos dois
+  builds recusados.
+
+### Banco, hospedagem e serviços externos
+
+- GitHub: a branch `orcamentos-automacoes-7-14d` passou a apontar para o commit
+  `8b4df940a79b959c0664d6e79567ac66dbd315fb`. `main` e `piloto-2026` não foram
+  alteradas e nenhum merge ou pull request foi criado.
+- Render: o serviço `senhora-limpeza-piloto` foi reconfigurado da branch
+  `piloto-2026` para `orcamentos-automacoes-7-14d`; auto-deploy permaneceu
+  desligado. Os dois builds falhos não substituíram a versão ativa. O terceiro
+  build foi promovido e está `live`.
+- Supabase: nenhuma migration, escrita, backfill ou remoção foi executada nesta
+  etapa. Apenas uma consulta agregada e somente leitura foi executada.
+- Make e Z-API: nenhuma configuração foi modificada e nenhuma mensagem real foi
+  enviada. O cenário do Make havia sido confirmado ativo antes do deploy; a
+  sessão web expirou na conferência posterior e não foi reautenticada.
+
+### Verificações e resultados
+
+- Local: `npm run build` aprovado.
+- Local: `npm run security:ci` aprovado integralmente após execução fora da
+  restrição de cache do sandbox; dois builds, testes SEC-002 a SEC-005, DB-001,
+  automações, estabilização, piloto, portal, go-live, varredura de segredos,
+  dependências e licenças ficaram verdes.
+- GitHub: os 14 arquivos complementares iniciais, o blueprint do Make e o
+  `run-dry-run.ps1` foram conferidos por SHA contra os arquivos locais.
+- Render: build remoto aprovado, incluindo 41 testes de automações, 22 de
+  estabilização, 9 de prontidão do piloto, 11 do portal e 9 de go-live, além das
+  verificações de segurança, dependências e licenças.
+- Render: deploy final em estado `live` no commit `8b4df94`.
+- Endpoint público: `GET /health` retornou HTTP 200, conteúdo JSON e
+  `{"status":"ok"}`.
+- Aplicação pública: interface administrativa carregada; módulo Orçamentos
+  presente e painel de Automações acessível.
+- Painel após sincronização: histórico preservado com 51 execuções aceitas pelo
+  provedor e 17 erros definitivos históricos, fila pendente zerada e nenhuma
+  execução marcada para reconciliação.
+- Supabase pós-deploy: zero eventos pendentes na outbox, zero execuções
+  pendentes com mensagem vazia, zero claims expirados, zero orçamentos e zero
+  itens de orçamento. A ausência de orçamentos confirma que não houve backfill.
+
+### Riscos, limitações e pendências
+
+- A validação técnica não substitui o teste real de uso do orçamento: ainda é
+  necessário criar, enviar e acompanhar um orçamento controlado para confirmar
+  o WhatsApp imediato e os acompanhamentos de 7 e 14 dias.
+- O serviço usa instância gratuita do Render e pode sofrer atraso de cold start.
+- O Supabase de laboratório permanece sem backup programado pelo plano gratuito.
+- A branch de implantação permanece separada e divergente de `main`; qualquer
+  promoção futura deve reconciliar essa divergência sem reintroduzir a
+  arquitetura anterior.
+- O cenário do Make não foi alterado nesta etapa. Sua atividade havia sido
+  confirmada antes do deploy, mas a sessão do painel expirou na checagem final.
+- Não foi executado teste que criasse orçamento, evento, execução ou mensagem
+  real para evitar efeitos externos e disparos indevidos.
+
+### Como desfazer
+
+- Para rollback da aplicação, reconfigurar o Render para `piloto-2026` e
+  publicar manualmente o último commit anteriormente estável; isso não exige
+  remoção de tabelas nem perda de dados.
+- Não apagar migrations, tabelas, ledger, eventos ou execuções. O schema é
+  aditivo e deve permanecer para compatibilidade.
+- Se for necessário desfazer os arquivos complementares no GitHub, criar commits
+  de reversão na branch de implantação, preservando o histórico; não reescrever
+  nem excluir a branch enquanto ela estiver configurada no Render.
+
+## 2026-08-05-038 — Implementação do novo Portal do Cliente
+
+### Tarefa relacionada
+
+- Implantação do layout aprovado do Portal do Cliente, com preservação do fluxo
+  de agendamento existente e preparação para commit, push e deploy.
 
 ### Objetivo
 
-- Confirmar que lembretes inválidos são interrompidos antes do transporte e que
-  a deduplicação também é garantida atomicamente pelo banco.
+- Transformar o protótipo aprovado em telas funcionais, manter o agendamento já
+  utilizado, adicionar catálogo configurável, cartão fidelidade, histórico e
+  consulta somente leitura da agenda, com identidade visual da loja.
 
-### Trabalho realizado
+### Resumo do que foi feito
 
-- A implementação de revalidação foi publicada no Render e ficou saudável.
-- Foi inserida uma execução temporária vinculada a um agendamento já concluído.
-- O worker reconsultou o agendamento e cancelou a execução antes do transporte.
-- Foi criado um índice único parcial para `deduplication_key`.
-- Duas inserções controladas com a mesma chave resultaram em somente um
-  registro.
-- Todos os registros temporários da validação foram removidos.
-- A Noite 5 foi marcada como **Validada**.
+- Aplicado o padrão visual aprovado ao login, cabeçalho e páginas do portal,
+  incluindo gradiente, bordas, cores suaves e o logotipo fornecido pela loja.
+- Criada a tela principal com saudação centralizada, informativos e quatro
+  botões simétricos; o botão `Consultar agenda` ocupa a largura das duas colunas
+  e possui altura menor.
+- Mantido o fluxo anterior de `Agendar serviço`, acessado pela nova navegação.
+- Implementadas as telas de catálogo, cartão fidelidade, histórico e consulta
+  de disponibilidade.
+- Adicionada configuração administrativa para escolher catálogo do sistema ou
+  WhatsApp, informar a URL HTTPS e definir a meta do cartão fidelidade.
+- Criada migration aditiva para as configurações e para a contagem segura das
+  indicações concluídas do cliente autenticado.
+- Corrigido o teste DB-001 para ignorar apenas a pasta `.tmp` interna ao projeto,
+  em vez de rejeitar caminhos cujo diretório pai tenha esse nome.
 
-### Arquivos criados
+### Arquivos criados, alterados ou removidos
 
-- `supabase/migrations/20260731020000_automacoes_deduplicacao_unica.sql`
-
-### Arquivos alterados
-
-- `tests/night5-reminder-safety.test.ts`
-- `docs/PLANO_DIARIO_AUTOMACOES.md`
-- `docs/HISTORICO_DE_ALTERACOES.md`
+- Criados: `public/senhora-limpeza-logo.jpeg`,
+  `src/components/ClientPortalHome.tsx`,
+  `supabase/migrations/20260805235000_portal_cliente_experiencia.sql` e
+  `docs/PORTAL_CLIENTE_IMPLEMENTACAO.md`.
+- Alterados: `src/components/ClientPortal.tsx`,
+  `src/portal/PortalAuthGate.tsx`, `src/portal/portalSupabase.ts`,
+  `src/components/ConfiguracoesModule.tsx`, `src/db/localDb.ts`, `src/types.ts`,
+  `tests/portal001-auth-isolation.test.ts`, `tests/db001-baseline.test.ts` e
+  `docs/database/db001-manifest.json`.
+- Removidos: nenhum arquivo do projeto.
 
 ### Banco, hospedagem e serviços externos
 
-- Supabase: criado índice único parcial e idempotente sobre chaves de
-  deduplicação não nulas.
-- Supabase: dois registros exclusivamente temporários foram criados em testes
-  separados e removidos ao final; clientes e agendamentos não foram alterados.
-- Render: a implementação da Noite 5 foi publicada e o estado `live` foi
-  confirmado após o health check.
-- Make/provedor: nenhuma execução nova foi recebida durante o teste de bloqueio.
+- Nesta etapa, a migration foi criada e validada localmente, mas ainda não foi
+  aplicada ao Supabase.
+- Nenhuma publicação foi executada no Render nesta etapa.
+- Nenhum cenário do Make ou provedor de mensagens foi alterado.
 
 ### Verificações e resultados
 
-- Auditoria prévia: nenhuma chave duplicada existente.
-- Testes automatizados selecionados: 27 aprovados e nenhum reprovado.
-- TypeScript: `tsc --noEmit` aprovado.
-- Build de produção e validações de artefato: aprovados.
-- Teste publicado: execução terminou `cancelada`, com zero tentativas e motivo
-  `appointment_not_active`.
-- Deduplicação publicada: duas tentativas com a mesma chave produziram uma única
-  linha.
-- Make: a execução mais recente permaneceu anterior ao teste.
-- Limpeza: os dois registros temporários foram removidos com alvo restrito.
+- `npm run lint`: aprovado.
+- `npm run test:portal001`: 13 testes aprovados.
+- `npm run test:db001`: 11 testes aprovados.
+- `npm run build`: aprovado, incluindo política de artefato e presença segura do
+  Portal do Cliente no bundle.
+- `npm run security:ci`: todas as compilações e suítes executadas foram
+  aprovadas; a primeira execução parou somente na consulta externa do `bun audit`
+  por conexão recusada no ambiente restrito.
+- `npm run security:dependencies`, repetido com acesso de rede: aprovado; 17
+  dependências diretas verificadas, sem vulnerabilidade alta reportada.
 
 ### Riscos, limitações e pendências
 
-- A consulta imediatamente antes do transporte reduz a janela de corrida, mas
-  banco e provedor externo não compartilham uma transação atômica.
-- O índice é parcial: registros sem chave continuam permitidos por
-  compatibilidade; eventos que exigem deduplicação devem sempre gerar a chave.
-- Não há pendência restante na Noite 5.
+- A experiência autenticada completa depende da aplicação da migration antes da
+  publicação da nova interface.
+- O catálogo do WhatsApp precisa receber uma URL HTTPS válida nas configurações;
+  enquanto isso, o padrão permanece no catálogo interno.
+- A validação visual autenticada em produção permanece pendente para a etapa de
+  deploy; nenhum dado real foi criado durante os testes locais.
 
 ### Como desfazer
 
-- Aplicação: publicar novamente a versão estável anterior.
-- Banco: preferir manter o índice, pois ele é compatível com a aplicação. Se uma
-  necessidade comprovada exigir a reversão, criar uma migration corretiva que
-  remova somente `automacoes_execucoes_deduplication_key_uidx`, após auditar que
-  não existem ciclos concorrentes dependentes da proteção.
+- Reverter os arquivos desta implementação por meio de um novo commit, sem
+  reescrever o histórico Git.
+- Manter a migration aditiva instalada em eventual rollback da interface; ela
+  não altera o fluxo anterior e seus campos possuem valores padrão compatíveis.

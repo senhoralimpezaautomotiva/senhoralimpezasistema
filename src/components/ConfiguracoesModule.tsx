@@ -531,6 +531,55 @@ export default function ConfiguracoesModule({
             </div>
           </div>
 
+          {/* SECTION: PORTAL DO CLIENTE */}
+          <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 space-y-4">
+            <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-white border-b border-slate-850 pb-2.5 flex items-center gap-2">
+              <Smartphone size={14} className="text-sky-400" />
+              Portal do Cliente
+            </h3>
+            <p className="text-slate-400 text-xs font-medium leading-relaxed">
+              Escolha qual catálogo será aberto pelo cliente e defina a quantidade de indicações concluídas necessária para completar o cartão fidelidade.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Fonte do catálogo</label>
+                <select
+                  value={formData.portalCatalogSource || 'whatsapp'}
+                  onChange={(event) => setFormData({ ...formData, portalCatalogSource: event.target.value as 'system' | 'whatsapp' })}
+                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white"
+                >
+                  <option value="whatsapp">Catálogo do WhatsApp</option>
+                  <option value="system">Catálogo do sistema</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Meta do cartão fidelidade</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={formData.loyaltyReferralTarget ?? 10}
+                  onChange={(event) => setFormData({ ...formData, loyaltyReferralTarget: Math.max(1, Number(event.target.value) || 1) })}
+                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white font-mono"
+                />
+              </div>
+            </div>
+            {formData.portalCatalogSource !== 'system' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Link público do catálogo do WhatsApp</label>
+                <input
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://wa.me/c/..."
+                  value={formData.whatsappCatalogUrl || ''}
+                  onChange={(event) => setFormData({ ...formData, whatsappCatalogUrl: event.target.value.trim() })}
+                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white"
+                />
+                <p className="text-[10px] text-slate-500 mt-1.5">Informe somente um endereço HTTPS público do catálogo.</p>
+              </div>
+            )}
+          </div>
+
           {/* SECTION 2: SERVER-MANAGED INTEGRATIONS */}
           <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-850 pb-2.5">

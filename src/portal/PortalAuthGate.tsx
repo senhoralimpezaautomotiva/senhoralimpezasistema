@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   LockKeyhole,
   Mail,
-  ShieldCheck
 } from 'lucide-react';
 import { safeLog } from '../security/safeOutput';
 import { activePortalAuthProvider } from './auth/emailPasswordAuthProvider';
@@ -239,13 +238,11 @@ export default function PortalAuthGate({
     mode === 'confirmation-sent' || mode === 'recovery-sent';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4 py-8">
-      <main className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
+    <div className="min-h-screen bg-gradient-to-t from-indigo-950/50 via-slate-950 to-slate-950 text-slate-100 flex items-center justify-center px-4 py-8">
+      <main className="w-full max-w-md bg-slate-900 border-2 border-sky-500/25 rounded-3xl p-6 shadow-2xl">
         <div className="flex items-start justify-between gap-4 mb-6">
           <div>
-            <div className="w-11 h-11 rounded-2xl bg-sky-500/10 border border-sky-500/25 flex items-center justify-center mb-4">
-              <ShieldCheck className="text-sky-400" size={23} />
-            </div>
+            <img src="/senhora-limpeza-logo.jpeg" alt="Logotipo Senhora Limpeza" className="w-24 h-24 rounded-2xl object-cover border-2 border-sky-500/25 mb-4" />
             <h1 className="text-xl font-black">{title}</h1>
             <p className="text-xs text-slate-400 mt-1">
               Acesso protegido pelo Supabase Auth.

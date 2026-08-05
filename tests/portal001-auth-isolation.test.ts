@@ -134,3 +134,33 @@ test('sincronização administrativa só ocorre após perfil autenticado', () =>
   assert.match(app, /if \(!user \|\| !dbInstance\.config\.useRealSupabase\) return/);
   assert.match(app, /void dbInstance\.syncWithSupabase\(\)/);
 });
+
+test('nova navegacao preserva o fluxo de agendamento e oferece telas somente leitura', () => {
+  const portal = readPortalFile('src', 'components', 'ClientPortal.tsx');
+  const home = readPortalFile('src', 'components', 'ClientPortalHome.tsx');
+  assert.match(portal, /portalSection/);
+  assert.match(portal, /setStep\(4\)/);
+  assert.match(home, /Agendar/);
+  assert.match(home, /fidelidade/);
+  assert.match(home, /Consultar agenda/);
+  assert.match(home, /Somente consulta/);
+  assert.doesNotMatch(home, /createPortalAppointment|cancelPortalAppointment/);
+});
+
+test('fidelidade usa agregado seguro e catalogo possui fonte administravel', () => {
+  const migration = readPortalFile(
+    'supabase',
+    'migrations',
+    '20260805235000_portal_cliente_experiencia.sql'
+  );
+  const portalData = readPortalFile('src', 'portal', 'portalSupabase.ts');
+  const settings = readPortalFile('src', 'components', 'ConfiguracoesModule.tsx');
+  assert.match(migration, /portal_referral_progress\(\)/);
+  assert.match(migration, /security definer/);
+  assert.match(migration, /revoke all on function public\.portal_referral_progress\(\) from public, anon/);
+  assert.match(migration, /grant execute on function public\.portal_referral_progress\(\) to authenticated/);
+  assert.match(portalData, /client\.rpc\('portal_referral_progress'\)/);
+  assert.match(settings, /portalCatalogSource/);
+  assert.match(settings, /whatsappCatalogUrl/);
+  assert.match(settings, /loyaltyReferralTarget/);
+});

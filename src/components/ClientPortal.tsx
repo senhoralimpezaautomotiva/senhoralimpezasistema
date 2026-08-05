@@ -7,7 +7,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Phone, User, Mail, Car, Calendar, Clock, ChevronRight, ChevronLeft, 
   Plus, Check, ShieldAlert, AlertCircle, Sparkles, LogOut,
-  Clock3, CheckCircle2, X, FileText, FileSignature,
+  Clock3, CheckCircle2, X, FileSignature,
   Gift, Copy, Share2, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -28,6 +28,7 @@ import {
   type PortalData
 } from '../portal/portalSupabase';
 import { activePortalAuthProvider } from '../portal/auth/emailPasswordAuthProvider';
+import ClientPortalHome, { type ClientPortalSection } from './ClientPortalHome';
 
 const BrandLogo = ({ brand }: { brand: string }) => {
   const name = brand.trim().toLowerCase();
@@ -169,6 +170,9 @@ function AuthenticatedClientPortal({
   const [step, setStep] = useState<number | 'my_bookings'>(
     initialData.customer ? 4 : 2
   );
+  const [portalSection, setPortalSection] = useState<ClientPortalSection>(
+    initialData.customer ? 'home' : 'booking'
+  );
   const [showSuggestionsScreen, setShowSuggestionsScreen] = useState(false);
   const [whatsapp, setWhatsapp] = useState(authenticatedPhone.replace(/\D/g, ''));
   const [loading, setLoading] = useState(false);
@@ -183,6 +187,8 @@ function AuthenticatedClientPortal({
   const [appointments, setAppointments] = useState<Appointment[]>(
     initialData.appointments
   );
+  const [referralProgress] = useState(initialData.referralProgress);
+  const [portalSettings] = useState(initialData.portalSettings);
 
   // Selection states for booking
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
@@ -856,17 +862,15 @@ function AuthenticatedClientPortal({
   };
 
   return (
-    <div className="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative flex flex-col min-h-[580px] text-xs font-sans text-slate-100" id="client-portal-card">
+    <div className="max-w-2xl mx-auto bg-gradient-to-t from-indigo-950/45 via-slate-900 to-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative flex flex-col min-h-[580px] text-xs font-sans text-slate-100" id="client-portal-card">
       
       {/* Decorative Top Accent Glow */}
       <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-sky-500 via-indigo-500 to-sky-500" />
       
       {/* Portal Header */}
-      <header className="px-6 py-5 border-b border-slate-800/80 bg-slate-950/40 flex justify-between items-center shrink-0">
+      <header className="px-6 py-4 border-b border-sky-500/20 bg-sky-500/[0.08] flex justify-between items-center shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-sky-500 flex items-center justify-center text-slate-950">
-            <Sparkles size={18} className="fill-slate-950" />
-          </div>
+          <img src="/senhora-limpeza-logo.jpeg" alt="Logotipo Senhora Limpeza" className="w-12 h-12 rounded-xl object-cover border border-sky-500/25" />
           <div>
             <h1 className="text-sm font-bold text-white leading-tight">Senhora Limpeza</h1>
             <p className="text-[10px] text-sky-400 font-mono tracking-wider uppercase font-bold">Portal do Cliente</p>
@@ -874,13 +878,13 @@ function AuthenticatedClientPortal({
         </div>
 
         <div className="flex items-center gap-2">
-          {customer && (
+          {customer && portalSection === 'booking' && (
             <button 
-              onClick={() => setStep('my_bookings')}
+              onClick={() => setPortalSection('home')}
               className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white rounded-xl border border-slate-700/60 font-semibold transition-all flex items-center gap-1.5"
             >
-              <FileText size={13} />
-              <span>Meus Agendamentos</span>
+              <ChevronLeft size={13} />
+              <span>Início</span>
             </button>
           )}
           {onBackToAdmin && (
@@ -906,6 +910,26 @@ function AuthenticatedClientPortal({
 
       {/* Main Form content viewport */}
       <div className="flex-1 p-6 overflow-y-auto">
+        {customer && portalSection !== 'booking' ? (
+          <ClientPortalHome
+            section={portalSection}
+            onNavigate={(section) => {
+              if (section === 'booking') {
+                setSelectedServiceIds([]);
+                setStep(4);
+              }
+              setPortalSection(section);
+            }}
+            customer={customer}
+            vehicles={vehicles}
+            services={services}
+            appointments={appointments}
+            config={config}
+            referralProgress={referralProgress}
+            portalSettings={portalSettings}
+          />
+        ) : (
+        <>
         {/* Meu Código de Indicação Card */}
         {dbInstance.config.referralActive && customer && customer.referralCode && (
           <div className="mb-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-sky-500/30 rounded-3xl p-5 shadow-2xl relative overflow-hidden" id="meu-codigo-indicacao-card">
@@ -2321,6 +2345,8 @@ function AuthenticatedClientPortal({
           )}
 
         </AnimatePresence>
+        </>
+        )}
       </div>
 
       {/* Footer Branding credits */}

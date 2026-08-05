@@ -178,6 +178,9 @@ export interface PublicSystemConfig {
   // Referral Program Config
   referralActive?: boolean;
   referralDiscountPercent?: number; // e.g. 10 for 10%
+  loyaltyReferralTarget?: number;
+  portalCatalogSource?: 'system' | 'whatsapp';
+  whatsappCatalogUrl?: string;
 
   // Automation Operational Window
   automationStartHour?: string; // e.g., "08:00"
