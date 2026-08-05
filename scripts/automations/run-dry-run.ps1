@@ -50,12 +50,15 @@ try {
     }
 
     Invoke-DryRunSqlFile 'scripts\automations\dry-run-fixture.sql'
+    Invoke-DryRunSqlFile 'supabase\migrations\20260730233000_automacoes_janela_24h.sql'
     Invoke-DryRunSqlFile 'supabase\migrations\20260727220000_automacoes_execucoes.sql'
     Invoke-DryRunSqlFile 'supabase\migrations\20260728220000_automacoes_triggers_nativos.sql'
     Invoke-DryRunSqlFile 'supabase\migrations\20260729220000_automacoes_fluxo_unificado.sql'
     Invoke-DryRunSqlFile 'scripts\automations\dry-run-pre-claim.sql'
     Invoke-DryRunSqlFile 'supabase\migrations\20260729223000_automacoes_claim_backfill.sql'
     Invoke-DryRunSqlFile 'supabase\migrations\20260729230000_automacoes_riscos_residuais.sql'
+    Invoke-DryRunSqlFile 'supabase\migrations\20260805220000_lembrete_seguranca.sql'
+    Invoke-DryRunSqlFile 'supabase\migrations\20260805230000_cliente_inativo_seguranca.sql'
     Invoke-DryRunSqlFile 'scripts\automations\dry-run-assertions.sql'
     Invoke-DryRunSqlFile 'scripts\automations\dry-run-claim-target.sql'
 
@@ -80,11 +83,17 @@ from public.fn_claim_automacoes_execucoes(
     }
 
     Invoke-DryRunSqlFile 'scripts\automations\dry-run-claim-assertions.sql'
+    Invoke-DryRunSqlFile 'supabase\migrations\20260805233000_automacoes_monitoramento_operacional.sql'
+    Invoke-DryRunSqlFile 'scripts\automations\dry-run-monitoring-assertions.sql'
 
-    # Segunda aplicação: valida idempotência das três migrations novas.
+    # Segunda aplicação: valida idempotência das migrations críticas.
+    Invoke-DryRunSqlFile 'supabase\migrations\20260730233000_automacoes_janela_24h.sql'
     Invoke-DryRunSqlFile 'supabase\migrations\20260729220000_automacoes_fluxo_unificado.sql'
     Invoke-DryRunSqlFile 'supabase\migrations\20260729223000_automacoes_claim_backfill.sql'
     Invoke-DryRunSqlFile 'supabase\migrations\20260729230000_automacoes_riscos_residuais.sql'
+    Invoke-DryRunSqlFile 'supabase\migrations\20260805220000_lembrete_seguranca.sql'
+    Invoke-DryRunSqlFile 'supabase\migrations\20260805230000_cliente_inativo_seguranca.sql'
+    Invoke-DryRunSqlFile 'supabase\migrations\20260805233000_automacoes_monitoramento_operacional.sql'
 
     Write-Output 'AUTOMATION_POSTGRES_DRY_RUN_OK'
 }
