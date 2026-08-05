@@ -16,9 +16,20 @@ const forbidden = /\b(?:AGPL|SSPL|BUSL|GPL-3\.0|Elastic-License)\b/i;
 const incompatible: string[] = [];
 const missing: string[] = [];
 
+const resolveInstalledManifest = (name: string): string | undefined => {
+  let directory = projectRoot;
+  while (true) {
+    const candidate = path.join(directory, 'node_modules', name, 'package.json');
+    if (existsSync(candidate)) return candidate;
+    const parent = path.dirname(directory);
+    if (parent === directory) return undefined;
+    directory = parent;
+  }
+};
+
 for (const name of packages) {
-  const manifestPath = path.join(projectRoot, 'node_modules', name, 'package.json');
-  if (!existsSync(manifestPath)) {
+  const manifestPath = resolveInstalledManifest(name);
+  if (!manifestPath) {
     missing.push(name);
     continue;
   }
