@@ -1,15 +1,17 @@
-import { dbInstance } from './localDb';
+import { dbInstance, mapDbAppointmentToFrontend, mapDbBudgetToFrontend, mapDbBudgetItemToFrontend } from './localDb';
 import {
   AutomationExecution,
   AutomationLog,
   Customer,
   Vehicle,
   Service,
-  Appointment
+  Appointment,
+  Budget
 } from '../types';
-import { maskPhone, redactExternalResponse, safeLog } from '../security/safeOutput';
+import { maskPhone, safeLog } from '../security/safeOutput';
 import {
   AutomationTransportPayload,
+  AutomationTransportResult,
   sendAutomationPayload
 } from '../server/automationTransport';
 import { getIntegrationSecrets } from '../server/integrationSecrets';
@@ -19,23 +21,29 @@ import {
 } from './automationEventPolicy';
 import { classifyQueuedAutomation } from './automationExecutionPolicy';
 import {
-  classifyReminderDelivery,
-  ReminderDeliveryDecision
-} from './reminderDeliveryPolicy';
-import { mapDbAppointmentToFrontend } from './localDb';
+  buildReminderDeduplicationKey,
+  buildReminderScheduleFromDatabase,
+  evaluateReminderExecution,
+  isReminderAppointmentEligible
+} from './reminderPolicy';
+import {
+  evaluateInactiveCustomerCadence,
+  evaluateInactiveCustomer,
+  evaluateInactiveCustomerExecution
+} from './inactiveCustomerPolicy';
+import {
+  evaluateBirthday,
+  evaluateBirthdayExecution
+} from './birthdayPolicy';
+import { decideProviderExecution } from './automationProviderPolicy';
+import { evaluateBudgetAutomation } from './budgetPolicy';
 import {
   getPartsInTimezone,
   isWithinOperationalWindow,
-  getNextStartTime,
-  isWithinReminderWindow
+  getNextStartTime
 } from '../utils/operationalWindow';
 
-export {
-  getPartsInTimezone,
-  isWithinOperationalWindow,
-  getNextStartTime,
-  isWithinReminderWindow
-};
+export { getPartsInTimezone, isWithinOperationalWindow, getNextStartTime };
 
 type ClaimedAutomationExecution = AutomationExecution & {
   claim_token?: string;
@@ -77,6 +85,7 @@ export class AutomationEngine {
           || !syncState.vehiclesLoaded
           || !syncState.servicesLoaded
           || !syncState.appointmentsLoaded
+          || !syncState.budgetsLoaded
         );
       }
 
@@ -112,13 +121,27 @@ export class AutomationEngine {
 
     const supabase = dbInstance.getSupabaseClient();
     const now = new Date().toISOString();
-    const { data: events, error } = await supabase
+    let eventResult = await supabase
       .from('automacoes_eventos')
-      .select('id,automacao,appointment_id,customer_id,deduplication_key,status,tentativas')
+      .select('id,automacao,appointment_id,orcamento_id,customer_id,deduplication_key,status,tentativas')
       .in('status', ['pendente', 'pendente_retry'])
       .or(`proxima_tentativa.is.null,proxima_tentativa.lte.${now}`)
       .order('created_at', { ascending: true })
       .limit(100);
+    if (
+      eventResult.error
+      && (eventResult.error.code === 'PGRST204' || eventResult.error.code === '42703')
+      && eventResult.error.message?.includes('orcamento_id')
+    ) {
+      eventResult = await supabase
+        .from('automacoes_eventos')
+        .select('id,automacao,appointment_id,customer_id,deduplication_key,status,tentativas')
+        .in('status', ['pendente', 'pendente_retry'])
+        .or(`proxima_tentativa.is.null,proxima_tentativa.lte.${now}`)
+        .order('created_at', { ascending: true })
+        .limit(100) as typeof eventResult;
+    }
+    const { data: events, error } = eventResult;
 
     if (error) {
       safeLog('error', 'automation_engine.events.load', 'error', { error });
@@ -132,9 +155,14 @@ export class AutomationEngine {
       const appointment = event.appointment_id
         ? dbInstance.appointments.find(a => a.id === event.appointment_id)
         : undefined;
+      const budget = event.orcamento_id
+        ? dbInstance.budgets.find(item => item.id === event.orcamento_id)
+        : undefined;
       const vehicle = appointment
         ? dbInstance.vehicles.find(v => v.id === appointment.vehicleId)
-        : dbInstance.vehicles.find(v => v.customerId === event.customer_id);
+        : budget
+          ? (budget.vehicleId ? dbInstance.vehicles.find(v => v.id === budget.vehicleId) : undefined)
+          : dbInstance.vehicles.find(v => v.customerId === event.customer_id);
       const service = appointment
         ? dbInstance.services.find(s => s.id === appointment.serviceId)
         : undefined;
@@ -145,16 +173,19 @@ export class AutomationEngine {
       let decision = classifyAutomationEvent({
         event: event.automacao,
         appointmentId: event.appointment_id,
+        budgetId: event.orcamento_id,
         configurationLoaded: dbInstance.lastSupabaseSync.configLoaded,
         customersLoaded: dbInstance.lastSupabaseSync.customersLoaded,
         appointmentsLoaded: dbInstance.lastSupabaseSync.appointmentsLoaded,
         vehiclesLoaded: dbInstance.lastSupabaseSync.vehiclesLoaded,
         servicesLoaded: dbInstance.lastSupabaseSync.servicesLoaded,
+        budgetsLoaded: dbInstance.lastSupabaseSync.budgetsLoaded,
         customerFound: Boolean(customer),
         appointmentFound: !event.appointment_id || Boolean(appointment),
         appointmentStatus: appointment?.status,
         vehicleFound: !event.appointment_id || Boolean(vehicle),
         serviceFound: !event.appointment_id || Boolean(service),
+        budgetFound: !event.orcamento_id || Boolean(budget),
         duplicateExecution,
         trigger,
         phone: customer ? customer.phone || customer.whatsapp || '' : ''
@@ -166,7 +197,8 @@ export class AutomationEngine {
           customer,
           vehicle,
           service,
-          appointment
+          appointment,
+          budget
         });
 
         if (!execution) {
@@ -240,21 +272,24 @@ export class AutomationEngine {
   private async scanAndGenerateExecutions(logs: string[]): Promise<number> {
     let count = 0;
 
-    // --- 1. LEMBRETE DE AGENDAMENTO (antecedência configurável) ---
+    // --- 1. LEMBRETE DE AGENDAMENTO (60 minutos antes) ---
     const reminderTrigger = dbInstance.automations.find(a => a.event === 'lembrete_agendamento');
     if (reminderTrigger && reminderTrigger.isActive) {
       const now = new Date();
-      const advanceHours = dbInstance.config.reminderAdvanceHours || 1;
+      const limit = new Date(now.getTime() + 60 * 60 * 1000); // 60 minutes ahead
 
       const eligibleAppts = dbInstance.appointments.filter(appt => {
-        if (appt.status === 'cancelado' || appt.status === 'finalizado' || appt.status === 'entregue') return false;
-        if (!isWithinReminderWindow(appt.dateTime, now, advanceHours)) return false;
+        if (!isReminderAppointmentEligible(appt.status)) return false;
+        
+        const apptDate = new Date(appt.dateTime);
+        // Is within the next 60 minutes and is in the future
+        const isImminent = apptDate > now && apptDate <= limit;
+        if (!isImminent) return false;
 
         // Check duplicate
-        const hasBeenQueued = dbInstance.executions.some(e => 
-          e.automacao === 'lembrete_agendamento' && 
-          e.appointment_id === appt.id &&
-          e.status !== 'erro_definitivo'
+        const deduplicationKey = buildReminderDeduplicationKey(appt.id, appt.dateTime);
+        const hasBeenQueued = dbInstance.executions.some(e =>
+          e.deduplication_key === deduplicationKey
         );
         return !hasBeenQueued;
       });
@@ -283,26 +318,27 @@ export class AutomationEngine {
     // --- 2. ANIVERSÁRIOS (Aniversariantes do dia) ---
     const bdayTrigger = dbInstance.automations.find(a => a.event === 'aniversario');
     if (bdayTrigger && bdayTrigger.isActive) {
-      const todayStr = new Date().toISOString().slice(5, 10); // MM-DD
-      const currentYear = new Date().getFullYear().toString();
+      const now = new Date();
 
       const eligibleBdays = dbInstance.customers.filter(customer => {
-        if (!customer.birthDate) return false;
-        const bdayMonthDay = customer.birthDate.slice(5, 10);
-        if (bdayMonthDay !== todayStr) return false;
+        const decision = evaluateBirthday({
+          customerId: customer.id,
+          birthDate: customer.birthDate,
+          now
+        });
+        if (!decision.eligible) return false;
 
-        // Check if already queued for this year
-        const hasBeenQueued = dbInstance.executions.some(e => 
-          e.automacao === 'aniversario' && 
-          e.customer_id === customer.id && 
-          e.created_at.startsWith(currentYear) &&
-          e.status !== 'erro_definitivo'
+        const hasBeenQueued = dbInstance.executions.some(e =>
+          e.deduplication_key === decision.deduplicationKey
         );
         return !hasBeenQueued;
       });
 
       for (const customer of eligibleBdays) {
-        const execution = await dbInstance.queueAutomation('aniversario', { customer });
+        const execution = await dbInstance.queueAutomation('aniversario', {
+          customer,
+          automationReferenceDate: now
+        });
         if (execution) {
           count++;
           logs.push(`[Birthday Scan] Mensagem agendada. ClienteId=${customer.id}.`);
@@ -313,44 +349,84 @@ export class AutomationEngine {
     // --- 3. CLIENTES INATIVOS ---
     const inactiveTrigger = dbInstance.automations.find(a => a.event === 'cliente_inativo');
     if (inactiveTrigger && inactiveTrigger.isActive) {
-      const inactiveDays = inactiveTrigger.inactiveDays || 30;
-      const thresholdDate = new Date(Date.now() - inactiveDays * 24 * 60 * 60 * 1000);
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const inactiveDays = inactiveTrigger.inactiveDays ?? 30;
+      const minServices = inactiveTrigger.minServices ?? 1;
+      const now = new Date();
 
       for (const customer of dbInstance.customers) {
-        // Find appointments for this customer
         const customerAppts = dbInstance.appointments.filter(a => a.customerId === customer.id);
-        if (customerAppts.length === 0) continue;
-
-        // Find latest appointment
-        const latestAppt = customerAppts.reduce((latest, current) => {
-          return new Date(current.dateTime) > new Date(latest.dateTime) ? current : latest;
+        const decision = evaluateInactiveCustomer({
+          customerId: customer.id,
+          appointments: customerAppts,
+          inactiveDays,
+          minServices,
+          now
         });
+        if (!decision.eligible) continue;
 
-        const lastApptDate = new Date(latestAppt.dateTime);
-        const hasFutureAppt = customerAppts.some(a => new Date(a.dateTime) > new Date());
+        const cadenceDecision = evaluateInactiveCustomerCadence({
+          customerDecision: decision,
+          appointments: customerAppts,
+          executions: dbInstance.executions.filter(
+            execution =>
+              execution.automacao === 'cliente_inativo'
+              && execution.customer_id === customer.id
+          ),
+          now
+        });
+        if (cadenceDecision.action !== 'queue') continue;
 
-        // Eligible if last service was > inactiveDays ago and has no future services scheduled
-        if (lastApptDate < thresholdDate && !hasFutureAppt) {
-          // Check if queued in the last 30 days to avoid spam
-          const hasBeenQueued = dbInstance.executions.some(e => 
-            e.automacao === 'cliente_inativo' && 
-            e.customer_id === customer.id && 
-            e.created_at >= thirtyDaysAgo &&
-            e.status !== 'erro_definitivo'
+        const latestAppointment = customerAppts.find(
+          appointment => appointment.id === decision.lastCompletedAppointment.id
+        );
+        if (!latestAppointment) continue;
+
+        const vehicle = dbInstance.vehicles.find(
+          item => item.id === latestAppointment.vehicleId
+        );
+        const service = dbInstance.services.find(
+          item => item.id === latestAppointment.serviceId
+        );
+        const execution = await dbInstance.queueAutomation('cliente_inativo', {
+          customer,
+          vehicle,
+          service,
+          appointment: latestAppointment,
+          inactiveCustomerStage: cadenceDecision.stage
+        });
+        if (execution) {
+          count++;
+          logs.push(
+            `[Inactive Scan] Etapa ${cadenceDecision.stage} agendada. ClienteId=${customer.id}.`
           );
+        }
+      }
+    }
 
-          if (!hasBeenQueued) {
-            const vehicle = dbInstance.vehicles.find(v => v.customerId === customer.id);
-            const execution = await dbInstance.queueAutomation('cliente_inativo', {
-              customer,
-              vehicle
-            });
-            if (execution) {
-              count++;
-              logs.push(`[Inactive Scan] Mensagem agendada. ClienteId=${customer.id}.`);
-            }
-          }
+    // --- 4. ACOMPANHAMENTOS DE ORÇAMENTO (7 e 14 dias) ---
+    for (const event of ['orcamento_followup_7d', 'orcamento_followup_14d'] as const) {
+      const trigger = dbInstance.automations.find(item => item.event === event);
+      if (!trigger?.isActive) continue;
+
+      for (const budget of dbInstance.budgets) {
+        const decision = evaluateBudgetAutomation({
+          event,
+          budget,
+          appointments: dbInstance.appointments,
+          executions: dbInstance.executions
+        });
+        if (decision.action !== 'queue') continue;
+
+        const customer = dbInstance.customers.find(item => item.id === budget.customerId);
+        if (!customer) continue;
+        const execution = await dbInstance.queueAutomation(event, {
+          customer,
+          vehicle: dbInstance.vehicles.find(item => item.id === budget.vehicleId),
+          budget
+        });
+        if (execution) {
+          count++;
+          logs.push(`[Budget Scan] ${event} agendado. ClienteId=${customer.id}; OrcamentoId=${budget.id}.`);
         }
       }
     }
@@ -480,26 +556,31 @@ export class AutomationEngine {
       }
 
       if (exec.automacao === 'lembrete_agendamento') {
-        const reminderDecision = await this.revalidateReminderExecution(exec);
-        if (reminderDecision.action === 'retry') {
-          const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-          exec.status = 'pendente';
-          exec.data_execucao = retryAt;
-          exec.data_proxima_tentativa = retryAt;
-          exec.resposta_api = 'Lembrete adiado: não foi possível revalidar o agendamento atual.';
-          exec.updated_at = new Date().toISOString();
-          await this.persistClaimedExecution(exec, logs);
-          logs.push(`[Reminder Safety] Execução ${exec.id} adiada para revalidação.`);
-          continue;
-        }
-        if (reminderDecision.action === 'cancel') {
-          exec.status = 'cancelada';
-          exec.resposta_api = `Lembrete cancelado na revalidação: ${reminderDecision.reason}.`;
-          exec.updated_at = new Date().toISOString();
-          await this.persistClaimedExecution(exec, logs);
-          logs.push(`[Reminder Safety] Execução ${exec.id} cancelada: ${reminderDecision.reason}.`);
-          continue;
-        }
+        const reminderCanBeSent = await this.validateReminderBeforeSend(exec, logs);
+        if (!reminderCanBeSent) continue;
+      }
+
+      if (exec.automacao === 'cliente_inativo') {
+        const inactiveMessageCanBeSent = await this.validateInactiveCustomerBeforeSend(
+          exec,
+          activeTrigger,
+          logs
+        );
+        if (!inactiveMessageCanBeSent) continue;
+      }
+
+      if (exec.automacao === 'aniversario') {
+        const birthdayMessageCanBeSent = await this.validateBirthdayBeforeSend(exec, logs);
+        if (!birthdayMessageCanBeSent) continue;
+      }
+
+      if (
+        exec.automacao === 'orcamento_enviado'
+        || exec.automacao === 'orcamento_followup_7d'
+        || exec.automacao === 'orcamento_followup_14d'
+      ) {
+        const budgetMessageCanBeSent = await this.validateBudgetBeforeSend(exec, logs);
+        if (!budgetMessageCanBeSent) continue;
       }
 
       processedCount++;
@@ -524,32 +605,11 @@ export class AutomationEngine {
         }
       };
 
-      const { success, apiResponse } = await sendAutomationPayload(payloadBody, {
+      const transportResult = await sendAutomationPayload(payloadBody, {
         secrets: getIntegrationSecrets()
       });
 
-      // --- RETRIES SYSTEM (Requirement 5) ---
-      if (success) {
-        exec.status = 'sucesso';
-        exec.resposta_api = redactExternalResponse(apiResponse);
-        logs.push(`[Queue Processor] Sucesso ao enviar execução ${exec.id}.`);
-      } else {
-        logs.push(`[Queue Processor] Falha ao enviar execução ${exec.id} (Tentativa ${exec.tentativas}/3).`);
-        if (exec.tentativas < 3) {
-          exec.status = 'pendente';
-          // Retry delay: 5 minutes after 1st attempt, 15 minutes after 2nd attempt
-          const backoffMinutes = exec.tentativas === 1 ? 5 : 15;
-          const nextAttemptDate = new Date(Date.now() + backoffMinutes * 60 * 1000);
-          exec.data_execucao = nextAttemptDate.toISOString();
-          exec.data_proxima_tentativa = nextAttemptDate.toISOString();
-          exec.resposta_api = `[TENTATIVA FALHOU] ${redactExternalResponse(apiResponse)}`;
-          logs.push(`[Queue Processor] Reagendado para ${exec.data_execucao} (${backoffMinutes}min de espera).`);
-        } else {
-          exec.status = 'erro_definitivo';
-          exec.resposta_api = `[ERRO DEFINITIVO] ${redactExternalResponse(apiResponse)}`;
-          logs.push(`[Queue Processor] Falha permanente na execução ${exec.id}.`);
-        }
-      }
+      const accepted = this.applyProviderResult(exec, transportResult, logs);
 
       exec.updated_at = new Date().toISOString();
       const persisted = await this.persistClaimedExecution(exec, logs);
@@ -564,8 +624,8 @@ export class AutomationEngine {
         triggerEvent: triggerName,
         targetName: targetCustomer ? 'Cliente protegido' : 'Cliente',
         targetContact: maskPhone(exec.telefone),
-        payload: `ID da execução: ${exec.id}\nTentativa: ${exec.tentativas}\nStatus técnico: ${exec.resposta_api}`,
-        status: exec.status === 'sucesso' ? 'sucesso' : 'erro',
+        payload: `ID da execução: ${exec.id}\nTentativa: ${exec.tentativas}\nStatus técnico: ${exec.resposta_api}${persisted ? '' : '\nPersistência do resultado não confirmada.'}`,
+        status: accepted && persisted ? 'sucesso' : 'erro',
         timestamp: exec.updated_at
       };
       dbInstance.addLog(newLog);
@@ -579,48 +639,13 @@ export class AutomationEngine {
     return processedCount;
   }
 
-  private async revalidateReminderExecution(
-    exec: ClaimedAutomationExecution
-  ): Promise<ReminderDeliveryDecision> {
-    let appointment = exec.appointment_id
-      ? dbInstance.appointments.find(item => item.id === exec.appointment_id)
-      : undefined;
-    let appointmentLoadFailed = false;
-
-    if (dbInstance.config.useRealSupabase && exec.appointment_id) {
-      const supabase = dbInstance.getSupabaseClient();
-      const { data, error } = await supabase
-        .from('agendamentos')
-        .select(
-          'id,cliente_id,veiculo_id,servico_id,data_agendamento,hora_agendamento,status,valor_servico,tempo_real,observacoes,created_at,updated_at'
-        )
-        .eq('id', exec.appointment_id)
-        .maybeSingle();
-
-      appointmentLoadFailed = Boolean(error);
-      appointment = data && !error
-        ? mapDbAppointmentToFrontend(data)
-        : undefined;
-    }
-
-    return classifyReminderDelivery({
-      appointmentId: exec.appointment_id,
-      deduplicationKey: exec.deduplication_key,
-      appointmentFound: Boolean(appointment),
-      appointmentLoadFailed,
-      appointmentStatus: appointment?.status,
-      appointmentDateTime: appointment?.dateTime,
-      now: new Date(),
-      advanceHours: dbInstance.config.reminderAdvanceHours || 1
-    });
-  }
-
   private mapClaimedExecution(row: any): ClaimedAutomationExecution {
     return {
       id: row.id,
       empresa_id: row.empresa_id,
       automacao: row.automacao,
       appointment_id: row.appointment_id || undefined,
+      budget_id: row.orcamento_id || undefined,
       customer_id: row.customer_id,
       telefone: row.telefone || '',
       mensagem: row.mensagem || '',
@@ -634,6 +659,354 @@ export class AutomationEngine {
       updated_at: row.updated_at,
       claim_token: row.claim_token
     };
+  }
+
+  private async validateReminderBeforeSend(
+    exec: ClaimedAutomationExecution,
+    logs: string[]
+  ): Promise<boolean> {
+    let appointmentFound = false;
+    let appointmentLoadFailed = false;
+    let appointmentStatus: string | null = null;
+    let currentSchedule: string | null = null;
+
+    if (dbInstance.config.useRealSupabase) {
+      const supabase = dbInstance.getSupabaseClient();
+      const { data, error } = await supabase
+        .from('agendamentos')
+        .select('status,data_agendamento,hora_agendamento')
+        .eq('id', exec.appointment_id || '')
+        .maybeSingle();
+
+      appointmentLoadFailed = Boolean(error);
+      appointmentFound = Boolean(data);
+      appointmentStatus = data?.status || null;
+      currentSchedule = buildReminderScheduleFromDatabase(
+        data?.data_agendamento,
+        data?.hora_agendamento
+      );
+
+      if (error) {
+        safeLog('error', 'automation_engine.reminder.validate', 'error', {
+          entityId: exec.id,
+          error
+        });
+      }
+    } else {
+      const appointment = dbInstance.appointments.find(
+        item => item.id === exec.appointment_id
+      );
+      appointmentFound = Boolean(appointment);
+      appointmentStatus = appointment?.status || null;
+      currentSchedule = appointment?.dateTime || null;
+    }
+
+    const decision = evaluateReminderExecution({
+      appointmentId: exec.appointment_id,
+      executionDeduplicationKey: exec.deduplication_key,
+      appointmentFound,
+      appointmentLoadFailed,
+      appointmentStatus,
+      currentSchedule
+    });
+    if (decision.action === 'send') return true;
+
+    exec.updated_at = new Date().toISOString();
+    if (decision.action === 'retry') {
+      const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      exec.status = 'pendente';
+      exec.data_execucao = retryAt;
+      exec.data_proxima_tentativa = retryAt;
+      exec.resposta_api = 'Execução adiada: não foi possível validar o agendamento antes do lembrete.';
+    } else {
+      exec.status = 'cancelada';
+      exec.resposta_api = decision.reason === 'schedule_changed'
+        ? 'Execução cancelada: o agendamento foi reagendado.'
+        : decision.reason === 'appointment_missing'
+          ? 'Execução cancelada: agendamento não encontrado.'
+          : 'Execução cancelada: o estado atual do agendamento não permite lembrete.';
+    }
+
+    await this.persistClaimedExecution(exec, logs);
+    logs.push(
+      `[Queue Processor] Lembrete ${exec.id} não enviado: ${decision.reason}.`
+    );
+    return false;
+  }
+
+  private async validateInactiveCustomerBeforeSend(
+    exec: ClaimedAutomationExecution,
+    trigger: NonNullable<ReturnType<typeof dbInstance.automations.find>>,
+    logs: string[]
+  ): Promise<boolean> {
+    let appointmentLoadFailed = false;
+    let appointments: Appointment[] = [];
+
+    if (dbInstance.config.useRealSupabase) {
+      const supabase = dbInstance.getSupabaseClient();
+      const { data, error } = await supabase
+        .from('agendamentos')
+        .select(
+          'id,cliente_id,veiculo_id,servico_id,data_agendamento,hora_agendamento,status,observacoes,created_at,updated_at'
+        )
+        .eq('cliente_id', exec.customer_id);
+
+      appointmentLoadFailed = Boolean(error);
+      appointments = error ? [] : (data || []).map(mapDbAppointmentToFrontend);
+      if (error) {
+        safeLog('error', 'automation_engine.inactive_customer.validate', 'error', {
+          entityId: exec.id,
+          error
+        });
+      }
+    } else {
+      appointments = dbInstance.appointments.filter(
+        appointment => appointment.customerId === exec.customer_id
+      );
+    }
+
+    const customerDecision = appointmentLoadFailed
+      ? undefined
+      : evaluateInactiveCustomer({
+          customerId: exec.customer_id,
+          appointments,
+          inactiveDays: trigger.inactiveDays ?? 30,
+          minServices: trigger.minServices ?? 1
+        });
+    const decision = evaluateInactiveCustomerExecution({
+      appointmentLoadFailed,
+      executionDeduplicationKey: exec.deduplication_key,
+      customerDecision,
+      appointments,
+      executions: dbInstance.executions.filter(
+        execution =>
+          execution.automacao === 'cliente_inativo'
+          && execution.customer_id === exec.customer_id
+      )
+    });
+    if (decision.action === 'send') return true;
+
+    exec.updated_at = new Date().toISOString();
+    if (decision.action === 'retry') {
+      const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      exec.status = 'pendente';
+      exec.data_execucao = retryAt;
+      exec.data_proxima_tentativa = retryAt;
+      exec.resposta_api = 'Execução adiada: não foi possível revalidar o histórico do cliente.';
+    } else {
+      exec.status = 'cancelada';
+      exec.resposta_api = decision.reason === 'future_appointment'
+        ? 'Execução cancelada: cliente possui retorno futuro.'
+        : decision.reason === 'active_service'
+          ? 'Execução cancelada: cliente possui atendimento em andamento.'
+          : decision.reason === 'appointment_after_first_message'
+            ? 'Execução cancelada: cliente realizou um novo agendamento após o início da sequência.'
+            : decision.reason === 'previous_stage_not_accepted'
+              ? 'Execução cancelada: etapa anterior da sequência não foi aceita pelo provedor.'
+              : decision.reason === 'follow_up_not_due'
+                ? 'Execução cancelada: prazo da etapa de inatividade ainda não foi alcançado.'
+          : decision.reason === 'inactivity_episode_changed'
+            ? 'Execução cancelada: o ciclo de inatividade do cliente mudou.'
+            : 'Execução cancelada: cliente não atende mais aos critérios de inatividade.';
+    }
+
+    await this.persistClaimedExecution(exec, logs);
+    logs.push(
+      `[Queue Processor] Cliente inativo ${exec.id} não enviado: ${decision.reason}.`
+    );
+    return false;
+  }
+
+  private async validateBirthdayBeforeSend(
+    exec: ClaimedAutomationExecution,
+    logs: string[]
+  ): Promise<boolean> {
+    let customerLoadFailed = false;
+    let customerFound = false;
+    let birthDate: string | null = null;
+
+    if (dbInstance.config.useRealSupabase) {
+      const supabase = dbInstance.getSupabaseClient();
+      const { data, error } = await supabase
+        .from('clientes')
+        .select('data_aniversario')
+        .eq('id', exec.customer_id)
+        .maybeSingle();
+
+      customerLoadFailed = Boolean(error);
+      customerFound = Boolean(data);
+      birthDate = data?.data_aniversario || null;
+      if (error) {
+        safeLog('error', 'automation_engine.birthday.validate', 'error', {
+          entityId: exec.id,
+          error
+        });
+      }
+    } else {
+      const customer = dbInstance.customers.find(item => item.id === exec.customer_id);
+      customerFound = Boolean(customer);
+      birthDate = customer?.birthDate || null;
+    }
+
+    const decision = evaluateBirthdayExecution({
+      customerLoadFailed,
+      customerFound,
+      customerId: exec.customer_id,
+      birthDate,
+      executionDeduplicationKey: exec.deduplication_key
+    });
+    if (decision.action === 'send') return true;
+
+    exec.updated_at = new Date().toISOString();
+    if (decision.action === 'retry') {
+      const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      exec.status = 'pendente';
+      exec.data_execucao = retryAt;
+      exec.data_proxima_tentativa = retryAt;
+      exec.resposta_api = 'ExecuÃ§Ã£o adiada: nÃ£o foi possÃ­vel revalidar o aniversÃ¡rio do cliente.';
+    } else {
+      exec.status = 'cancelada';
+      exec.resposta_api = decision.reason === 'customer_missing'
+        ? 'ExecuÃ§Ã£o cancelada: cliente nÃ£o encontrado.'
+        : decision.reason === 'deduplication_key_mismatch'
+          ? 'ExecuÃ§Ã£o cancelada: a referÃªncia anual do aniversÃ¡rio mudou.'
+          : decision.reason === 'not_birthday_today'
+            ? 'ExecuÃ§Ã£o cancelada: o aniversÃ¡rio nÃ£o corresponde ao dia atual em SÃ£o Paulo.'
+            : 'ExecuÃ§Ã£o cancelada: data de aniversÃ¡rio ausente ou invÃ¡lida.';
+    }
+
+    await this.persistClaimedExecution(exec, logs);
+    logs.push(
+      `[Queue Processor] AniversÃ¡rio ${exec.id} nÃ£o enviado: ${decision.reason}.`
+    );
+    return false;
+  }
+
+  private async validateBudgetBeforeSend(
+    exec: ClaimedAutomationExecution,
+    logs: string[]
+  ): Promise<boolean> {
+    let budget: Budget | undefined;
+    let appointments: Appointment[] = [];
+    let loadFailed = false;
+
+    if (dbInstance.config.useRealSupabase) {
+      const supabase = dbInstance.getSupabaseClient();
+      const [budgetResult, itemsResult, appointmentsResult] = await Promise.all([
+        supabase.from('orcamentos').select('*').eq('id', exec.budget_id || '').maybeSingle(),
+        supabase.from('orcamento_itens').select('*').eq('orcamento_id', exec.budget_id || ''),
+        supabase.from('agendamentos')
+          .select('id,cliente_id,veiculo_id,servico_id,data_agendamento,hora_agendamento,status,observacoes,created_at,updated_at')
+          .eq('cliente_id', exec.customer_id)
+      ]);
+      loadFailed = Boolean(budgetResult.error || itemsResult.error || appointmentsResult.error);
+      if (!loadFailed && budgetResult.data) {
+        const items = (itemsResult.data || []).map(mapDbBudgetItemToFrontend);
+        budget = mapDbBudgetToFrontend(budgetResult.data, items);
+        appointments = (appointmentsResult.data || []).map(mapDbAppointmentToFrontend);
+      }
+      if (loadFailed) {
+        safeLog('error', 'automation_engine.budget.validate', 'error', {
+          entityId: exec.id,
+          error: budgetResult.error || itemsResult.error || appointmentsResult.error
+        });
+      }
+    } else {
+      budget = dbInstance.budgets.find(item => item.id === exec.budget_id);
+      appointments = dbInstance.appointments.filter(item => item.customerId === exec.customer_id);
+    }
+
+    if (loadFailed) {
+      const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      exec.status = 'pendente';
+      exec.data_execucao = retryAt;
+      exec.data_proxima_tentativa = retryAt;
+      exec.resposta_api = 'Execução adiada: não foi possível revalidar o orçamento.';
+      exec.updated_at = new Date().toISOString();
+      await this.persistClaimedExecution(exec, logs);
+      return false;
+    }
+
+    if (!budget) {
+      exec.status = 'cancelada';
+      exec.resposta_api = 'Execução cancelada: orçamento não encontrado.';
+      exec.updated_at = new Date().toISOString();
+      await this.persistClaimedExecution(exec, logs);
+      return false;
+    }
+
+    const decision = evaluateBudgetAutomation({
+      event: exec.automacao as 'orcamento_enviado' | 'orcamento_followup_7d' | 'orcamento_followup_14d',
+      budget,
+      appointments,
+      executions: dbInstance.executions,
+      currentExecutionId: exec.id
+    });
+    if (decision.action === 'send') return true;
+
+    if (decision.action === 'wait') {
+      const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      exec.status = 'pendente';
+      exec.data_execucao = retryAt;
+      exec.data_proxima_tentativa = retryAt;
+      exec.resposta_api = 'Execução adiada: o marco temporal do orçamento ainda não foi confirmado.';
+    } else {
+      exec.status = 'cancelada';
+      exec.resposta_api = `Execução cancelada: ${decision.reason}.`;
+    }
+    exec.updated_at = new Date().toISOString();
+    await this.persistClaimedExecution(exec, logs);
+    logs.push(`[Queue Processor] Orçamento ${exec.id} não enviado: ${decision.reason}.`);
+    return false;
+  }
+
+  private applyProviderResult(
+    exec: ClaimedAutomationExecution,
+    result: AutomationTransportResult,
+    logs: string[]
+  ): boolean {
+    const decision = decideProviderExecution({
+      outcome: result.outcome,
+      attempts: exec.tentativas,
+      retryAfterSeconds: result.retryAfterSeconds
+    });
+
+    exec.updated_at = new Date().toISOString();
+    if (decision.action === 'accepted') {
+      // O status legado "sucesso" significa apenas aceitação pelo provedor.
+      // A entrega não é presumida sem callback autoritativo.
+      exec.status = 'sucesso';
+      exec.data_proxima_tentativa = undefined;
+      exec.resposta_api = result.apiResponse;
+      logs.push(`[Queue Processor] Execução ${exec.id} aceita pelo provedor; entrega não confirmada.`);
+      return true;
+    }
+
+    if (decision.action === 'retry') {
+      const nextAttemptDate = new Date(Date.now() + decision.delaySeconds * 1000);
+      exec.status = 'pendente';
+      exec.data_execucao = nextAttemptDate.toISOString();
+      exec.data_proxima_tentativa = nextAttemptDate.toISOString();
+      exec.resposta_api = `[RETRY AGENDADO] ${result.apiResponse}`;
+      logs.push(
+        `[Queue Processor] Execução ${exec.id} rejeitada antes da aceitação; retry em ${decision.delaySeconds}s.`
+      );
+      return false;
+    }
+
+    exec.status = 'erro_definitivo';
+    exec.data_proxima_tentativa = undefined;
+    exec.resposta_api = decision.reason === 'ambiguous_failure'
+      ? `[RESULTADO AMBÍGUO] ${result.apiResponse}`
+      : decision.reason === 'retry_exhausted'
+        ? `[ERRO DEFINITIVO] Limite de tentativas atingido. ${result.apiResponse}`
+        : `[ERRO DEFINITIVO] ${result.apiResponse}`;
+    logs.push(
+      decision.reason === 'ambiguous_failure'
+        ? `[Queue Processor] Execução ${exec.id} encerrada sem retry: resultado ambíguo.`
+        : `[Queue Processor] Falha definitiva na execução ${exec.id}.`
+    );
+    return false;
   }
 
   private async persistClaimedExecution(
@@ -721,13 +1094,32 @@ export class AutomationEngine {
       employeeId: 'Matheus',
       notes: 'Execução manual de teste.'
     };
+    const isBudgetAutomation = automation.event === 'orcamento_enviado'
+      || automation.event === 'orcamento_followup_7d'
+      || automation.event === 'orcamento_followup_14d';
+    const sampleBudget = isBudgetAutomation ? dbInstance.budgets[0] : undefined;
+    if (isBudgetAutomation && !sampleBudget) {
+      return { success: false, log: 'Cadastre um orçamento antes de testar esta automação.' };
+    }
+    const budgetCustomer = sampleBudget
+      ? dbInstance.customers.find(item => item.id === sampleBudget.customerId)
+      : undefined;
+    const budgetVehicle = sampleBudget
+      ? dbInstance.vehicles.find(item => item.id === sampleBudget.vehicleId)
+      : undefined;
+    if (sampleBudget && !budgetCustomer) {
+      return { success: false, log: 'O cliente do orçamento não está disponível para o teste.' };
+    }
+    const targetSampleCustomer = budgetCustomer || sampleCustomer;
 
     // Queue the execution
     const queuedExecution = await dbInstance.queueAutomation(automation.event, {
-      customer: sampleCustomer as Customer,
-      vehicle: sampleVehicle as Vehicle,
+      customer: targetSampleCustomer as Customer,
+      vehicle: (budgetVehicle || sampleVehicle) as Vehicle,
       service: sampleService as Service,
-      appointment: sampleAppointment
+      appointment: isBudgetAutomation ? undefined : sampleAppointment,
+      budget: sampleBudget,
+      deduplicationKeyOverride: `manual_test:${automation.event}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`
     });
 
     if (!queuedExecution) {
@@ -776,20 +1168,19 @@ export class AutomationEngine {
       phone: execution.telefone,
       message: execution.mensagem,
       customer: {
-        id: sampleCustomer.id,
-        name: sampleCustomer.name,
+        id: targetSampleCustomer.id,
+        name: targetSampleCustomer.name,
         phone: execution.telefone
       }
     };
 
-    const { success, apiResponse } = await sendAutomationPayload(payloadBody, {
+    const transportResult = await sendAutomationPayload(payloadBody, {
       secrets: getIntegrationSecrets()
     });
 
-    execution.status = success ? 'sucesso' : 'erro_definitivo';
-    execution.resposta_api = redactExternalResponse(apiResponse);
-    execution.updated_at = new Date().toISOString();
-    await this.persistClaimedExecution(execution, []);
+    const persistenceLogs: string[] = [];
+    const accepted = this.applyProviderResult(execution, transportResult, persistenceLogs);
+    const persisted = await this.persistClaimedExecution(execution, persistenceLogs);
 
     // Add to logs list
     const newLog: AutomationLog = {
@@ -797,8 +1188,8 @@ export class AutomationEngine {
       triggerEvent: automation.name + ' (Teste Manual)',
       targetName: 'Cliente de teste protegido',
       targetContact: maskPhone(execution.telefone),
-      payload: `ID da execução: ${execution.id}\nStatus técnico: ${execution.resposta_api}`,
-      status: success ? 'sucesso' : 'erro',
+      payload: `ID da execução: ${execution.id}\nStatus técnico: ${execution.resposta_api}${persisted ? '' : '\nPersistência do resultado não confirmada.'}`,
+      status: accepted && persisted ? 'sucesso' : 'erro',
       timestamp: execution.updated_at
     };
     dbInstance.addLog(newLog);
@@ -807,7 +1198,12 @@ export class AutomationEngine {
       dbInstance.onSyncCallback();
     }
 
-    return { success, log: redactExternalResponse(apiResponse) };
+    return {
+      success: accepted && persisted,
+      log: persisted
+        ? execution.resposta_api || 'Resultado indisponível.'
+        : `${execution.resposta_api || 'Resultado do provedor indisponível.'} Persistência no banco não confirmada; não repita o teste automaticamente.`
+    };
   }
 }
 

@@ -23,7 +23,6 @@ export const PUBLIC_SYSTEM_CONFIG_KEYS = [
   'automationStartHour',
   'automationEndHour',
   'automation24Hours',
-  'reminderAdvanceHours',
   'agenda',
   'theme'
 ] as const satisfies readonly (keyof PublicSystemConfig)[];
@@ -144,15 +143,6 @@ export const toPublicSystemConfig = (value: unknown): Partial<PublicSystemConfig
 
   if (typeof value.useRealSupabase === 'boolean') result.useRealSupabase = value.useRealSupabase;
   if (typeof value.referralActive === 'boolean') result.referralActive = value.referralActive;
-  if (typeof value.automation24Hours === 'boolean') result.automation24Hours = value.automation24Hours;
-  if (
-    typeof value.reminderAdvanceHours === 'number'
-    && Number.isInteger(value.reminderAdvanceHours)
-    && value.reminderAdvanceHours >= 1
-    && value.reminderAdvanceHours <= 168
-  ) {
-    result.reminderAdvanceHours = value.reminderAdvanceHours;
-  }
   if (typeof value.referralDiscountPercent === 'number' && Number.isFinite(value.referralDiscountPercent)) {
     result.referralDiscountPercent = value.referralDiscountPercent;
   }
@@ -194,4 +184,3 @@ export const sanitizeLegacyConfigStorage = (
     // Storage can be unavailable in privacy mode; the in-memory public config remains safe.
   }
 };
-

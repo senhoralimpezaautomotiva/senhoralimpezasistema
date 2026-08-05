@@ -12,22 +12,26 @@ const OPERATIONAL_EVENTS = new Set([
   'novo_agendamento',
   'servico_iniciado',
   'servico_finalizado',
-  'pagamento_recebido'
+  'pagamento_recebido',
+  'orcamento_enviado'
 ]);
 
 interface AutomationEventPolicyInput {
   event: string;
   appointmentId?: string | null;
+  budgetId?: string | null;
   configurationLoaded: boolean;
   customersLoaded: boolean;
   appointmentsLoaded: boolean;
   vehiclesLoaded: boolean;
   servicesLoaded: boolean;
+  budgetsLoaded?: boolean;
   customerFound: boolean;
   appointmentFound: boolean;
   appointmentStatus?: string;
   vehicleFound: boolean;
   serviceFound: boolean;
+  budgetFound?: boolean;
   duplicateExecution: boolean;
   trigger?: AutomationTrigger;
   phone: string;
@@ -51,6 +55,9 @@ export const classifyAutomationEvent = (
   if (input.appointmentId && (!input.vehiclesLoaded || !input.servicesLoaded)) {
     return { action: 'pendente_retry', reason: 'appointment_context_sync_incomplete' };
   }
+  if (input.budgetId && !input.budgetsLoaded) {
+    return { action: 'pendente_retry', reason: 'budget_sync_incomplete' };
+  }
   if (input.duplicateExecution) {
     return { action: 'processado', reason: 'duplicate_execution' };
   }
@@ -59,6 +66,9 @@ export const classifyAutomationEvent = (
   }
   if (input.appointmentId && !input.appointmentFound) {
     return { action: 'pendente_retry', reason: 'appointment_missing_from_memory' };
+  }
+  if (input.budgetId && !input.budgetFound) {
+    return { action: 'pendente_retry', reason: 'budget_missing_from_memory' };
   }
   if (input.appointmentStatus === 'cancelado') {
     return { action: 'ignorado_definitivo', reason: 'appointment_cancelled' };

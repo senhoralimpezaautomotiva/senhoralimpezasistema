@@ -6,19 +6,19 @@
 BEGIN;
 
 -- 1. Adicionar coluna deduplication_key para garantia de idempotência
-ALTER TABLE public.automacoes_execucoes
+ALTER TABLE public.automacoes_execucoes 
 ADD COLUMN IF NOT EXISTS deduplication_key TEXT;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_automacoes_execucoes_dedup_key
-ON public.automacoes_execucoes (deduplication_key)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_automacoes_execucoes_dedup_key 
+ON public.automacoes_execucoes (deduplication_key) 
 WHERE deduplication_key IS NOT NULL;
 
 -- 2. Atualizar CHECK constraint da coluna status para aceitar 'cancelada'
-ALTER TABLE public.automacoes_execucoes
+ALTER TABLE public.automacoes_execucoes 
 DROP CONSTRAINT IF EXISTS automacoes_execucoes_status_check;
 
-ALTER TABLE public.automacoes_execucoes
-ADD CONSTRAINT automacoes_execucoes_status_check
+ALTER TABLE public.automacoes_execucoes 
+ADD CONSTRAINT automacoes_execucoes_status_check 
 CHECK (status IN ('pendente', 'processando', 'sucesso', 'erro_definitivo', 'cancelada'));
 
 -- 3. Função do Trigger de Novo Cliente (Degradável: exceções secundárias registradas sem interromper o cadastro)

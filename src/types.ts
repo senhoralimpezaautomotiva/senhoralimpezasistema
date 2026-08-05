@@ -121,12 +121,45 @@ export interface AutomationTrigger {
   id: string;
   name: string;
   description: string;
-  event: 'novo_cliente' | 'novo_agendamento' | 'servico_iniciado' | 'servico_finalizado' | 'cliente_inativo' | 'aniversario' | 'pagamento_recebido' | 'lembrete_agendamento';
+  event: 'novo_cliente' | 'novo_agendamento' | 'servico_iniciado' | 'servico_finalizado' | 'cliente_inativo' | 'aniversario' | 'pagamento_recebido' | 'lembrete_agendamento' | 'orcamento_enviado' | 'orcamento_followup_7d' | 'orcamento_followup_14d';
   isActive: boolean;
   template: string;
   inactiveDays?: number;
   minServices?: number;
 }
+
+export type BudgetStatus = 'rascunho' | 'enviado' | 'aceito' | 'recusado' | 'cancelado' | 'vencido' | 'convertido';
+
+export interface BudgetItem {
+  id: string;
+  budgetId: string;
+  serviceId?: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export interface Budget {
+  id: string;
+  number?: number;
+  customerId: string;
+  vehicleId?: string;
+  status: BudgetStatus;
+  subtotal: number;
+  discount: number;
+  total: number;
+  validUntil: string;
+  notes: string;
+  sentAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  items: BudgetItem[];
+}
+
+export type BudgetDraft = Omit<Budget, 'id' | 'number' | 'status' | 'sentAt' | 'createdAt' | 'updatedAt'> & {
+  id?: string;
+};
 
 export interface PublicSystemConfig {
   companyName: string;
@@ -150,7 +183,6 @@ export interface PublicSystemConfig {
   automationStartHour?: string; // e.g., "08:00"
   automationEndHour?: string;   // e.g., "20:00"
   automation24Hours?: boolean;
-  reminderAdvanceHours?: number; // e.g., 1, 2 or 10 hours
 
   // Agenda settings
   agenda?: AgendaConfig;
@@ -191,6 +223,7 @@ export interface AutomationExecution {
   empresa_id: string;
   automacao: string;
   appointment_id?: string;
+  budget_id?: string;
   customer_id: string;
   telefone: string;
   mensagem: string;
@@ -200,6 +233,8 @@ export interface AutomationExecution {
   deduplication_key?: string;
   data_execucao: string; // ISO format
   data_proxima_tentativa?: string; // ISO format
+  claimed_at?: string; // ISO format; token do claim nunca é exposto ao painel
+  claim_expires_at?: string; // ISO format
   created_at: string;
   updated_at: string;
 }
@@ -229,6 +264,7 @@ export type SystemModuleId =
   | 'dashboard'
   | 'clientes'
   | 'servicos'
+  | 'orcamentos'
   | 'agenda'
   | 'historico'
   | 'financeiro'

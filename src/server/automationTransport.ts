@@ -4,6 +4,13 @@ import {
   PrivateIntegrationConfig
 } from './integrationSecrets';
 import { safeLog } from '../security/safeOutput';
+import {
+  AutomationProvider,
+  AutomationProviderOutcome,
+  classifyProviderHttpResponse,
+  describeProviderOutcome,
+  parseRetryAfterSeconds
+} from '../db/automationProviderPolicy';
 
 export interface AutomationTransportPayload {
   executionId: string;
@@ -22,7 +29,11 @@ export interface AutomationTransportPayload {
 export interface AutomationTransportResult {
   success: boolean;
   apiResponse: string;
-  provider: 'make' | 'zapi' | 'simulated';
+  provider: AutomationProvider;
+  outcome: AutomationProviderOutcome;
+  confirmation: 'make_queued' | 'zapi_queued' | 'none';
+  statusCode?: number;
+  retryAfterSeconds?: number;
 }
 
 interface AutomationTransportDependencies {
@@ -32,6 +43,65 @@ interface AutomationTransportDependencies {
 }
 
 const PROVIDER_REQUEST_TIMEOUT_MS = 30_000;
+const MAX_PROVIDER_RESPONSE_BYTES = 4_096;
+
+const buildTransportResult = (input: {
+  provider: AutomationProvider;
+  outcome: AutomationProviderOutcome;
+  confirmation?: AutomationTransportResult['confirmation'];
+  statusCode?: number;
+  retryAfterSeconds?: number;
+}): AutomationTransportResult => ({
+  success: input.outcome === 'accepted',
+  apiResponse: describeProviderOutcome(input),
+  provider: input.provider,
+  outcome: input.outcome,
+  confirmation: input.confirmation || 'none',
+  statusCode: input.statusCode,
+  retryAfterSeconds: input.retryAfterSeconds
+});
+
+const readBoundedResponseText = async (
+  response: Response,
+  maxBytes = MAX_PROVIDER_RESPONSE_BYTES
+): Promise<string | null> => {
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return null;
+  if (!response.body) return '';
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+
+  const merged = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(merged);
+};
+
+const hasZapiMessageIdentifier = async (response: Response): Promise<boolean> => {
+  try {
+    const responseText = await readBoundedResponseText(response);
+    if (responseText === null) return false;
+    const body = JSON.parse(responseText) as Record<string, unknown>;
+    return typeof body.messageId === 'string' && body.messageId.trim().length > 0;
+  } catch {
+    return false;
+  }
+};
 
 const sendToZapi = async (
   payload: AutomationTransportPayload,
@@ -61,22 +131,24 @@ const sendToZapi = async (
       body: JSON.stringify({ phone: payload.phone, message: payload.message }),
       signal: AbortSignal.timeout(timeoutMs)
     });
-    safeLog('info', 'automation.trace.5.confirmation', response.ok ? 'success' : 'error', {
+    let outcome = classifyProviderHttpResponse('zapi', response.status);
+    if (outcome === 'accepted' && !await hasZapiMessageIdentifier(response)) {
+      outcome = 'ambiguous_failure';
+    }
+    safeLog('info', 'automation.trace.5.confirmation', outcome === 'accepted' ? 'success' : 'error', {
       operation: 'Z-API',
       statusCode: response.status,
       entityId: payload.executionId
     });
-    return {
-      success: response.ok,
-      apiResponse: `[Z-API] Status HTTP: ${response.status}`,
-      provider: 'zapi'
-    };
+    return buildTransportResult({
+      provider: 'zapi',
+      outcome,
+      confirmation: outcome === 'accepted' ? 'zapi_queued' : 'none',
+      statusCode: response.status,
+      retryAfterSeconds: parseRetryAfterSeconds(response.headers.get('retry-after'))
+    });
   } catch {
-    return {
-      success: false,
-      apiResponse: '[Z-API] Falha de comunicação com o provedor',
-      provider: 'zapi'
-    };
+    return buildTransportResult({ provider: 'zapi', outcome: 'ambiguous_failure' });
   }
 };
 
@@ -105,7 +177,7 @@ export const sendAutomationPayload = async (
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...payload,
-          // Compatibility aliases for the currently deployed Make scenario.
+          // Aliases temporários preservados para o cenário Make já publicado.
           telefone: payload.phone,
           formattedMessage: payload.message
         }),
@@ -118,29 +190,33 @@ export const sendAutomationPayload = async (
       });
 
       if (response.ok) {
-        return {
-          success: true,
-          apiResponse: `[Make Webhook] Status HTTP: ${response.status}`,
-          provider: 'make'
-        };
+        return buildTransportResult({
+          provider: 'make',
+          outcome: 'accepted',
+          confirmation: 'make_queued',
+          statusCode: response.status
+        });
       }
       const makeEndpointUnavailable = response.status === 404 || response.status === 410;
       if (makeEndpointUnavailable && hasZapiCredentials(secrets)) {
         return sendToZapi(payload, secrets, fetchImpl, timeoutMs, `make_http_${response.status}`);
       }
-      return {
-        success: false,
-        apiResponse: `[Make Webhook] Status HTTP: ${response.status}`,
-        provider: 'make'
-      };
+      const makeErrorBody = response.status === 400
+        ? await readBoundedResponseText(response, 128)
+        : null;
+      const makeQueueFull = makeErrorBody?.trim().toLowerCase() === 'queue is full';
+      return buildTransportResult({
+        provider: 'make',
+        outcome: makeQueueFull
+          ? 'retryable_failure'
+          : classifyProviderHttpResponse('make', response.status),
+        statusCode: response.status,
+        retryAfterSeconds: parseRetryAfterSeconds(response.headers.get('retry-after'))
+      });
     } catch {
       // Falha de comunicação é ambígua: o Make pode ter aceitado a requisição
       // antes da conexão cair. Não há fallback para evitar envio duplicado.
-      return {
-        success: false,
-        apiResponse: '[Make Webhook] Falha de comunicação com o provedor',
-        provider: 'make'
-      };
+      return buildTransportResult({ provider: 'make', outcome: 'ambiguous_failure' });
     }
   }
 
@@ -148,13 +224,12 @@ export const sendAutomationPayload = async (
     return sendToZapi(payload, secrets, fetchImpl, timeoutMs);
   }
 
-  safeLog('info', 'automation.trace.3_4.unconfigured', 'success', {
+  safeLog('error', 'automation.trace.3_4.unconfigured', 'error', {
     entityId: payload.executionId,
     phone: payload.phone
   });
-  return {
-    success: true,
-    apiResponse: 'Envio simulado: nenhum provedor configurado no ambiente do servidor',
-    provider: 'simulated'
-  };
+  return buildTransportResult({
+    provider: 'unconfigured',
+    outcome: 'permanent_failure'
+  });
 };

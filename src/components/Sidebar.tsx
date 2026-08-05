@@ -19,7 +19,8 @@ import {
   ChevronRight,
   Gift,
   MessageSquare,
-  UserCog
+  UserCog,
+  FileText
 } from 'lucide-react';
 import { SystemConfig, SystemModuleId, User } from '../types';
 import { hasModulePermission } from '../db/localDb';
@@ -51,6 +52,7 @@ export default function Sidebar({ activeTab, setActiveTab, user, onLogout, confi
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'clientes', label: 'Clientes', icon: Users },
     { id: 'servicos', label: 'Serviços', icon: Wrench },
+    { id: 'orcamentos', label: 'Orçamentos', icon: FileText },
     { id: 'agenda', label: 'Agenda', icon: Calendar },
     { id: 'historico', label: 'Histórico', icon: History },
     { id: 'financeiro', label: 'Financeiro', icon: DollarSign },

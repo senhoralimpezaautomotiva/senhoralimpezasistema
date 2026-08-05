@@ -131,12 +131,33 @@ export const redactExternalResponse = (value: unknown): string => {
   if (/nenhum provedor configurado/i.test(response)) {
     return 'Envio simulado: nenhum provedor configurado';
   }
+  if (/claim abandonado|reconciliação necessária/i.test(response)) {
+    return 'Reconciliação necessária: claim expirado; reenvio automático bloqueado.';
+  }
 
+  const provider = response.match(/Provedor (Make|Z-API|não configurado):/i)?.[1];
+  const status = response.match(/HTTP\s+(\d{3})/i)?.[1];
+  const http = status ? ` HTTP ${status}.` : '';
+  if (provider && /entrega (?:ainda )?não confirmada/i.test(response)) {
+    return `Provedor ${provider}: solicitação aceita; entrega não confirmada.${http}`;
+  }
+  if (provider && /resultado ambíguo/i.test(response)) {
+    return `Provedor ${provider}: resultado ambíguo; retry automático bloqueado.${http}`;
+  }
+  if (provider && /rejeitada antes da aceitação/i.test(response)) {
+    const exhausted = /limite de tentativas atingido/i.test(response);
+    return exhausted
+      ? `Provedor ${provider}: falha definitiva após o limite de tentativas.${http}`
+      : `Provedor ${provider}: rejeição recuperável antes da aceitação.${http}`;
+  }
+  if (provider && /configuração ausente ou requisição rejeitada definitivamente/i.test(response)) {
+    return `Provedor ${provider}: falha definitiva de configuração ou requisição.${http}`;
+  }
   const statuses = Array.from(response.matchAll(/Status HTTP:\s*(\d{3})/gi))
     .map(match => Number(match[1]))
-    .filter(status => status >= 100 && status <= 599);
+    .filter(statusCode => statusCode >= 100 && statusCode <= 599);
   if (statuses.length > 0) {
-    return statuses.map(status => `Provedor externo: HTTP ${status}`).join('\n');
+    return statuses.map(statusCode => `Provedor externo: HTTP ${statusCode}`).join('\n');
   }
   if (/falha de comunica[cç][aã]o/i.test(response)) {
     return 'Provedor externo: falha de comunicação';

@@ -6,7 +6,7 @@
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { dbInstance, hasModulePermission, mapDbUserToFrontend } from './db/localDb';
-import { Customer, Vehicle, Service, Appointment, CashTransaction, SystemConfig, AutomationTrigger, AppointmentStatus, User, CreateUserInput, CommissionRecord, SystemModuleId, HistoryRecord } from './types';
+import { Customer, Vehicle, Service, Appointment, CashTransaction, SystemConfig, AutomationTrigger, AppointmentStatus, User, CreateUserInput, CommissionRecord, SystemModuleId, HistoryRecord, Budget, BudgetDraft, BudgetStatus } from './types';
 import { ShieldAlert, LogOut, LayoutDashboard } from 'lucide-react';
 import { safeLog } from './security/safeOutput';
 import { isClientPortalEnabled } from './config/publicEnvironment';
@@ -15,6 +15,7 @@ const ALL_MODULE_IDS: SystemModuleId[] = [
   'dashboard',
   'clientes',
   'servicos',
+  'orcamentos',
   'agenda',
   'historico',
   'financeiro',
@@ -32,6 +33,7 @@ import Sidebar from './components/Sidebar';
 const DashboardModule = lazy(() => import('./components/DashboardModule'));
 const ClientesModule = lazy(() => import('./components/ClientesModule'));
 const ServicosModule = lazy(() => import('./components/ServicosModule'));
+const OrcamentosModule = lazy(() => import('./components/OrcamentosModule'));
 const AgendaModule = lazy(() => import('./components/AgendaModule'));
 const HistoricoModule = lazy(() => import('./components/HistoricoModule'));
 const FinanceiroModule = lazy(() => import('./components/FinanceiroModule'));
@@ -70,6 +72,7 @@ export default function App() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [finances, setFinances] = useState<CashTransaction[]>([]);
   const [config, setConfig] = useState<SystemConfig>(dbInstance.config);
@@ -256,6 +259,7 @@ export default function App() {
     setVehicles([...dbInstance.vehicles]);
     setServices([...dbInstance.services]);
     setAppointments([...dbInstance.appointments]);
+    setBudgets([...dbInstance.budgets]);
     setHistory([...dbInstance.history]);
     setFinances([...dbInstance.finances]);
     setConfig({ ...dbInstance.config });
@@ -461,6 +465,25 @@ export default function App() {
     }
   };
 
+  const handleSaveBudget = async (draft: BudgetDraft) => {
+    const budget = await dbInstance.saveBudget(draft);
+    syncWithDatabase();
+    return budget;
+  };
+
+  const handleSendBudget = async (id: string) => {
+    await dbInstance.sendBudget(id);
+    syncWithDatabase();
+  };
+
+  const handleUpdateBudgetStatus = async (
+    id: string,
+    status: Exclude<BudgetStatus, 'rascunho' | 'enviado'>
+  ) => {
+    await dbInstance.updateBudgetStatus(id, status);
+    syncWithDatabase();
+  };
+
   // Finances handlers
   const handleAddTransaction = async (t: Omit<CashTransaction, 'id'>) => {
     try {
@@ -628,6 +651,20 @@ export default function App() {
             onAddService={handleAddService}
             onUpdateService={handleUpdateService}
             onDeleteService={handleDeleteService}
+          />
+        );
+      case 'orcamentos':
+        return (
+          <OrcamentosModule
+            budgets={budgets}
+            customers={customers}
+            vehicles={vehicles}
+            services={services}
+            currentUser={user}
+            onSave={handleSaveBudget}
+            onSend={handleSendBudget}
+            onUpdateStatus={handleUpdateBudgetStatus}
+            onAddCustomer={handleAddCustomer}
           />
         );
       case 'agenda':

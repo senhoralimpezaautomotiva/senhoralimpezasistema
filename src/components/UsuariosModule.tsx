@@ -55,6 +55,7 @@ const MODULE_LABELS: Record<SystemModuleId, { name: string; description: string 
   dashboard: { name: 'Dashboard', description: 'Visão geral de métricas, faturamento e resumo diário' },
   clientes: { name: 'Clientes', description: 'Cadastro, edição, histórico e programa de indicações' },
   servicos: { name: 'Serviços', description: 'Tabela de preços comercial e serviços por porte' },
+  orcamentos: { name: 'Orçamentos', description: 'Criação, envio e acompanhamento de propostas comerciais' },
   agenda: { name: 'Agenda', description: 'Calendários, grade de horários e agendamentos de serviços' },
   historico: { name: 'Histórico', description: 'Registro de atendimentos concluídos e entregues' },
   financeiro: { name: 'Financeiro', description: 'Fluxo de caixa, receitas, despesas e lançamentos' },

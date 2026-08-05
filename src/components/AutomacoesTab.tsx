@@ -23,7 +23,10 @@ import { dbInstance, hasModulePermission } from '../db/localDb';
 import { adminApiFetch } from '../utils/adminApiClient';
 import { safeLog } from '../security/safeOutput';
 import { useManagedTimeout } from '../hooks/useManagedTimeout';
-import { isWithinReminderWindow } from '../utils/operationalWindow';
+import {
+  classifyAutomationExecutionOperationalState,
+  summarizeAutomationOperations
+} from '../db/automationMonitoring';
 
 interface AutomacoesTabProps {
   automations: AutomationTrigger[];
@@ -61,6 +64,13 @@ export default function AutomacoesTab({
     pendingCount: 0,
     errorCount: 0,
     successRate: 100,
+    operationalStatus: 'healthy',
+    stalledPendingCount: 0,
+    activeClaimCount: 0,
+    abandonedClaimCount: 0,
+    ambiguousCount: 0,
+    retryScheduledCount: 0,
+    reconciliationRequiredCount: 0,
     lastExecutionTime: 'Nunca',
     nextExecutionTime: 'Nenhuma agendada'
   });
@@ -73,10 +83,6 @@ export default function AutomacoesTab({
   // Operational Window states
   const [startHour, setStartHour] = useState(dbInstance.config.automationStartHour || '08:00');
   const [endHour, setEndHour] = useState(dbInstance.config.automationEndHour || '20:00');
-  const [automation24Hours, setAutomation24Hours] = useState(dbInstance.config.automation24Hours === true);
-  const [reminderAdvanceHours, setReminderAdvanceHours] = useState(
-    dbInstance.config.reminderAdvanceHours || 1
-  );
   const [isSavingHours, setIsSavingHours] = useState(false);
   const [saveHoursSuccess, setSaveHoursSuccess] = useState(false);
 
@@ -113,6 +119,7 @@ export default function AutomacoesTab({
   const fallbackLocalData = () => {
     const executions = dbInstance.executions;
     const now = new Date();
+    const operationalSummary = summarizeAutomationOperations(executions, now);
     const todayStr = now.toISOString().slice(0, 10);
     const executionsToday = executions.filter(e => e.updated_at.startsWith(todayStr));
     const successfulToday = executionsToday.filter(e => e.status === 'sucesso').length;
@@ -136,6 +143,7 @@ export default function AutomacoesTab({
       pendingCount,
       errorCount,
       successRate,
+      ...operationalSummary,
       lastExecutionTime: lastExecution ? new Date(lastExecution.updated_at).toLocaleTimeString() : 'Nunca',
       nextExecutionTime: nextExecution ? new Date(nextExecution.data_execucao).toLocaleTimeString() : 'Nenhuma'
     });
@@ -153,7 +161,8 @@ export default function AutomacoesTab({
         status: e.status,
         tentativas: e.tentativas,
         resposta_api: e.resposta_api,
-        data_execucao: e.data_execucao
+        data_execucao: e.data_execucao,
+        operational_state: classifyAutomationExecutionOperationalState(e, now)
       };
     }));
   };
@@ -206,7 +215,9 @@ export default function AutomacoesTab({
         const timeStr = new Date().toLocaleTimeString('pt-BR');
         setEngineLogs(prev => [
           ...prev,
-          `[Console] Executado com sucesso às ${timeStr}!`,
+          result.success
+            ? `[Console] Solicitação aceita pelo provedor às ${timeStr}; entrega não confirmada.`
+            : `[Console] Solicitação não aceita pelo provedor às ${timeStr}.`,
           `[Servidor] ${result.log}`
         ]);
         loadDashboardData();
@@ -228,15 +239,10 @@ export default function AutomacoesTab({
     try {
       dbInstance.config.automationStartHour = startHour;
       dbInstance.config.automationEndHour = endHour;
-      dbInstance.config.automation24Hours = automation24Hours;
-      dbInstance.config.reminderAdvanceHours = reminderAdvanceHours;
       dbInstance.save();
       
       if (dbInstance.config.useRealSupabase) {
-        const saved = await dbInstance.saveConfigToSupabase();
-        if (!saved) {
-          throw new Error('Não foi possível persistir a janela operacional.');
-        }
+        await dbInstance.saveConfigToSupabase();
       }
       
       setSaveHoursSuccess(true);
@@ -260,17 +266,24 @@ export default function AutomacoesTab({
     setIsEditingTemplate(false);
   };
 
-  // Get upcoming appointments in the configured reminder window
-  const getUpcomingReminderAppointments = () => {
+  // Get upcoming appointments in the next 60 minutes
+  const getUpcoming60MinAppointments = () => {
     const now = new Date();
+    const limit = new Date(now.getTime() + 60 * 60 * 1000);
     
     return appointments.filter(appt => {
       if (appt.status === 'cancelado') return false;
-      return isWithinReminderWindow(appt.dateTime, now, reminderAdvanceHours);
+      try {
+        const apptDate = new Date(appt.dateTime);
+        if (isNaN(apptDate.getTime())) return false;
+        return apptDate >= now && apptDate <= limit;
+      } catch (e) {
+        return false;
+      }
     });
   };
 
-  const upcomingAppts = getUpcomingReminderAppointments();
+  const upcomingAppts = getUpcoming60MinAppointments();
 
   // Filter history based on search query and status filter
   const filteredHistory = history.filter(item => {
@@ -328,7 +341,7 @@ export default function AutomacoesTab({
         </div>
 
         <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-1 relative overflow-hidden">
-          <span className="text-[10px] font-mono uppercase text-slate-500">Mensagens Enviadas</span>
+          <span className="text-[10px] font-mono uppercase text-slate-500">Aceitas pelo provedor</span>
           <div className="text-xl font-bold text-emerald-400 tracking-tight flex items-center gap-1.5 mt-1">
             <Check size={16} className="text-emerald-400" />
             {stats.sentCount}
@@ -341,21 +354,39 @@ export default function AutomacoesTab({
             <Clock size={16} className="text-amber-400" />
             {stats.pendingCount}
           </div>
-        </div>
-
-        <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-1 relative overflow-hidden">
-          <span className="text-[10px] font-mono uppercase text-slate-500">Erros de Envio</span>
-          <div className="text-xl font-bold text-rose-500 tracking-tight flex items-center gap-1.5 mt-1">
-            <AlertTriangle size={16} className="text-rose-500" />
-            {stats.errorCount}
+          <div className={`text-[9px] mt-1 font-mono ${stats.stalledPendingCount > 0 ? 'text-rose-400' : 'text-slate-500'}`}>
+            {stats.stalledPendingCount} atrasada(s) · {stats.retryScheduledCount} retry(s)
           </div>
         </div>
 
         <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-1 relative overflow-hidden">
-          <span className="text-[10px] font-mono uppercase text-slate-500">Taxa de Sucesso</span>
+          <span className="text-[10px] font-mono uppercase text-slate-500">Erros / Reconciliação</span>
+          <div className="text-xl font-bold text-rose-500 tracking-tight flex items-center gap-1.5 mt-1">
+            <AlertTriangle size={16} className="text-rose-500" />
+            {stats.errorCount}
+          </div>
+          <div className="text-[9px] mt-1 font-mono text-slate-500">
+            {stats.reconciliationRequiredCount} requer(em) análise
+          </div>
+        </div>
+
+        <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-1 relative overflow-hidden">
+          <span className="text-[10px] font-mono uppercase text-slate-500">Taxa de aceitação</span>
           <div className="text-xl font-bold text-white tracking-tight mt-1 flex items-center gap-1">
             <span>{stats.successRate}%</span>
-            <span className="text-[9px] text-emerald-400 font-mono font-normal">OK</span>
+            <span className={`text-[9px] font-mono font-normal ${
+              stats.operationalStatus === 'healthy'
+                ? 'text-emerald-400'
+                : stats.operationalStatus === 'attention'
+                  ? 'text-amber-400'
+                  : 'text-rose-400'
+            }`}>
+              {stats.operationalStatus === 'healthy'
+                ? 'ESTÁVEL'
+                : stats.operationalStatus === 'attention'
+                  ? 'ATENÇÃO'
+                  : 'CRÍTICO'}
+            </span>
           </div>
         </div>
 
@@ -388,7 +419,7 @@ export default function AutomacoesTab({
                   Lembrete de Agendamento
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Varredura de agendamentos futuros nas próximas {reminderAdvanceHours} hora{reminderAdvanceHours === 1 ? '' : 's'}, usando o fuso America/Sao_Paulo.
+                  Varredura de agendamentos futuros entre agora e 60 minutos à frente. O backend enfileira e envia o lembrete automaticamente.
                 </p>
               </div>
 
@@ -535,7 +566,7 @@ export default function AutomacoesTab({
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-slate-400 uppercase font-mono">Horário de Início</span>
                 <input 
@@ -544,19 +575,6 @@ export default function AutomacoesTab({
                   onChange={(e) => setStartHour(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-amber-500 rounded-lg px-3 py-2 text-white font-mono text-xs focus:outline-none"
                 />
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase font-mono">Antecedência do Lembrete</span>
-                <select
-                  value={reminderAdvanceHours}
-                  onChange={(event) => setReminderAdvanceHours(Number(event.target.value))}
-                  className="w-full bg-slate-950 border border-slate-800 focus:ring-1 focus:ring-amber-500 rounded-lg px-3 py-2 text-white font-mono text-xs focus:outline-none"
-                >
-                  <option value={1}>1 hora antes</option>
-                  <option value={2}>2 horas antes</option>
-                  <option value={10}>10 horas antes</option>
-                </select>
               </div>
 
               <div className="space-y-1">
@@ -569,21 +587,6 @@ export default function AutomacoesTab({
                 />
               </div>
             </div>
-
-            <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950 px-4 py-3">
-              <span>
-                <span className="block text-xs font-bold text-white">Envios 24 horas</span>
-                <span className="block text-[10px] text-slate-400">
-                  Ignora a janela operacional enquanto estiver ligado.
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                checked={automation24Hours}
-                onChange={(event) => setAutomation24Hours(event.target.checked)}
-                className="h-4 w-4 accent-emerald-500"
-              />
-            </label>
 
             <div className="flex justify-end pt-2">
               <button
@@ -606,16 +609,16 @@ export default function AutomacoesTab({
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Calendar size={16} className="text-slate-400" />
-                Agendamentos Elegíveis (Próximas {reminderAdvanceHours}h)
+                Agendamentos Elegíveis (Próximos 60m)
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Agendamentos detectados no fuso America/Sao_Paulo.
+                Agendamentos detectados na varredura iminente de 60 minutos.
               </p>
             </div>
 
             {upcomingAppts.length === 0 ? (
               <div className="py-8 text-center text-slate-500 text-xs italic bg-slate-950/20 rounded-xl border border-slate-850/60">
-                Nenhum agendamento previsto para as próximas {reminderAdvanceHours} hora{reminderAdvanceHours === 1 ? '' : 's'}. Use o módulo de Agenda para criar um teste.
+                Nenhum agendamento previsto para os próximos 60 minutos. Use o módulo de Agenda para criar um teste.
               </div>
             ) : (
               <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
@@ -691,7 +694,7 @@ export default function AutomacoesTab({
               <option value="todos">Todos os Status</option>
               <option value="pendente">Fila / Pendente</option>
               <option value="processando">Processando</option>
-              <option value="sucesso">Sucesso</option>
+              <option value="sucesso">Aceita pelo provedor</option>
               <option value="erro_definitivo">Erro Permanente</option>
             </select>
           </div>
@@ -747,7 +750,11 @@ export default function AutomacoesTab({
                                 ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20 animate-pulse'
                                 : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                         }`}>
-                          {item.status === 'erro_definitivo' ? 'falhou' : item.status}
+                          {item.status === 'sucesso'
+                            ? 'aceita'
+                            : item.status === 'erro_definitivo'
+                              ? 'falhou'
+                              : item.status}
                         </span>
                       </td>
                       <td className="p-3 text-right whitespace-nowrap">
@@ -766,7 +773,7 @@ export default function AutomacoesTab({
                         <td colSpan={7} className="p-4 border-t border-b border-slate-850">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
                             <div className="space-y-2 bg-slate-950 p-3 rounded-lg border border-slate-850">
-                              <span className="text-[10px] text-amber-400 uppercase font-bold">Conteúdo do Envio</span>
+                              <span className="text-[10px] text-amber-400 uppercase font-bold">Conteúdo solicitado ao provedor</span>
                               <p className="text-slate-300 font-sans whitespace-pre-wrap leading-relaxed">
                                 {item.mensagem}
                               </p>
@@ -774,6 +781,9 @@ export default function AutomacoesTab({
 
                             <div className="space-y-2 bg-slate-950 p-3 rounded-lg border border-slate-850">
                               <span className="text-[10px] text-amber-400 uppercase font-bold">Resposta da API / logs de Integração</span>
+                              {item.operational_state === 'abandoned_claim' || item.operational_state === 'ambiguous' ? (
+                                <p className="text-[10px] text-rose-400 font-bold uppercase">Reenvio automático bloqueado · reconciliação necessária</p>
+                              ) : null}
                               <pre className="text-slate-400 text-[10px] overflow-auto max-h-36 whitespace-pre-wrap">
                                 {item.resposta_api || 'Nenhum log retornado ainda. Aguardando processamento da fila.'}
                               </pre>

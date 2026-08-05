@@ -23,21 +23,25 @@ import {
   SystemModuleId,
   ModulePermission,
   ServiceCommissionRule,
-  CommissionRecord
+  CommissionRecord,
+  Budget,
+  BudgetDraft,
+  BudgetItem,
+  BudgetStatus
 } from '../types';
 import { PREFILLED_VEHICLE_MODELS } from '../data/prefilledModels';
 import { getCurrentDateStr } from '../utils/dateUtils';
 import { sanitizeLegacyConfigStorage, toPublicSystemConfig } from '../security/publicConfig';
 import { maskPhone, safeLog } from '../security/safeOutput';
 import { getPublicSupabaseEnvironment } from '../config/publicEnvironment';
+import { isWithinOperationalWindow, getNextStartTime } from '../utils/operationalWindow';
+import { buildReminderDeduplicationKey } from './reminderPolicy';
 import {
-  AUTOMATION_TIME_ZONE,
-  getNextStartTime,
-  isWithinOperationalWindow,
-  isWithinReminderWindow,
-  parseAppointmentDateTime
-} from '../utils/operationalWindow';
-import { buildReminderDeduplicationKey } from './reminderDeliveryPolicy';
+  buildInactiveCustomerDeduplicationKey,
+  type InactiveCustomerStage
+} from './inactiveCustomerPolicy';
+import { buildBirthdayDeduplicationKey } from './birthdayPolicy';
+import { buildBudgetDeduplicationKey } from './budgetPolicy';
 export { getServicePrice } from '../utils/servicePricing';
 
 // Constants for Local Storage Keys
@@ -53,7 +57,8 @@ const KEYS = {
   LOGS: 'sl_logs',
   VEHICLE_MODELS: 'sl_vehicle_models',
   USERS: 'sl_users',
-  COMMISSIONS: 'sl_commissions'
+  COMMISSIONS: 'sl_commissions',
+  BUDGETS: 'sl_budgets'
 };
 
 const SENSITIVE_BROWSER_STORAGE_KEYS = new Set<string>([
@@ -65,6 +70,7 @@ const SENSITIVE_BROWSER_STORAGE_KEYS = new Set<string>([
   KEYS.LOGS,
   KEYS.USERS,
   KEYS.COMMISSIONS,
+  KEYS.BUDGETS,
   'sl_executions'
 ]);
 
@@ -74,6 +80,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Record<SystemModuleId, M
     dashboard: { view: true, create: true, edit: true, delete: true },
     clientes: { view: true, create: true, edit: true, delete: true },
     servicos: { view: true, create: true, edit: true, delete: true },
+    orcamentos: { view: true, create: true, edit: true, delete: true },
     agenda: { view: true, create: true, edit: true, delete: true },
     historico: { view: true, create: true, edit: true, delete: true },
     financeiro: { view: true, create: true, edit: true, delete: true },
@@ -88,6 +95,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Record<SystemModuleId, M
     dashboard: { view: true, create: true, edit: true, delete: true },
     clientes: { view: true, create: true, edit: true, delete: true },
     servicos: { view: true, create: true, edit: true, delete: true },
+    orcamentos: { view: true, create: true, edit: true, delete: true },
     agenda: { view: true, create: true, edit: true, delete: true },
     historico: { view: true, create: true, edit: true, delete: true },
     financeiro: { view: true, create: true, edit: true, delete: true },
@@ -102,6 +110,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Record<SystemModuleId, M
     dashboard: { view: true, create: false, edit: false, delete: false },
     clientes: { view: true, create: true, edit: true, delete: false },
     servicos: { view: true, create: false, edit: false, delete: false },
+    orcamentos: { view: true, create: true, edit: true, delete: false },
     agenda: { view: true, create: true, edit: true, delete: false },
     historico: { view: true, create: true, edit: false, delete: false },
     financeiro: { view: true, create: true, edit: false, delete: false },
@@ -116,6 +125,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Record<SystemModuleId, M
     dashboard: { view: true, create: false, edit: false, delete: false },
     clientes: { view: true, create: false, edit: false, delete: false },
     servicos: { view: true, create: false, edit: false, delete: false },
+    orcamentos: { view: true, create: false, edit: false, delete: false },
     agenda: { view: true, create: false, edit: true, delete: false },
     historico: { view: true, create: true, edit: false, delete: false },
     financeiro: { view: false, create: false, edit: false, delete: false },
@@ -130,6 +140,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Record<SystemModuleId, M
     dashboard: { view: true, create: false, edit: false, delete: false },
     clientes: { view: true, create: true, edit: true, delete: false },
     servicos: { view: true, create: false, edit: false, delete: false },
+    orcamentos: { view: false, create: false, edit: false, delete: false },
     agenda: { view: true, create: true, edit: true, delete: false },
     historico: { view: true, create: false, edit: false, delete: false },
     financeiro: { view: false, create: false, edit: false, delete: false },
@@ -210,7 +221,6 @@ const DEFAULT_CONFIG: SystemConfig = {
   automationStartHour: '08:00',
   automationEndHour: '20:00',
   automation24Hours: false,
-  reminderAdvanceHours: 1,
   theme: 'dark',
   agenda: {
     days: [
@@ -355,10 +365,34 @@ const DEFAULT_AUTOMATIONS: AutomationTrigger[] = [
   {
     id: 'at_lembrete_agendamento',
     name: 'Lembrete de Agendamento',
-    description: 'Envia uma mensagem automática com a antecedência configurada para o lembrete.',
+    description: 'Envia uma mensagem automática lembrando o cliente sobre seu agendamento iminente (60 minutos antes).',
     event: 'lembrete_agendamento',
     isActive: true,
     template: 'Olá, *{nome}*! Passando para lembrar que seu agendamento está agendado para hoje às *{data_hora}* com o veículo *{veiculo}* (Serviço: *{servico}*). Estamos te aguardando no endereço: Av. das Nações Unidas, 14205! ✨🚗'
+  },
+  {
+    id: 'at_orcamento_enviado',
+    name: 'Envio de Orçamento',
+    description: 'Envia o orçamento quando o profissional confirma o envio.',
+    event: 'orcamento_enviado',
+    isActive: true,
+    template: 'Olá, *{nome}*! Segue o orçamento *#{orcamento_numero}*:\n\n{orcamento_itens}\n\n*Total:* R$ {orcamento_total}\n*Válido até:* {orcamento_validade}'
+  },
+  {
+    id: 'at_orcamento_followup_7d',
+    name: 'Acompanhamento de Orçamento — 7 dias',
+    description: 'Retoma automaticamente um orçamento pendente após 7 dias.',
+    event: 'orcamento_followup_7d',
+    isActive: true,
+    template: 'Olá, *{nome}*! Gostaria de saber se deseja aprovar o orçamento *#{orcamento_numero}*, no valor de R$ {orcamento_total}, e agendar o serviço.'
+  },
+  {
+    id: 'at_orcamento_followup_14d',
+    name: 'Acompanhamento de Orçamento — 14 dias',
+    description: 'Faz o segundo contato automático de um orçamento pendente após 14 dias.',
+    event: 'orcamento_followup_14d',
+    isActive: true,
+    template: 'Olá, *{nome}*! Este é um novo contato sobre o orçamento *#{orcamento_numero}*, no valor de R$ {orcamento_total}. Deseja aprovar e agendar o serviço?'
   }
 ];
 
@@ -566,12 +600,14 @@ export function mapFrontendCustomerToDb(c: Partial<Customer>): any {
 
 export function mapDbUserToFrontend(row: any): User {
   let permissions: Record<SystemModuleId, ModulePermission> | undefined = undefined;
+  const roleKey = (row.perfil as UserRole) || 'tecnico';
+  const roleDefaults = DEFAULT_ROLE_PERMISSIONS[roleKey] || DEFAULT_ROLE_PERMISSIONS.tecnico;
 
   if (row.permissions !== undefined && row.permissions !== null) {
     try {
       const parsed = typeof row.permissions === 'string' ? JSON.parse(row.permissions) : row.permissions;
       if (parsed && typeof parsed === 'object') {
-        permissions = parsed;
+        permissions = { ...roleDefaults, ...parsed };
       }
     } catch (e) {
       safeLog('warn', 'user.permissions.parse', 'error', {
@@ -582,8 +618,7 @@ export function mapDbUserToFrontend(row: any): User {
   }
 
   if (permissions === undefined) {
-    const roleKey = (row.perfil as UserRole) || 'tecnico';
-    permissions = DEFAULT_ROLE_PERMISSIONS[roleKey] || DEFAULT_ROLE_PERMISSIONS.tecnico;
+    permissions = roleDefaults;
   }
 
   let commissions: ServiceCommissionRule[] = [];
@@ -990,12 +1025,44 @@ export function mapFrontendAppointmentToDb(a: Partial<Appointment>): any {
   return row;
 }
 
+export function mapDbBudgetItemToFrontend(row: any): BudgetItem {
+  return {
+    id: row.id,
+    budgetId: row.orcamento_id,
+    serviceId: row.servico_id || undefined,
+    description: row.descricao || '',
+    quantity: Number(row.quantidade) || 0,
+    unitPrice: Number(row.valor_unitario) || 0,
+    total: Number(row.total) || 0
+  };
+}
+
+export function mapDbBudgetToFrontend(row: any, items: BudgetItem[] = []): Budget {
+  return {
+    id: row.id,
+    number: row.numero !== undefined ? Number(row.numero) : undefined,
+    customerId: row.cliente_id,
+    vehicleId: row.veiculo_id || undefined,
+    status: row.status as BudgetStatus,
+    subtotal: Number(row.subtotal) || 0,
+    discount: Number(row.desconto) || 0,
+    total: Number(row.total) || 0,
+    validUntil: row.validade,
+    notes: row.observacoes || '',
+    sentAt: row.sent_at || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    items: items.filter(item => item.budgetId === row.id)
+  };
+}
+
 // Database class
 class LocalDatabase {
   customers: Customer[] = [];
   vehicles: Vehicle[] = [];
   services: Service[] = [];
   appointments: Appointment[] = [];
+  budgets: Budget[] = [];
   history: HistoryRecord[] = [];
   finances: CashTransaction[] = [];
   config: SystemConfig = DEFAULT_CONFIG;
@@ -1012,7 +1079,8 @@ class LocalDatabase {
     customersLoaded: false,
     vehiclesLoaded: false,
     servicesLoaded: false,
-    appointmentsLoaded: false
+    appointmentsLoaded: false,
+    budgetsLoaded: false
   };
   
   onSyncCallback: (() => void) | null = null;
@@ -1028,6 +1096,7 @@ class LocalDatabase {
     this.vehicles = getLocalData<Vehicle[]>(KEYS.VEHICLES, isServer ? DEFAULT_VEHICLES : []);
     this.services = getLocalData<Service[]>(KEYS.SERVICES, DEFAULT_SERVICES);
     this.appointments = getLocalData<Appointment[]>(KEYS.APPOINTMENTS, isServer ? DEFAULT_APPOINTMENTS : []);
+    this.budgets = getLocalData<Budget[]>(KEYS.BUDGETS, []);
     this.history = getLocalData<HistoryRecord[]>(KEYS.HISTORY, []);
     this.finances = getLocalData<CashTransaction[]>(KEYS.FINANCES, []);
     this.executions = isServer ? getLocalData<AutomationExecution[]>('sl_executions', []) : [];
@@ -1068,6 +1137,7 @@ class LocalDatabase {
     setLocalData(KEYS.VEHICLES, this.vehicles);
     setLocalData(KEYS.SERVICES, this.services);
     setLocalData(KEYS.APPOINTMENTS, this.appointments);
+    setLocalData(KEYS.BUDGETS, this.budgets);
     setLocalData(KEYS.HISTORY, this.history);
     setLocalData(KEYS.FINANCES, this.finances);
     // Store only non-critical interface cache, removing legacy configuration keys to meet requirement
@@ -1134,7 +1204,6 @@ class LocalDatabase {
         'automation_start_hour',
         'automation_end_hour',
         'automation_24_hours',
-        'reminder_advance_hours',
         'agenda',
         'automations',
         'updated_at'
@@ -1163,9 +1232,6 @@ class LocalDatabase {
           automationStartHour: data.automation_start_hour || this.config.automationStartHour,
           automationEndHour: data.automation_end_hour || this.config.automationEndHour,
           automation24Hours: data.automation_24_hours === true,
-          reminderAdvanceHours: Number.isInteger(data.reminder_advance_hours)
-            ? data.reminder_advance_hours
-            : this.config.reminderAdvanceHours,
           agenda: data.agenda ? (typeof data.agenda === 'string' ? JSON.parse(data.agenda) : data.agenda) : this.config.agenda
         };
         
@@ -1229,7 +1295,6 @@ class LocalDatabase {
         automation_start_hour: this.config.automationStartHour || '08:00',
         automation_end_hour: this.config.automationEndHour || '20:00',
         automation_24_hours: this.config.automation24Hours === true,
-        reminder_advance_hours: this.config.reminderAdvanceHours || 1,
         agenda: this.config.agenda ? JSON.stringify(this.config.agenda) : undefined
       });
       
@@ -1251,7 +1316,8 @@ class LocalDatabase {
       customersLoaded: false,
       vehiclesLoaded: false,
       servicesLoaded: false,
-      appointmentsLoaded: false
+      appointmentsLoaded: false,
+      budgetsLoaded: false
     };
     if (!this.config.useRealSupabase) {
       safeLog('info', 'supabase.sync', 'ignored', { reason: 'disabled' });
@@ -1366,6 +1432,35 @@ class LocalDatabase {
         this.appointments = dbAgendamentos.map(mapDbAppointmentToFrontend);
       }
 
+      // 4.1 Fetch Orçamentos e respectivos itens
+      safeLog('info', 'supabase.sync.budgets', 'started');
+      const [budgetsResult, budgetItemsResult] = await Promise.all([
+        supabase.from('orcamentos').select('*').order('created_at', { ascending: false }),
+        supabase.from('orcamento_itens').select('*').order('created_at', { ascending: true })
+      ]);
+      if (budgetsResult.error || budgetItemsResult.error) {
+        const budgetError = budgetsResult.error || budgetItemsResult.error;
+        const tableMissing = budgetError?.code === 'PGRST205'
+          || budgetError?.code === '42P01'
+          || budgetError?.message?.includes('does not exist');
+        if (tableMissing) {
+          this.budgets = [];
+          this.lastSupabaseSync.budgetsLoaded = true;
+          safeLog('warn', 'supabase.sync.budgets', 'ignored', {
+            reason: 'migration_not_applied'
+          });
+        } else {
+          safeLog('error', 'supabase.sync.budgets', 'error', { error: budgetError });
+        }
+      } else {
+        const budgetItems = (budgetItemsResult.data || []).map(mapDbBudgetItemToFrontend);
+        this.budgets = (budgetsResult.data || []).map((row: any) =>
+          mapDbBudgetToFrontend(row, budgetItems)
+        );
+        this.lastSupabaseSync.budgetsLoaded = true;
+        safeLog('info', 'supabase.sync.budgets', 'success', { count: this.budgets.length });
+      }
+
       // 4.6 Fetch Automation Executions
       try {
         safeLog('info', 'supabase.sync.automation_executions', 'started');
@@ -1379,6 +1474,7 @@ class LocalDatabase {
             empresa_id: row.empresa_id || 'c0000000-0000-0000-0000-000000000000',
             automacao: row.automacao || '',
             appointment_id: row.appointment_id || undefined,
+            budget_id: row.orcamento_id || undefined,
             customer_id: row.customer_id || '',
             telefone: row.telefone || '',
             mensagem: row.mensagem || '',
@@ -1388,6 +1484,8 @@ class LocalDatabase {
             deduplication_key: row.deduplication_key || undefined,
             data_execucao: row.data_execucao || new Date().toISOString(),
             data_proxima_tentativa: row.data_proxima_tentativa || undefined,
+            claimed_at: row.claimed_at || undefined,
+            claim_expires_at: row.claim_expires_at || undefined,
             created_at: row.created_at || new Date().toISOString(),
             updated_at: row.updated_at || new Date().toISOString()
           }));
@@ -1502,8 +1600,8 @@ class LocalDatabase {
 
   // --- LOG TRIGGER / AUTOMATION ---
   private triggerAutomation(
-    event: 'novo_cliente' | 'novo_agendamento' | 'servico_iniciado' | 'servico_finalizado' | 'cliente_inativo' | 'aniversario' | 'pagamento_recebido' | 'lembrete_agendamento',
-    context: { customer: Customer; vehicle?: Vehicle; service?: Service; appointment?: Appointment }
+    event: AutomationTrigger['event'],
+    context: { customer: Customer; vehicle?: Vehicle; service?: Service; appointment?: Appointment; budget?: Budget }
   ) {
     const automation = this.automations.find(a => a.event === event);
     if (!automation || !automation.isActive) {
@@ -1519,7 +1617,8 @@ class LocalDatabase {
       'novo_cliente',
       'servico_iniciado',
       'servico_finalizado',
-      'pagamento_recebido'
+      'pagamento_recebido',
+      'orcamento_enviado'
     ].includes(event);
 
     if (isOperationalEvent) {
@@ -1994,6 +2093,135 @@ class LocalDatabase {
     this.save();
   }
 
+  // --- CRUD BUDGETS ---
+  async saveBudget(draft: BudgetDraft): Promise<Budget> {
+    if (!draft.customerId || !draft.validUntil || draft.items.length === 0) {
+      throw new Error('Cliente, validade e ao menos um item são obrigatórios.');
+    }
+    const items = draft.items.map(item => ({
+      ...item,
+      quantity: Number(item.quantity),
+      unitPrice: Number(item.unitPrice),
+      total: Number(item.quantity) * Number(item.unitPrice)
+    }));
+    if (items.some(item => !item.description.trim() || item.quantity <= 0 || item.unitPrice < 0)) {
+      throw new Error('Os itens do orçamento possuem valores inválidos.');
+    }
+    const subtotal = items.reduce((sum, item) => sum + item.total, 0);
+    const discount = Number(draft.discount) || 0;
+    if (discount < 0 || discount > subtotal) {
+      throw new Error('O desconto deve estar entre zero e o subtotal.');
+    }
+
+    let id = draft.id || generateUUID();
+    if (this.config.useRealSupabase) {
+      const supabase = this.getSupabaseClient();
+      const { data, error } = await supabase.rpc('fn_salvar_orcamento', {
+        p_orcamento_id: draft.id || null,
+        p_cliente_id: draft.customerId,
+        p_veiculo_id: draft.vehicleId || null,
+        p_desconto: discount,
+        p_validade: draft.validUntil,
+        p_observacoes: draft.notes || '',
+        p_itens: items.map(item => ({
+          serviceId: item.serviceId || '',
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice
+        }))
+      });
+      if (error || !data) {
+        safeLog('error', 'budget.save', 'error', { entityId: id, error });
+        throw error || new Error('O banco não retornou o orçamento salvo.');
+      }
+      id = String(data);
+      await this.syncWithSupabase();
+      const persisted = this.budgets.find(budget => budget.id === id);
+      if (!persisted) throw new Error('Orçamento salvo, mas não recarregado.');
+      return persisted;
+    }
+
+    const existing = this.budgets.find(budget => budget.id === id);
+    if (existing && existing.status !== 'rascunho') {
+      throw new Error('Somente orçamentos em rascunho podem ser editados.');
+    }
+    const now = new Date().toISOString();
+    const budget: Budget = {
+      id,
+      number: existing?.number || this.budgets.length + 1,
+      customerId: draft.customerId,
+      vehicleId: draft.vehicleId,
+      status: 'rascunho',
+      subtotal,
+      discount,
+      total: subtotal - discount,
+      validUntil: draft.validUntil,
+      notes: draft.notes || '',
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+      items: items.map(item => ({ ...item, id: item.id || generateUUID(), budgetId: id }))
+    };
+    this.budgets = existing
+      ? this.budgets.map(item => item.id === id ? budget : item)
+      : [budget, ...this.budgets];
+    this.save();
+    return budget;
+  }
+
+  async sendBudget(id: string): Promise<void> {
+    const budget = this.budgets.find(item => item.id === id);
+    if (!budget || budget.status !== 'rascunho') {
+      throw new Error('Somente um orçamento em rascunho pode ser enviado.');
+    }
+    const sendAutomation = this.automations.find(item => item.event === 'orcamento_enviado');
+    if (!sendAutomation?.isActive || !sendAutomation.template.trim()) {
+      throw new Error('A automação de envio de orçamento está desativada ou sem template.');
+    }
+    const sentAt = new Date().toISOString();
+    if (this.config.useRealSupabase) {
+      const supabase = this.getSupabaseClient();
+      const { data, error } = await supabase.rpc('fn_enviar_orcamento', {
+        p_orcamento_id: id
+      });
+      if (error || !data) {
+        safeLog('error', 'budget.send', 'error', { entityId: id, error });
+        throw error || new Error('O orçamento não estava mais disponível para envio.');
+      }
+      await this.syncWithSupabase();
+    } else {
+      budget.status = 'enviado';
+      budget.sentAt = sentAt;
+      budget.updatedAt = sentAt;
+      const customer = this.customers.find(item => item.id === budget.customerId);
+      if (customer) {
+        await this.queueAutomation('orcamento_enviado', {
+          customer,
+          vehicle: this.vehicles.find(item => item.id === budget.vehicleId),
+          budget
+        });
+      }
+    }
+    this.save();
+  }
+
+  async updateBudgetStatus(id: string, status: Exclude<BudgetStatus, 'rascunho' | 'enviado'>): Promise<void> {
+    const budget = this.budgets.find(item => item.id === id);
+    if (!budget || budget.status === 'rascunho') {
+      throw new Error('O orçamento precisa ter sido enviado antes da conclusão.');
+    }
+    if (this.config.useRealSupabase) {
+      const supabase = this.getSupabaseClient();
+      const { error } = await supabase.from('orcamentos').update({ status }).eq('id', id);
+      if (error) {
+        safeLog('error', 'budget.status.update', 'error', { entityId: id, error });
+        throw error;
+      }
+    }
+    budget.status = status;
+    budget.updatedAt = new Date().toISOString();
+    this.save();
+  }
+
   async checkAndReleaseReferralCredits(customerId: string): Promise<void> {
     const customer = this.customers.find(c => c.id === customerId);
     if (!customer || !customer.referredBy) return;
@@ -2257,7 +2485,8 @@ class LocalDatabase {
     let sent = 0;
 
     const now = new Date();
-    const advanceHours = this.config.reminderAdvanceHours || 1;
+    // 60 minutes ahead
+    const limit = new Date(now.getTime() + 60 * 60 * 1000);
 
     // Active lembrete automation
     const automation = this.automations.find(a => a.event === 'lembrete_agendamento');
@@ -2274,11 +2503,20 @@ class LocalDatabase {
       if (appt.status === 'cancelado') return false;
       if (appt.reminderSent) return false;
 
-      return isWithinReminderWindow(appt.dateTime, now, advanceHours);
+      try {
+        const apptDate = new Date(appt.dateTime);
+        // Ensure it is a valid date
+        if (isNaN(apptDate.getTime())) return false;
+
+        // Check if between now and 60 minutes ahead
+        return apptDate >= now && apptDate <= limit;
+      } catch (e) {
+        return false;
+      }
     });
 
     checked = eligibleAppts.length;
-    logs.push(`[Reminder Engine] Encontrados ${checked} agendamentos pendentes nas próximas ${advanceHours} hora(s).`);
+    logs.push(`[Reminder Engine] Encontrados ${checked} agendamentos pendentes nas próximas 1 hora.`);
 
     for (const appt of eligibleAppts) {
       const customer = this.customers.find(c => c.id === appt.customerId);
@@ -2377,6 +2615,10 @@ class LocalDatabase {
       vehicle?: Vehicle;
       service?: Service;
       appointment?: Appointment;
+      budget?: Budget;
+      automationReferenceDate?: Date;
+      inactiveCustomerStage?: InactiveCustomerStage;
+      deduplicationKeyOverride?: string;
     }
   ): Promise<AutomationExecution | null> {
     const trigger = this.automations.find(a => a.event === event);
@@ -2428,15 +2670,24 @@ class LocalDatabase {
       servico_iniciado: context.appointment?.id ? `servico_iniciado:${context.appointment.id}` : undefined,
       servico_finalizado: context.appointment?.id ? `servico_finalizado:${context.appointment.id}` : undefined,
       pagamento_recebido: context.appointment?.id ? `pagamento_recebido:${context.appointment.id}` : undefined,
-      lembrete_agendamento: context.appointment?.id && context.appointment.dateTime
-        ? buildReminderDeduplicationKey(
-            context.appointment.id,
-            context.appointment.dateTime
-          )
-        : undefined,
-      aniversario: context.customer?.id ? `aniversario:${context.customer.id}:${new Date().getFullYear()}` : undefined,
+      cliente_inativo: buildInactiveCustomerDeduplicationKey(
+        context.customer?.id,
+        context.appointment?.id,
+        context.inactiveCustomerStage ?? 1
+      ),
+      lembrete_agendamento: buildReminderDeduplicationKey(
+        context.appointment?.id,
+        context.appointment?.dateTime
+      ),
+      aniversario: buildBirthdayDeduplicationKey(
+        context.customer?.id,
+        context.automationReferenceDate
+      ),
+      orcamento_enviado: buildBudgetDeduplicationKey('orcamento_enviado', context.budget?.id),
+      orcamento_followup_7d: buildBudgetDeduplicationKey('orcamento_followup_7d', context.budget?.id),
+      orcamento_followup_14d: buildBudgetDeduplicationKey('orcamento_followup_14d', context.budget?.id),
     };
-    const deduplicationKey = dedupKeyMap[event];
+    const deduplicationKey = context.deduplicationKeyOverride || dedupKeyMap[event];
 
     if (
       deduplicationKey &&
@@ -2454,6 +2705,7 @@ class LocalDatabase {
       empresa_id: 'c0000000-0000-0000-0000-000000000000',
       automacao: event,
       appointment_id: context.appointment?.id,
+      budget_id: context.budget?.id,
       customer_id: context.customer.id,
       telefone: phone,
       mensagem: normalized,
@@ -2481,6 +2733,7 @@ class LocalDatabase {
           empresa_id: execution.empresa_id,
           automacao: execution.automacao,
           appointment_id: execution.appointment_id || null,
+          ...(execution.budget_id ? { orcamento_id: execution.budget_id } : {}),
           customer_id: execution.customer_id,
           telefone: execution.telefone,
           mensagem: execution.mensagem,
@@ -3011,7 +3264,7 @@ export function cleanAndNormalizeMessageString(msg: string): string {
 
 export function renderAndNormalizeMessage(
   template: string,
-  context: { customer: Customer; vehicle?: Vehicle; service?: Service; appointment?: Appointment }
+  context: { customer: Customer; vehicle?: Vehicle; service?: Service; appointment?: Appointment; budget?: Budget }
 ): string {
   let text = template || '';
   
@@ -3045,14 +3298,29 @@ export function renderAndNormalizeMessage(
   text = text.replace(/{servico}/g, resolvedServiceName);
 
   if (context.appointment) {
-    const formattedDate = parseAppointmentDateTime(context.appointment.dateTime).toLocaleString(
-      'pt-BR',
-      { timeZone: AUTOMATION_TIME_ZONE }
-    );
+    const formattedDate = new Date(context.appointment.dateTime).toLocaleString('pt-BR');
     text = text.replace(/{data_hora}/g, formattedDate);
     text = text.replace(/{valor}/g, typeof context.appointment.value === 'number' ? context.appointment.value.toFixed(2) : String(context.appointment.value));
   } else {
     text = text.replace(/{data_hora}/g, '').replace(/{valor}/g, '');
+  }
+
+  if (context.budget) {
+    const budgetItems = context.budget.items
+      .map(item => `• ${item.quantity}x ${item.description} — R$ ${item.total.toFixed(2)}`)
+      .join('\n');
+    const validity = new Date(`${context.budget.validUntil}T12:00:00-03:00`).toLocaleDateString('pt-BR');
+    text = text
+      .replace(/{orcamento_numero}/g, String(context.budget.number || context.budget.id.slice(0, 8)))
+      .replace(/{orcamento_itens}/g, budgetItems)
+      .replace(/{orcamento_total}/g, context.budget.total.toFixed(2))
+      .replace(/{orcamento_validade}/g, validity);
+  } else {
+    text = text
+      .replace(/{orcamento_numero}/g, '')
+      .replace(/{orcamento_itens}/g, '')
+      .replace(/{orcamento_total}/g, '')
+      .replace(/{orcamento_validade}/g, '');
   }
 
   // Now, normalize using the unified string cleanup function
@@ -3063,7 +3331,7 @@ export function renderAndNormalizeMessage(
 
 export function renderTemplateText(
   template: string,
-  context: { customer: Customer; vehicle?: Vehicle; service?: Service; appointment?: Appointment }
+  context: { customer: Customer; vehicle?: Vehicle; service?: Service; appointment?: Appointment; budget?: Budget }
 ): string {
   return renderAndNormalizeMessage(template, context);
 }

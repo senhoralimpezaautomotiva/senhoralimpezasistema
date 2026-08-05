@@ -24,6 +24,10 @@ import { dbInstance, hasModulePermission } from '../db/localDb';
 import { adminApiFetch } from '../utils/adminApiClient';
 import { safeLog } from '../security/safeOutput';
 import { useManagedTimeout } from '../hooks/useManagedTimeout';
+import {
+  classifyAutomationExecutionOperationalState,
+  summarizeAutomationOperations
+} from '../db/automationMonitoring';
 
 interface AutomacoesModuleProps {
   automations: AutomationTrigger[];
@@ -36,7 +40,7 @@ export default function AutomacoesModule({
   currentUser,
   onUpdateTrigger
 }: AutomacoesModuleProps) {
-  const canEdit = hasModulePermission(currentUser, 'mensagens', 'edit');
+  const canEdit = hasModulePermission(currentUser, 'automacoes', 'edit');
   const scheduleTimeout = useManagedTimeout();
   const [activeSubTab, setActiveSubTab] = useState<'gatilhos' | 'logs' | 'make' | 'sql'>('gatilhos');
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
@@ -51,6 +55,13 @@ export default function AutomacoesModule({
     pendingCount: 0,
     errorCount: 0,
     successRate: 100,
+    operationalStatus: 'healthy',
+    stalledPendingCount: 0,
+    activeClaimCount: 0,
+    abandonedClaimCount: 0,
+    ambiguousCount: 0,
+    retryScheduledCount: 0,
+    reconciliationRequiredCount: 0,
     lastExecutionTime: 'Nunca',
     nextExecutionTime: 'Nenhuma agendada'
   });
@@ -84,6 +95,7 @@ export default function AutomacoesModule({
   const calculateLocalStats = () => {
     const executions = dbInstance.executions;
     const now = new Date();
+    const operationalSummary = summarizeAutomationOperations(executions, now);
     const todayStr = now.toISOString().slice(0, 10);
 
     const executionsToday = executions.filter(e => e.updated_at.startsWith(todayStr));
@@ -111,6 +123,7 @@ export default function AutomacoesModule({
       pendingCount,
       errorCount,
       successRate,
+      ...operationalSummary,
       lastExecutionTime: lastExecution ? lastExecution.updated_at : 'Nunca',
       nextExecutionTime: nextExecution ? nextExecution.data_execucao : 'Nenhuma'
     });
@@ -128,7 +141,8 @@ export default function AutomacoesModule({
         status: e.status,
         tentativas: e.tentativas,
         resposta_api: e.resposta_api,
-        data_execucao: e.data_execucao
+        data_execucao: e.data_execucao,
+        operational_state: classifyAutomationExecutionOperationalState(e, now)
       };
     }));
   };
@@ -147,7 +161,9 @@ export default function AutomacoesModule({
       const res = await adminApiFetch(`/api/automations/test/${encodeURIComponent(eventId)}`, { method: 'POST' });
       if (res.ok) {
         const result = await res.json();
-        setTestLog(`Sucesso no Envio!\nResposta API:\n${result.log}`);
+        setTestLog(result.success
+          ? `Solicitação aceita pelo provedor.\nA entrega depende de confirmação externa.\nResposta API:\n${result.log}`
+          : `Solicitação não aceita pelo provedor.\nNenhuma entrega foi confirmada.\nResposta API:\n${result.log}`);
         fetchDashboardData();
       } else {
         throw new Error('Falha na resposta do servidor.');
@@ -275,7 +291,7 @@ export default function AutomacoesModule({
             </div>
           </div>
           <div className="bg-slate-900/40 p-4 rounded-xl border border-slate-800/80">
-            <span className="text-[10px] font-mono uppercase text-slate-500">Enviadas (Sucesso)</span>
+            <span className="text-[10px] font-mono uppercase text-slate-500">Aceitas pelo provedor</span>
             <div className="text-lg font-bold text-emerald-400 mt-1 flex items-center gap-1.5">
               <Check size={14} />
               {stats.sentCount}
@@ -287,16 +303,22 @@ export default function AutomacoesModule({
               <RefreshCw size={14} className="animate-spin-slow" />
               {stats.pendingCount}
             </div>
+            <div className={`text-[9px] mt-1 font-mono ${stats.stalledPendingCount > 0 ? 'text-rose-400' : 'text-slate-500'}`}>
+              {stats.stalledPendingCount} atrasada(s) · {stats.retryScheduledCount} retry(s)
+            </div>
           </div>
           <div className="bg-slate-900/40 p-4 rounded-xl border border-slate-800/80">
-            <span className="text-[10px] font-mono uppercase text-slate-500">Erros de Envio</span>
+            <span className="text-[10px] font-mono uppercase text-slate-500">Erros / Reconciliação</span>
             <div className="text-lg font-bold text-rose-500 mt-1 flex items-center gap-1.5">
               <AlertTriangle size={14} />
               {stats.errorCount}
             </div>
+            <div className="text-[9px] mt-1 font-mono text-slate-500">
+              {stats.reconciliationRequiredCount} requer(em) análise
+            </div>
           </div>
           <div className="bg-slate-900/40 p-4 rounded-xl border border-slate-800/80 col-span-2 md:col-span-1">
-            <span className="text-[10px] font-mono uppercase text-slate-500">Taxa de Sucesso</span>
+            <span className="text-[10px] font-mono uppercase text-slate-500">Taxa de aceitação</span>
             <div className="text-lg font-bold text-white mt-1">
               {stats.successRate}%
             </div>
@@ -506,7 +528,7 @@ export default function AutomacoesModule({
                 <option value="todos">Todos os Status</option>
                 <option value="pendente">Fila / Pendente</option>
                 <option value="processando">Processando</option>
-                <option value="sucesso">Sucesso</option>
+                <option value="sucesso">Aceita pelo provedor</option>
                 <option value="erro_definitivo">Erro Permanente</option>
               </select>
             </div>
@@ -562,7 +584,11 @@ export default function AutomacoesModule({
                                   ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20 animate-pulse'
                                   : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                           }`}>
-                            {item.status === 'erro_definitivo' ? 'falhou' : item.status}
+                            {item.status === 'sucesso'
+                              ? 'aceita'
+                              : item.status === 'erro_definitivo'
+                                ? 'falhou'
+                                : item.status}
                           </span>
                         </td>
                         <td className="p-3 text-right whitespace-nowrap">
@@ -581,7 +607,7 @@ export default function AutomacoesModule({
                           <td colSpan={7} className="p-4 border-t border-b border-slate-850">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
                               <div className="space-y-2 bg-slate-950 p-3 rounded-lg border border-slate-850">
-                                <span className="text-[10px] text-sky-400 uppercase font-bold">Mensagem Enviada</span>
+                                <span className="text-[10px] text-sky-400 uppercase font-bold">Conteúdo solicitado ao provedor</span>
                                 <p className="text-slate-300 font-sans whitespace-pre-wrap leading-relaxed">
                                   {item.mensagem}
                                 </p>
@@ -589,6 +615,9 @@ export default function AutomacoesModule({
 
                               <div className="space-y-2 bg-slate-950 p-3 rounded-lg border border-slate-850">
                                 <span className="text-[10px] text-sky-400 uppercase font-bold">Resposta da API / Logs do Servidor</span>
+                                {item.operational_state === 'abandoned_claim' || item.operational_state === 'ambiguous' ? (
+                                  <p className="text-[10px] text-rose-400 font-bold uppercase">Reenvio automático bloqueado · reconciliação necessária</p>
+                                ) : null}
                                 <pre className="text-slate-400 text-[10px] overflow-auto max-h-36 whitespace-pre-wrap font-mono">
                                   {item.resposta_api || 'Nenhum log retornado ainda. Aguardando processamento da fila.'}
                                 </pre>
