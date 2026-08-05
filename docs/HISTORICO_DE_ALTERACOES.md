@@ -3022,3 +3022,77 @@ As alterações funcionais e migrations estão relacionadas na entrada
   reescrever o histórico Git.
 - Manter a migration aditiva instalada em eventual rollback da interface; ela
   não altera o fluxo anterior e seus campos possuem valores padrão compatíveis.
+
+## 2026-08-05-039 — Publicação e validação do novo Portal do Cliente
+
+### Tarefa relacionada
+
+- Commit, push, aplicação de migration, deploy e validação final da etapa
+  registrada em `2026-08-05-038`.
+
+### Objetivo
+
+- Disponibilizar o novo Portal do Cliente no ambiente piloto, mantendo uma
+  trilha verificável do código, banco e hospedagem alterados.
+
+### Resumo do que foi feito
+
+- Criado o commit `f892935` (`feat: implantar novo portal do cliente`) e enviada
+  a branch `portal-cliente-layout` ao GitHub.
+- Aplicada no Supabase a migration
+  `20260805235000_portal_cliente_experiencia.sql`.
+- Alterada no Render a branch do serviço `senhora-limpeza-piloto`, de
+  `orcamentos-automacoes-7-14d` para `portal-cliente-layout`.
+- Executado deploy manual do commit `f892935`, confirmado no estado `live`.
+- Validada a experiência publicada com uma sessão de portal já existente, sem
+  cadastrar, alterar ou cancelar agendamentos.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md` nesta etapa de registro
+  pós-publicação.
+- Os arquivos funcionais publicados estão listados na entrada
+  `2026-08-05-038`.
+- Nenhum arquivo foi removido.
+
+### Banco, hospedagem e serviços externos
+
+- Supabase: migration registrada na versão `20260805235000`; três colunas de
+  configuração confirmadas e permissão de execução da RPC confirmada para o
+  papel `authenticated`.
+- Render: serviço `senhora-limpeza-piloto` publicado na branch
+  `portal-cliente-layout`, commit funcional `f892935`.
+- GitHub: branch `portal-cliente-layout` criada e enviada ao repositório remoto.
+- Make e provedor de mensagens: nenhuma configuração ou execução foi alterada.
+
+### Verificações e resultados
+
+- Verificação pós-migration: `migration_registrada=true`,
+  `colunas_configuracao=3` e `rpc_autenticada=true`.
+- Render: deploy do commit `f892935` confirmado como `live`.
+- Health check público: HTTP 200 com `{"status":"ok"}`.
+- Portal publicado: tela principal autenticada carregou com os cinco acessos;
+  os quatro botões superiores mediram igualmente 211 × 142 px e o botão
+  `Consultar agenda` mediu 435 × 64 px.
+- Cartão fidelidade: logotipo, dez marcações e progresso agregado carregados.
+- Consulta de agenda: horários exibidos com o aviso explícito de que nenhum
+  horário é reservado; nenhuma ação mutável foi apresentada ou executada.
+
+### Riscos, limitações e pendências
+
+- O serviço permanece no plano gratuito do Render e pode sofrer cold start.
+- O catálogo permanece no modo `system` até que o administrador escolha
+  `whatsapp` e informe uma URL HTTPS válida.
+- Não foi criado um agendamento de teste para evitar efeitos externos; o fluxo
+  anterior foi preservado no código e coberto pelas suítes automatizadas.
+- Este commit documental é posterior ao commit funcional publicado; a branch
+  será atualizada sem necessidade de nova publicação, pois não altera runtime.
+
+### Como desfazer
+
+- Aplicação: reconfigurar o Render para `orcamentos-automacoes-7-14d` e publicar
+  novamente o commit estável anterior `8b4df94`.
+- Banco: manter a migration aditiva para compatibilidade. Se uma reversão de
+  schema for indispensável, criar uma migration corretiva após confirmar que a
+  aplicação anterior está ativa; não apagar o ledger nem a migration aplicada.
+- GitHub: usar um novo commit de reversão na branch, preservando todo o histórico.
