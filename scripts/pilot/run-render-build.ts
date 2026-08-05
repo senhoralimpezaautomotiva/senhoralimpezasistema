@@ -14,6 +14,7 @@ const isolatedBuildEnvironment = { ...process.env };
 for (const name of [
   'SUPABASE_URL',
   'SUPABASE_ANON_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
   'MAKE_WEBHOOK_URL',
   'ZAPI_INSTANCE_ID',
   'ZAPI_TOKEN',
