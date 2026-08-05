@@ -91,7 +91,10 @@ test('supabase/migrations é a única fonte oficial e contém a baseline remota 
     '20260730225000_configuracoes_empresa_runtime.sql',
     '20260730233000_automacoes_janela_24h.sql',
     '20260731001000_automacoes_imediatas_defaults.sql',
-    '20260731010000_automacoes_lembrete_configuravel.sql'
+    '20260805220000_lembrete_seguranca.sql',
+    '20260805230000_cliente_inativo_seguranca.sql',
+    '20260805233000_automacoes_monitoramento_operacional.sql',
+    '20260805234000_orcamentos_automacoes.sql'
   ]);
 
   const pattern = new RegExp(manifest.expectedBaselineFilenamePattern);
@@ -114,6 +117,8 @@ test('migrations futuras têm nomes únicos, compatíveis e ordem determinístic
 test('todos os SQL do projeto estão classificados e nenhum legado é oficial', () => {
   const sqlFiles = walk(root)
     .filter(file => file.endsWith('.sql'))
+    .filter(file => !file.includes(`${path.sep}.tmp${path.sep}`))
+    .filter(file => !file.includes(`${path.sep}.git${path.sep}`))
     .filter(file => !file.includes(`${path.sep}node_modules${path.sep}`))
     .filter(file => !file.includes(`${path.sep}dist${path.sep}`))
     .map(file => path.relative(root, file).replace(/\\/g, '/'))
@@ -216,6 +221,7 @@ test('backups, arquivos físicos e estado temporário do CLI não são versioná
   assert.match(gitignore, /^\*\.backup$/m);
   assert.match(gitignore, /^supabase\/\.temp\/$/m);
   assert.match(gitignore, /^supabase\/\.branches\/$/m);
+  assert.match(gitignore, /^\.tmp\/$/m);
 });
 
 test('verificador rejeita backup incompleto e aceita dump sentinela válido', () => {
