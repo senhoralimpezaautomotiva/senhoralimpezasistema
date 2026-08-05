@@ -1,0 +1,715 @@
+{
+    "name": "Integration Webhooks v2",
+    "flow": [
+        {
+            "id": 2,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 2592294,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": -986,
+                    "y": 18
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "My gateway-webhook webhook"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "executionId",
+                        "type": "text"
+                    },
+                    {
+                        "name": "event",
+                        "type": "text"
+                    },
+                    {
+                        "name": "appointmentId",
+                        "type": "text"
+                    },
+                    {
+                        "name": "companyId",
+                        "type": "text"
+                    },
+                    {
+                        "name": "phone",
+                        "type": "text"
+                    },
+                    {
+                        "name": "customer",
+                        "spec": [
+                            {
+                                "name": "id",
+                                "type": "text"
+                            },
+                            {
+                                "name": "name",
+                                "type": "text"
+                            },
+                            {
+                                "name": "phone",
+                                "type": "text"
+                            },
+                            {
+                                "name": "whatsapp",
+                                "type": "text"
+                            },
+                            {
+                                "name": "email",
+                                "type": "text"
+                            },
+                            {
+                                "name": "cpf",
+                                "type": "text"
+                            },
+                            {
+                                "name": "birthDate",
+                                "type": "text"
+                            },
+                            {
+                                "name": "address",
+                                "type": "text"
+                            },
+                            {
+                                "name": "neighborhood",
+                                "type": "text"
+                            },
+                            {
+                                "name": "city",
+                                "type": "text"
+                            },
+                            {
+                                "name": "notes",
+                                "type": "text"
+                            },
+                            {
+                                "name": "clientSince",
+                                "type": "text"
+                            },
+                            {
+                                "name": "lastServiceDate",
+                                "type": "text"
+                            },
+                            {
+                                "name": "status",
+                                "type": "text"
+                            },
+                            {
+                                "name": "origin",
+                                "type": "text"
+                            },
+                            {
+                                "name": "referralCode",
+                                "type": "text"
+                            },
+                            {
+                                "name": "referredBy",
+                                "type": "text"
+                            },
+                            {
+                                "name": "referralDiscountAvailable",
+                                "type": "boolean"
+                            },
+                            {
+                                "name": "referralDiscountUsed",
+                                "type": "boolean"
+                            },
+                            {
+                                "name": "referralCreatedAt",
+                                "type": "text"
+                            },
+                            {
+                                "name": "referralServiceValue",
+                                "type": "number"
+                            },
+                            {
+                                "name": "referralBonusPercentUsed",
+                                "type": "number"
+                            },
+                            {
+                                "name": "referralBonusAmount",
+                                "type": "number"
+                            }
+                        ],
+                        "type": "collection"
+                    },
+                    {
+                        "name": "vehicle",
+                        "spec": [
+                            {
+                                "name": "id",
+                                "type": "text"
+                            },
+                            {
+                                "name": "customerId",
+                                "type": "text"
+                            },
+                            {
+                                "name": "brand",
+                                "type": "text"
+                            },
+                            {
+                                "name": "model",
+                                "type": "text"
+                            },
+                            {
+                                "name": "version",
+                                "type": "text"
+                            },
+                            {
+                                "name": "year",
+                                "type": "text"
+                            },
+                            {
+                                "name": "plate",
+                                "type": "text"
+                            },
+                            {
+                                "name": "color",
+                                "type": "text"
+                            },
+                            {
+                                "name": "mileage",
+                                "type": "text"
+                            },
+                            {
+                                "name": "porte",
+                                "type": "text"
+                            },
+                            {
+                                "name": "isPrincipal",
+                                "type": "boolean"
+                            }
+                        ],
+                        "type": "collection"
+                    },
+                    {
+                        "name": "service",
+                        "spec": [
+                            {
+                                "name": "id",
+                                "type": "text"
+                            },
+                            {
+                                "name": "name",
+                                "type": "text"
+                            },
+                            {
+                                "name": "description",
+                                "type": "text"
+                            },
+                            {
+                                "name": "basePrice",
+                                "type": "number"
+                            },
+                            {
+                                "name": "estimatedTime",
+                                "type": "number"
+                            }
+                        ],
+                        "type": "collection"
+                    },
+                    {
+                        "name": "appointment",
+                        "spec": [
+                            {
+                                "name": "id",
+                                "type": "text"
+                            },
+                            {
+                                "name": "customerId",
+                                "type": "text"
+                            },
+                            {
+                                "name": "vehicleId",
+                                "type": "text"
+                            },
+                            {
+                                "name": "serviceId",
+                                "type": "text"
+                            },
+                            {
+                                "name": "serviceIds",
+                                "spec": {
+                                    "type": "text"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "name": "dateTime",
+                                "type": "text"
+                            },
+                            {
+                                "name": "status",
+                                "type": "text"
+                            },
+                            {
+                                "name": "value",
+                                "type": "number"
+                            },
+                            {
+                                "name": "durationTotal",
+                                "type": "number"
+                            },
+                            {
+                                "name": "employeeId",
+                                "type": "text"
+                            },
+                            {
+                                "name": "discount",
+                                "type": "number"
+                            },
+                            {
+                                "name": "addition",
+                                "type": "number"
+                            },
+                            {
+                                "name": "notes",
+                                "type": "text"
+                            },
+                            {
+                                "name": "createdAt",
+                                "type": "text"
+                            },
+                            {
+                                "name": "updatedAt",
+                                "type": "text"
+                            },
+                            {
+                                "name": "startedAt",
+                                "type": "text"
+                            },
+                            {
+                                "name": "concludedAt",
+                                "type": "text"
+                            },
+                            {
+                                "name": "changelog",
+                                "spec": {
+                                    "spec": [
+                                        {
+                                            "name": "date",
+                                            "type": "text"
+                                        },
+                                        {
+                                            "name": "user",
+                                            "type": "text"
+                                        },
+                                        {
+                                            "name": "action",
+                                            "type": "text"
+                                        }
+                                    ],
+                                    "type": "collection"
+                                },
+                                "type": "array"
+                            }
+                        ],
+                        "type": "collection"
+                    },
+                    {
+                        "name": "message",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 4,
+            "module": "http:MakeRequest",
+            "version": 4,
+            "parameters": {
+                "tlsType": "",
+                "authenticationType": "noAuth"
+            },
+            "mapper": {
+                "url": "https://api.z-api.io/instances/<ZAPI_INSTANCE_ID>/token/<ZAPI_TOKEN>/send-text",
+                "method": "post",
+                "headers": [
+                    {
+                        "name": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "name": "Client-Token",
+                        "value": "<ZAPI_CLIENT_TOKEN>"
+                    }
+                ],
+                "contentType": "json",
+                "inputMethod": "dataStructure",
+                "shareCookies": false,
+                "parseResponse": true,
+                "allowRedirects": true,
+                "stopOnHttpError": true,
+                "bodyDataStructure": 433211,
+                "dataStructureBodyContent": {
+                    "phone": "{{2.phone}}",
+                    "message": "{{2.message}}"
+                },
+                "requestCompressedContent": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": -686,
+                    "y": 18
+                },
+                "restore": {
+                    "expect": {
+                        "method": {
+                            "mode": "chose",
+                            "label": "POST"
+                        },
+                        "headers": {
+                            "mode": "chose",
+                            "items": [
+                                null,
+                                null
+                            ]
+                        },
+                        "contentType": {
+                            "label": "application/jsonEnter data in the JSON format, as a string or using a data structure."
+                        },
+                        "inputMethod": {
+                            "label": "Data structureDefine the JSON body with a data structure to map or enter values for each key. JSON reserved characters are escaped automatically."
+                        },
+                        "shareCookies": {
+                            "mode": "chose"
+                        },
+                        "parseResponse": {
+                            "mode": "chose"
+                        },
+                        "allowRedirects": {
+                            "mode": "chose"
+                        },
+                        "paginationType": {
+                            "label": "Empty"
+                        },
+                        "queryParameters": {
+                            "mode": "chose"
+                        },
+                        "stopOnHttpError": {
+                            "mode": "chose"
+                        },
+                        "bodyDataStructure": {
+                            "label": "senhora"
+                        },
+                        "requestCompressedContent": {
+                            "mode": "chose"
+                        }
+                    },
+                    "parameters": {
+                        "tlsType": {
+                            "label": "Empty"
+                        },
+                        "authenticationType": {
+                            "label": "No authenticationUse when no credentials are required for the request."
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "authenticationType",
+                        "type": "select",
+                        "label": "Authentication type",
+                        "required": true,
+                        "validate": {
+                            "enum": [
+                                "noAuth",
+                                "apiKey",
+                                "basicAuth",
+                                "oAuth"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "tlsType",
+                        "type": "select",
+                        "label": "Transport layer security (TLS)",
+                        "validate": {
+                            "enum": [
+                                "mTls",
+                                "tls"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "proxyKeychain",
+                        "type": "keychain:proxy",
+                        "label": "Proxy"
+                    }
+                ],
+                "expect": [
+                    {
+                        "name": "url",
+                        "type": "url",
+                        "label": "URL",
+                        "required": true
+                    },
+                    {
+                        "name": "method",
+                        "type": "select",
+                        "label": "Method",
+                        "required": true,
+                        "validate": {
+                            "enum": [
+                                "get",
+                                "head",
+                                "post",
+                                "put",
+                                "patch",
+                                "delete",
+                                "options"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "headers",
+                        "spec": {
+                            "name": "value",
+                            "spec": [
+                                {
+                                    "name": "name",
+                                    "type": "text",
+                                    "label": "Name",
+                                    "required": true,
+                                    "validate": {
+                                        "pattern": "^[-!#$%&'*+.^_`|~0-9A-Za-z]+$"
+                                    }
+                                },
+                                {
+                                    "name": "value",
+                                    "type": "text",
+                                    "label": "Value"
+                                }
+                            ],
+                            "type": "collection",
+                            "label": "Header"
+                        },
+                        "type": "array",
+                        "label": "Headers"
+                    },
+                    {
+                        "name": "queryParameters",
+                        "spec": {
+                            "name": "value",
+                            "spec": [
+                                {
+                                    "name": "name",
+                                    "type": "text",
+                                    "label": "Name",
+                                    "required": true
+                                },
+                                {
+                                    "name": "value",
+                                    "type": "text",
+                                    "label": "Value"
+                                }
+                            ],
+                            "type": "collection",
+                            "label": "Parameter"
+                        },
+                        "type": "array",
+                        "label": "Query parameters"
+                    },
+                    {
+                        "name": "contentType",
+                        "type": "select",
+                        "label": "Body content type",
+                        "validate": {
+                            "enum": [
+                                "json",
+                                "multipart",
+                                "urlEncoded",
+                                "custom"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "parseResponse",
+                        "type": "boolean",
+                        "label": "Parse response",
+                        "required": true
+                    },
+                    {
+                        "name": "stopOnHttpError",
+                        "type": "boolean",
+                        "label": "Return error if HTTP request fails",
+                        "required": true
+                    },
+                    {
+                        "name": "timeout",
+                        "type": "uinteger",
+                        "label": "Timeout",
+                        "validate": {
+                            "max": 300,
+                            "min": 1
+                        }
+                    },
+                    {
+                        "name": "allowRedirects",
+                        "type": "boolean",
+                        "label": "Allow redirects",
+                        "required": true
+                    },
+                    {
+                        "name": "shareCookies",
+                        "type": "boolean",
+                        "label": "Share cookies with other HTTP modules",
+                        "required": true
+                    },
+                    {
+                        "name": "requestCompressedContent",
+                        "type": "boolean",
+                        "label": "Request compressed content",
+                        "required": true
+                    },
+                    {
+                        "name": "inputMethod",
+                        "type": "select",
+                        "label": "Body input method",
+                        "required": true,
+                        "validate": {
+                            "enum": [
+                                "dataStructure",
+                                "jsonString"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "bodyDataStructure",
+                        "type": "udt",
+                        "label": "Body structure",
+                        "required": true
+                    },
+                    {
+                        "name": "dataStructureBodyContent",
+                        "spec": [
+                            {
+                                "name": "phone",
+                                "type": "text",
+                                "label": null
+                            },
+                            {
+                                "name": "message",
+                                "type": "text",
+                                "label": null
+                            }
+                        ],
+                        "type": "collection",
+                        "label": "Body content"
+                    },
+                    {
+                        "name": "paginationType",
+                        "type": "select",
+                        "label": "Pagination type",
+                        "validate": {
+                            "enum": [
+                                "offsetBased",
+                                "pageBased",
+                                "urlBased",
+                                "tokenBased"
+                            ]
+                        }
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "data",
+                        "type": "any",
+                        "label": "Data"
+                    },
+                    {
+                        "name": "statusCode",
+                        "type": "number",
+                        "label": "Status Code"
+                    },
+                    {
+                        "name": "headers",
+                        "spec": [
+                            {
+                                "name": "content-length",
+                                "type": "text",
+                                "label": "Content-Length"
+                            },
+                            {
+                                "name": "content-encoding",
+                                "type": "text",
+                                "label": "Content-Encoding"
+                            },
+                            {
+                                "name": "content-type",
+                                "type": "text",
+                                "label": "Content-Type"
+                            },
+                            {
+                                "name": "server",
+                                "type": "text",
+                                "label": "Server"
+                            },
+                            {
+                                "name": "cache-control",
+                                "type": "text",
+                                "label": "Cache-Control"
+                            },
+                            {
+                                "name": "set-cookie",
+                                "spec": {
+                                    "type": "text"
+                                },
+                                "type": "array",
+                                "label": "Set-Cookie"
+                            }
+                        ],
+                        "type": "collection",
+                        "label": "Headers"
+                    }
+                ]
+            }
+        }
+    ],
+    "metadata": {
+        "instant": true,
+        "version": 2,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": false,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": []
+    }
+}
