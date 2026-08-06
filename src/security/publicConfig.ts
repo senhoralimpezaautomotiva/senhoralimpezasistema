@@ -18,8 +18,6 @@ export const PUBLIC_SYSTEM_CONFIG_KEYS = [
   'supabaseUrl',
   'supabaseAnonKey',
   'useRealSupabase',
-  'referralActive',
-  'referralDiscountPercent',
   'automationStartHour',
   'automationEndHour',
   'automation24Hours',
@@ -142,10 +140,6 @@ export const toPublicSystemConfig = (value: unknown): Partial<PublicSystemConfig
   }
 
   if (typeof value.useRealSupabase === 'boolean') result.useRealSupabase = value.useRealSupabase;
-  if (typeof value.referralActive === 'boolean') result.referralActive = value.referralActive;
-  if (typeof value.referralDiscountPercent === 'number' && Number.isFinite(value.referralDiscountPercent)) {
-    result.referralDiscountPercent = value.referralDiscountPercent;
-  }
   if (value.theme === 'light' || value.theme === 'dark') result.theme = value.theme;
 
   const agenda = sanitizeAgenda(value.agenda);

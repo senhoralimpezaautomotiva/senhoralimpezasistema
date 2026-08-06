@@ -27,7 +27,8 @@ import {
   Budget,
   BudgetDraft,
   BudgetItem,
-  BudgetStatus
+  BudgetStatus,
+  LoyaltyCardEntry
 } from '../types';
 import { PREFILLED_VEHICLE_MODELS } from '../data/prefilledModels';
 import { getCurrentDateStr } from '../utils/dateUtils';
@@ -58,7 +59,8 @@ const KEYS = {
   VEHICLE_MODELS: 'sl_vehicle_models',
   USERS: 'sl_users',
   COMMISSIONS: 'sl_commissions',
-  BUDGETS: 'sl_budgets'
+  BUDGETS: 'sl_budgets',
+  LOYALTY_ENTRIES: 'sl_loyalty_entries'
 };
 
 const SENSITIVE_BROWSER_STORAGE_KEYS = new Set<string>([
@@ -71,6 +73,7 @@ const SENSITIVE_BROWSER_STORAGE_KEYS = new Set<string>([
   KEYS.USERS,
   KEYS.COMMISSIONS,
   KEYS.BUDGETS,
+  KEYS.LOYALTY_ENTRIES,
   'sl_executions'
 ]);
 
@@ -216,8 +219,6 @@ const DEFAULT_CONFIG: SystemConfig = {
   supabaseUrl: publicSupabaseEnvironment.supabaseUrl,
   supabaseAnonKey: publicSupabaseEnvironment.supabaseAnonKey,
   useRealSupabase: publicSupabaseEnvironment.isConfigured,
-  referralActive: true,
-  referralDiscountPercent: 10,
   loyaltyReferralTarget: 10,
   portalCatalogSource: 'system',
   whatsappCatalogUrl: '',
@@ -493,12 +494,7 @@ export function mapDbCustomerToFrontend(row: any): Customer {
   
   let referralCode = '';
   let referredBy = '';
-  let referralDiscountAvailable = false;
-  let referralDiscountUsed = false;
   let referralCreatedAt = '';
-  let referralServiceValue = 0;
-  let referralBonusPercentUsed = 0;
-  let referralBonusAmount = 0;
 
   const metaRegex = /\[meta:([\s\S]*?)\]\s*$/;
   const match = name.match(metaRegex);
@@ -516,12 +512,7 @@ export function mapDbCustomerToFrontend(row: any): Customer {
       
       if (meta.referralCode) referralCode = meta.referralCode;
       if (meta.referredBy) referredBy = meta.referredBy;
-      if (meta.referralDiscountAvailable !== undefined) referralDiscountAvailable = meta.referralDiscountAvailable;
-      if (meta.referralDiscountUsed !== undefined) referralDiscountUsed = meta.referralDiscountUsed;
       if (meta.referralCreatedAt) referralCreatedAt = meta.referralCreatedAt;
-      if (meta.referralServiceValue !== undefined) referralServiceValue = meta.referralServiceValue;
-      if (meta.referralBonusPercentUsed !== undefined) referralBonusPercentUsed = meta.referralBonusPercentUsed;
-      if (meta.referralBonusAmount !== undefined) referralBonusAmount = meta.referralBonusAmount;
       
       name = name.replace(metaRegex, '').trim();
     } catch (e) {
@@ -555,12 +546,7 @@ export function mapDbCustomerToFrontend(row: any): Customer {
     origin: origin,
     referralCode,
     referredBy,
-    referralDiscountAvailable,
-    referralDiscountUsed,
-    referralCreatedAt,
-    referralServiceValue,
-    referralBonusPercentUsed,
-    referralBonusAmount
+    referralCreatedAt
   };
 }
 
@@ -569,7 +555,7 @@ export function mapFrontendCustomerToDb(c: Partial<Customer>): any {
   if (c.id) row.id = c.id;
   
   let name = c.name || '';
-  const hasExtra = c.email || c.cpf || c.address || c.neighborhood || c.city || c.notes || c.status || c.origin || c.referralCode || c.referredBy || c.referralDiscountAvailable !== undefined || c.referralDiscountUsed !== undefined || c.referralCreatedAt || c.referralServiceValue !== undefined || c.referralBonusPercentUsed !== undefined || c.referralBonusAmount !== undefined;
+  const hasExtra = c.email || c.cpf || c.address || c.neighborhood || c.city || c.notes || c.status || c.origin || c.referralCode || c.referredBy || c.referralCreatedAt;
   if (hasExtra && name) {
     const meta: any = {};
     if (c.email) meta.email = c.email;
@@ -583,12 +569,7 @@ export function mapFrontendCustomerToDb(c: Partial<Customer>): any {
     
     if (c.referralCode) meta.referralCode = c.referralCode;
     if (c.referredBy) meta.referredBy = c.referredBy;
-    if (c.referralDiscountAvailable !== undefined) meta.referralDiscountAvailable = c.referralDiscountAvailable;
-    if (c.referralDiscountUsed !== undefined) meta.referralDiscountUsed = c.referralDiscountUsed;
     if (c.referralCreatedAt) meta.referralCreatedAt = c.referralCreatedAt;
-    if (c.referralServiceValue !== undefined) meta.referralServiceValue = c.referralServiceValue;
-    if (c.referralBonusPercentUsed !== undefined) meta.referralBonusPercentUsed = c.referralBonusPercentUsed;
-    if (c.referralBonusAmount !== undefined) meta.referralBonusAmount = c.referralBonusAmount;
     
     name = `${name} [meta:${JSON.stringify(meta)}]`.trim();
   }
@@ -1076,6 +1057,7 @@ class LocalDatabase {
   executions: AutomationExecution[] = [];
   users: User[] = [];
   commissions: CommissionRecord[] = [];
+  loyaltyEntries: LoyaltyCardEntry[] = [];
   automationConfigUpdatedAt: string | null = null;
   lastSupabaseSync = {
     configLoaded: false,
@@ -1111,6 +1093,7 @@ class LocalDatabase {
     // Remove imediatamente qualquer senha deixada por versões antigas do cache.
     setLocalData(KEYS.USERS, this.users);
     this.commissions = getLocalData<CommissionRecord[]>(KEYS.COMMISSIONS, []);
+    this.loyaltyEntries = getLocalData<LoyaltyCardEntry[]>(KEYS.LOYALTY_ENTRIES, []);
     
     // Only public interface configuration may be cached in the browser.
     const savedConfig = toPublicSystemConfig(
@@ -1159,6 +1142,7 @@ class LocalDatabase {
     });
     setLocalData(KEYS.USERS, usersWithoutPasswords);
     setLocalData(KEYS.COMMISSIONS, this.commissions);
+    setLocalData(KEYS.LOYALTY_ENTRIES, this.loyaltyEntries);
   }
 
   ensureAllDefaultAutomationsExist() {
@@ -1202,8 +1186,6 @@ class LocalDatabase {
         'logo_url',
         'primary_color',
         'accent_color',
-        'referral_active',
-        'referral_discount_percent',
         'loyalty_referral_target',
         'portal_catalog_source',
         'whatsapp_catalog_url',
@@ -1233,8 +1215,6 @@ class LocalDatabase {
           logoUrl: data.logo_url || this.config.logoUrl,
           primaryColor: data.primary_color || this.config.primaryColor,
           accentColor: data.accent_color || this.config.accentColor,
-          referralActive: data.referral_active !== undefined ? data.referral_active : this.config.referralActive,
-          referralDiscountPercent: data.referral_discount_percent !== undefined ? data.referral_discount_percent : this.config.referralDiscountPercent,
           loyaltyReferralTarget: Number(data.loyalty_referral_target) || this.config.loyaltyReferralTarget,
           portalCatalogSource: data.portal_catalog_source === 'whatsapp' ? 'whatsapp' : 'system',
           whatsappCatalogUrl: data.whatsapp_catalog_url || '',
@@ -1299,8 +1279,6 @@ class LocalDatabase {
         logo_url: this.config.logoUrl,
         primary_color: this.config.primaryColor,
         accent_color: this.config.accentColor,
-        referral_active: this.config.referralActive ?? true,
-        referral_discount_percent: this.config.referralDiscountPercent ?? 10,
         loyalty_referral_target: this.config.loyaltyReferralTarget ?? 10,
         portal_catalog_source: this.config.portalCatalogSource || 'system',
         whatsapp_catalog_url: this.config.whatsappCatalogUrl || '',
@@ -1376,8 +1354,6 @@ class LocalDatabase {
             });
             const generatedCode = generateReferralCode(this.customers);
             customer.referralCode = generatedCode;
-            customer.referralDiscountAvailable = customer.referralDiscountAvailable ?? false;
-            customer.referralDiscountUsed = customer.referralDiscountUsed ?? false;
             customer.referralCreatedAt = customer.referralCreatedAt || new Date().toISOString().split('T')[0];
             
             safeLog('info', 'referral.code.backfill', 'started', {
@@ -1409,6 +1385,26 @@ class LocalDatabase {
         if (updatedAny) {
           this.save();
         }
+      }
+
+      const { data: dbLoyaltyEntries, error: errLoyaltyEntries } = await supabase
+        .from('loyalty_card_entries')
+        .select('id,customer_id,delta,source,referred_customer_id,appointment_id,note,actor_name,created_at')
+        .order('created_at', { ascending: false });
+      if (!errLoyaltyEntries && dbLoyaltyEntries) {
+        this.loyaltyEntries = dbLoyaltyEntries.map((row: any) => ({
+          id: row.id,
+          customerId: row.customer_id,
+          delta: Number(row.delta) as 1 | -1,
+          source: row.source,
+          referredCustomerId: row.referred_customer_id,
+          appointmentId: row.appointment_id,
+          note: row.note || '',
+          actorName: row.actor_name || '',
+          createdAt: row.created_at
+        }));
+      } else if (errLoyaltyEntries && errLoyaltyEntries.code !== '42P01' && errLoyaltyEntries.code !== 'PGRST205') {
+        safeLog('warn', 'supabase.sync.loyalty_entries', 'error', { error: errLoyaltyEntries });
       }
 
       // 2. Fetch Veículos
@@ -1727,8 +1723,6 @@ class LocalDatabase {
       id,
       clientSince,
       lastServiceDate: null,
-      referralDiscountAvailable: customer.referralDiscountAvailable ?? false,
-      referralDiscountUsed: customer.referralDiscountUsed ?? false,
       referralCreatedAt: customer.referralCreatedAt || clientSince
     };
 
@@ -2030,7 +2024,7 @@ class LocalDatabase {
       }
 
       // Release referral credits
-      await this.checkAndReleaseReferralCredits(appointment.customerId);
+      await this.awardReferralLoyaltyMark(appointment.customerId, appointment.id);
 
       // Refresh dynamic listings locally
       await this.syncWithSupabase();
@@ -2086,7 +2080,7 @@ class LocalDatabase {
         this.triggerAutomation('servico_finalizado', { customer, vehicle, service, appointment });
       }
 
-      await this.checkAndReleaseReferralCredits(appointment.customerId);
+      await this.awardReferralLoyaltyMark(appointment.customerId, appointment.id);
       await this.syncWithSupabase();
     }
   }
@@ -2234,54 +2228,46 @@ class LocalDatabase {
     this.save();
   }
 
-  async checkAndReleaseReferralCredits(customerId: string): Promise<void> {
+  async awardReferralLoyaltyMark(customerId: string, appointmentId: string): Promise<void> {
+    if (this.config.useRealSupabase) return;
     const customer = this.customers.find(c => c.id === customerId);
     if (!customer || !customer.referredBy) return;
-
-    // Check if this is their first finished/concluded appointment
     const finishedAppts = this.appointments.filter(a => a.customerId === customerId && (a.status === 'finalizado' || a.status === 'entregue'));
-    if (finishedAppts.length === 1) {
-      // Yes, this is their first finished appointment!
-      // Let's find the referrer
-      const referrer = this.customers.find(c => c.id === customer.referredBy);
-      
-      const percent = this.config.referralDiscountPercent ?? 10;
-      const serviceValue = finishedAppts[0].value;
-      const bonusAmount = Number(((serviceValue * percent) / 100).toFixed(2));
+    if (finishedAppts.length !== 1 || this.loyaltyEntries.some(entry => entry.source === 'referral' && entry.referredCustomerId === customerId)) return;
+    const referrer = this.customers.find(c => c.id === customer.referredBy);
+    if (!referrer) return;
+    this.loyaltyEntries.unshift({
+      id: generateUUID(), customerId: referrer.id, delta: 1, source: 'referral',
+      referredCustomerId: customerId, appointmentId, note: `Indicação concluída por ${customer.name}`,
+      actorName: 'Sistema', createdAt: new Date().toISOString()
+    });
+    this.save();
+  }
 
-      // Update recommended customer (the current customer) with calculations
-      customer.referralDiscountAvailable = true;
-      customer.referralServiceValue = serviceValue;
-      customer.referralBonusPercentUsed = percent;
-      customer.referralBonusAmount = bonusAmount;
+  getLoyaltyEntries(customerId: string): LoyaltyCardEntry[] {
+    return this.loyaltyEntries.filter(entry => entry.customerId === customerId);
+  }
 
-      await this.updateCustomer(customer.id, {
-        referralDiscountAvailable: true,
-        referralServiceValue: serviceValue,
-        referralBonusPercentUsed: percent,
-        referralBonusAmount: bonusAmount
+  getLoyaltyBalance(customerId: string): number {
+    return Math.max(0, this.getLoyaltyEntries(customerId).reduce((sum, entry) => sum + entry.delta, 0));
+  }
+
+  async adjustLoyaltyMark(customerId: string, delta: 1 | -1, actorName: string): Promise<void> {
+    if (delta === -1 && this.getLoyaltyBalance(customerId) < 1) throw new Error('O cartão já está sem marcações.');
+    if (this.config.useRealSupabase) {
+      const { error } = await this.getSupabaseClient().rpc('admin_adjust_loyalty_mark', {
+        p_customer_id: customerId, p_delta: delta, p_actor_name: actorName
       });
-
-      // Update referrer
-      if (referrer) {
-        referrer.referralDiscountAvailable = true;
-        await this.updateCustomer(referrer.id, {
-          referralDiscountAvailable: true
-        });
-      }
-
-      // Trigger automation logs
-      const logMsg = `Indicação Concluída! ${referrer ? referrer.name : 'Indicador'} e ${customer.name} ganharam desconto de indicação. Valor do serviço: R$ ${serviceValue.toFixed(2)}, Bônus Gerado (${percent}%): R$ ${bonusAmount.toFixed(2)}`;
-      this.addLog({
-        id: generateUUID(),
-        triggerEvent: 'Indicação Concluída',
-        targetName: referrer ? referrer.name : 'Indicador',
-        targetContact: referrer ? referrer.phone : '',
-        payload: logMsg,
-        status: 'sucesso',
-        timestamp: new Date().toISOString()
-      });
+      if (error) throw error;
+      await this.syncWithSupabase();
+      return;
     }
+    this.loyaltyEntries.unshift({
+      id: generateUUID(), customerId, delta, source: delta === 1 ? 'manual_add' : 'manual_remove',
+      note: delta === 1 ? 'Marcação adicionada manualmente' : 'Marcação removida manualmente',
+      actorName, createdAt: new Date().toISOString()
+    });
+    this.save();
   }
 
   // --- CRUD FINANCES (EXPENSES RESTRICTED TO LOCAL STORAGE) ---

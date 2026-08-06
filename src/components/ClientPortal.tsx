@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Phone, User, Mail, Car, Calendar, Clock, ChevronRight, ChevronLeft, 
-  Plus, Check, ShieldAlert, AlertCircle, Sparkles, LogOut,
+  Plus, Check, ShieldAlert, AlertCircle, LogOut,
   Clock3, CheckCircle2, X, FileSignature,
   Gift, Copy, Share2, Search
 } from 'lucide-react';
@@ -709,18 +709,12 @@ function AuthenticatedClientPortal({
     setErrorMessage(null);
 
     try {
-      const hasDiscount = dbInstance.config.referralActive && customer.referralDiscountAvailable;
-      const discountPercent = dbInstance.config.referralDiscountPercent || 10;
-      const appointmentNotesWithDiscount = hasDiscount
-        ? `${appointmentNotes || 'Agendado pelo Portal do Cliente'} (Desconto de Indicação de ${discountPercent}% aplicado)`
-        : appointmentNotes || 'Agendado pelo Portal do Cliente';
-
       const response = await createPortalAppointment({
         vehicleId: selectedVehicleId,
         serviceIds: selectedServiceIds,
         date: selectedDate,
         time: selectedTime,
-        notes: appointmentNotesWithDiscount
+        notes: appointmentNotes || 'Agendado pelo Portal do Cliente'
       });
 
       if (response) {
@@ -931,7 +925,7 @@ function AuthenticatedClientPortal({
         ) : (
         <>
         {/* Meu Código de Indicação Card */}
-        {dbInstance.config.referralActive && customer && customer.referralCode && (
+        {customer && customer.referralCode && (
           <div className="mb-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-sky-500/30 rounded-3xl p-5 shadow-2xl relative overflow-hidden" id="meu-codigo-indicacao-card">
             <div className="absolute top-0 right-0 w-32 h-32 bg-sky-500/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">
@@ -943,7 +937,7 @@ function AuthenticatedClientPortal({
                   <h3 className="text-xs font-black text-white uppercase tracking-wider">Meu Código de Indicação</h3>
                 </div>
                 <p className="text-[11px] text-slate-400 max-w-md leading-relaxed">
-                  Indique amigos! Quando eles realizarem o primeiro serviço, <strong>ambos</strong> ganham desconto especial de indicação.
+                  Indique amigos! Quando eles concluírem o primeiro serviço, você ganha uma marcação no cartão fidelidade.
                 </p>
               </div>
               <div className="flex items-center gap-2 bg-slate-950/80 p-2 rounded-2xl border border-slate-800 self-start md:self-auto shrink-0">
@@ -966,7 +960,7 @@ function AuthenticatedClientPortal({
                 <button
                   type="button"
                   onClick={() => {
-                    const shareText = `Faça seu agendamento na Senhora Limpeza usando meu código de indicação ${customer.referralCode} e ganhe um desconto especial!`;
+                    const shareText = `Faça seu agendamento na Senhora Limpeza usando meu código de indicação ${customer.referralCode}. Quando você concluir o primeiro serviço, eu ganho uma marcação no cartão fidelidade!`;
                     if (navigator.share) {
                       navigator.share({
                         title: 'Indicação - Senhora Limpeza',
@@ -1958,14 +1952,6 @@ function AuthenticatedClientPortal({
 
               {/* Review Dashboard Summary Box */}
               <div className="border border-slate-800 bg-slate-950/40 rounded-3xl overflow-hidden divide-y divide-slate-850">
-                {/* Referral active notification */}
-                {dbInstance.config.referralActive && customer?.referralDiscountAvailable && (
-                  <div className="p-3 bg-emerald-500/15 border-b border-emerald-500/20 text-emerald-400 font-bold text-[10.5px] flex items-center gap-2">
-                    <Sparkles size={13} className="shrink-0 animate-pulse text-emerald-400" />
-                    <span>Você possui um desconto de indicação ativo de {dbInstance.config.referralDiscountPercent || 10}%!</span>
-                  </div>
-                )}
-
                 {/* Customer & Vehicle */}
                 <div className="p-4 flex gap-4 items-start">
                   <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-sky-400 shrink-0">
@@ -2023,29 +2009,8 @@ function AuthenticatedClientPortal({
                       </p>
                     </div>
                     <div className="space-y-1 text-right pl-4">
-                      {dbInstance.config.referralActive && customer?.referralDiscountAvailable ? (
-                        <>
-                          <div className="text-[10px]">
-                            <span className="text-slate-500 font-medium mr-1">Antes:</span>
-                            <span className="text-slate-400 font-mono line-through">{formatBRL(totalValue)}</span>
-                          </div>
-                          <div className="text-[10px] text-emerald-400 font-bold">
-                            <span>Desconto ({(dbInstance.config.referralDiscountPercent || 10)}%):</span>
-                            <span className="font-mono ml-1">-{formatBRL((totalValue * (dbInstance.config.referralDiscountPercent || 10)) / 100)}</span>
-                          </div>
-                          <div className="pt-0.5 border-t border-slate-800/80 mt-1">
-                            <span className="text-[9px] text-sky-400 uppercase tracking-wider font-bold block">Valor Final</span>
-                            <p className="text-sm font-black text-sky-400 font-mono leading-none pt-0.5">
-                              {formatBRL(totalValue - (totalValue * (dbInstance.config.referralDiscountPercent || 10)) / 100)}
-                            </p>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">Valor Previsto</span>
-                          <p className="text-sm font-black text-sky-400 font-mono leading-none pt-0.5">{formatBRL(totalValue)}</p>
-                        </>
-                      )}
+                      <span className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">Valor Previsto</span>
+                      <p className="text-sm font-black text-sky-400 font-mono leading-none pt-0.5">{formatBRL(totalValue)}</p>
                     </div>
                   </div>
                 </div>

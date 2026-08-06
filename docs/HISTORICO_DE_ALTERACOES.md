@@ -3141,3 +3141,93 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Aplicar as mesmas orientações de rollback descritas em `2026-08-05-039`.
+
+## 2026-08-06-041 — Indicações integradas ao cartão fidelidade
+
+### Tarefa relacionada
+
+- Substituição integral do desconto por indicação por marcações no cartão
+  fidelidade, com controle manual e histórico no perfil do cliente.
+
+### Objetivo
+
+- Fazer a primeira finalização de um cliente indicado gerar exatamente uma
+  marcação para quem indicou, sem percentual, desconto ou duplicidade.
+
+### Resumo do que foi feito
+
+- Removidos do runtime, tipos, configurações e interfaces os campos e cálculos de
+  desconto por indicação.
+- Criado ledger auditável de fidelidade com movimentações `+1` e `-1`, origem,
+  cliente indicado, agendamento, responsável, observação e data.
+- Criado trigger de banco para a primeira transição do indicado a `finalizado` ou
+  `entregue`; índice único parcial e `ON CONFLICT DO NOTHING` garantem uma única
+  marcação automática por indicado.
+- Adicionado backfill das indicações antigas já concluídas, preservando uma única
+  marcação por indicado.
+- Criada RPC transacional para adição e remoção manual por funcionário ativo,
+  com trava contra saldo negativo e histórico imutável.
+- Incluída no perfil do cliente a seção `Cartão fidelidade`, com saldo, marcações,
+  botões de adicionar/remover e histórico de alterações.
+- Atualizado o painel de indicações para exibir conversões e marcações, sem
+  créditos monetários ou percentuais.
+- Atualizado o Portal do Cliente para explicar a nova regra e consultar o saldo
+  agregado no ledger.
+- Removida, com autorização explícita, somente a pasta temporária `.tmp` do
+  projeto para recuperar espaço em disco; continha caches, builds e uma cópia
+  temporária de trabalho, sem arquivos funcionais do projeto principal.
+
+### Arquivos criados, alterados ou removidos
+
+- Criados: `supabase/migrations/20260806150000_referral_loyalty_ledger.sql` e
+  `tests/referral-loyalty.test.ts`.
+- Alterados: `src/types.ts`, `src/security/publicConfig.ts`,
+  `src/db/localDb.ts`, `src/App.tsx`, `src/components/ClientPortal.tsx`,
+  `src/components/ClientesModule.tsx`, `src/components/IndicacoesModule.tsx`,
+  `src/components/ConfiguracoesModule.tsx`, `package.json`,
+  `tests/db001-baseline.test.ts`, `docs/database/db001-manifest.json` e este
+  histórico.
+- Removidos: `.tmp` (somente artefatos temporários locais autorizados).
+
+### Banco, hospedagem e serviços externos
+
+- Migration criada e validada localmente, mas não aplicada ao Supabase nesta
+  etapa.
+- Nenhuma publicação foi realizada no Render ou GitHub.
+- Make e provedores de mensagens não foram modificados.
+
+### Verificações e resultados
+
+- `npm run lint`: aprovado.
+- `npm run test:referral-loyalty`: 4 testes aprovados.
+- `npm run test:portal001`: 13 testes aprovados.
+- `npm run test:db001`: 11 testes aprovados.
+- `npm run test:stabilization`: 22 testes aprovados.
+- `npm run test:sec002`: 8 testes aprovados.
+- `npm run build`: aprovado, incluindo políticas de artefato e presença segura
+  do Portal do Cliente.
+- Busca estática no runtime confirmou ausência de campos e cálculos antigos de
+  desconto por indicação.
+- A validação visual pelo navegador integrado não pôde ser concluída porque o
+  controlador do navegador falhou ao inicializar seus arquivos internos; o
+  servidor local iniciou e a compilação das telas foi aprovada.
+
+### Riscos, limitações e pendências
+
+- A nova migration precisa ser aplicada ao Supabase antes de publicar o código;
+  publicar somente a interface antes do banco fará a sincronização do ledger e a
+  RPC manual falharem.
+- O backfill deve ser conferido em ambiente de homologação ou transação controlada
+  antes da aplicação em produção.
+- A inspeção visual autenticada das telas permanece pendente por indisponibilidade
+  do controlador do navegador desta sessão.
+
+### Como desfazer
+
+- Reverter os arquivos de interface e runtime por novo commit, preservando este
+  histórico.
+- Se a migration já tiver sido aplicada, desabilitar primeiro o trigger
+  `trg_award_referral_loyalty_mark` por migration corretiva e manter a tabela de
+  ledger para auditoria; não apagar movimentações.
+- Não restaurar os campos de desconto sem uma nova decisão de produto e migration
+  explícita.

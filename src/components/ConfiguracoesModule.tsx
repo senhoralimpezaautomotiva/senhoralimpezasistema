@@ -12,7 +12,6 @@ import {
   Smartphone,
   Building,
   Mail,
-  Gift,
   Lock,
   Shield,
   LogOut,
@@ -482,52 +481,6 @@ export default function ConfiguracoesModule({
                   <option value="light">Modo Claro</option>
                 </select>
               </div>
-            </div>
-          </div>
-
-          {/* SECTION: PROGRAMA DE INDICACAO */}
-          <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-850 pb-2.5">
-              <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-white flex items-center gap-2">
-                <Gift size={14} className="text-sky-500" />
-                Programa de Indicação & Prêmios
-              </h3>
-              <span className={`px-2.5 py-0.5 border text-[9px] font-bold rounded-md font-mono uppercase ${
-                formData.referralActive 
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25' 
-                  : 'bg-slate-950/60 text-slate-500 border-slate-800'
-              }`}>
-                {formData.referralActive ? 'Ativado' : 'Desativado'}
-              </span>
-            </div>
-
-            <p className="text-slate-400 text-xs font-medium leading-relaxed">
-              Configure as regras do seu programa de indicação automático. Quando ativo, os clientes visualizam seus códigos únicos no portal de agendamento e ganham um percentual de desconto a cada indicação que concluir o primeiro serviço.
-            </p>
-
-            <div className="flex items-center gap-3 bg-slate-950 p-4 rounded-xl border border-slate-800/60">
-              <input 
-                type="checkbox" 
-                id="referralActive"
-                checked={formData.referralActive ?? false}
-                onChange={(e) => setFormData({ ...formData, referralActive: e.target.checked })}
-                className="w-4 h-4 text-sky-500 rounded border-slate-800 bg-slate-950 focus:ring-sky-500 focus:ring-offset-slate-900 cursor-pointer"
-              />
-              <label htmlFor="referralActive" className="text-slate-200 text-xs font-semibold cursor-pointer select-none">
-                Ativar Programa de Indicação de Clientes
-              </label>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Percentual de Desconto de Indicação (%)</label>
-              <input 
-                type="number"
-                min="0"
-                max="100"
-                value={formData.referralDiscountPercent ?? 10}
-                onChange={(e) => setFormData({ ...formData, referralDiscountPercent: Number(e.target.value) })}
-                className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white font-mono"
-              />
             </div>
           </div>
 

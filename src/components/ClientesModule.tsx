@@ -21,10 +21,12 @@ import {
   Car,
   Tag,
   Star,
+  Minus,
+  History,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { Customer, Vehicle, HistoryRecord } from '../types';
+import { Customer, Vehicle, HistoryRecord, LoyaltyCardEntry } from '../types';
 import { hasModulePermission } from '../db/localDb';
 import { safeLog } from '../security/safeOutput';
 import { useVehicleCatalog } from '../hooks/useVehicleCatalog';
@@ -41,6 +43,9 @@ interface ClientesModuleProps {
   onAddVehicle: (vehicle: Omit<Vehicle, 'id'>) => Promise<any>;
   onUpdateVehicle: (id: string, vehicle: Partial<Vehicle>) => Promise<any>;
   onDeleteVehicle: (id: string) => Promise<any>;
+  loyaltyEntries: LoyaltyCardEntry[];
+  loyaltyTarget: number;
+  onAdjustLoyaltyMark: (customerId: string, delta: 1 | -1) => Promise<void>;
 }
 
 export default function ClientesModule({ 
@@ -53,7 +58,10 @@ export default function ClientesModule({
   onDeleteCustomer,
   onAddVehicle,
   onUpdateVehicle,
-  onDeleteVehicle
+  onDeleteVehicle,
+  loyaltyEntries,
+  loyaltyTarget,
+  onAdjustLoyaltyMark
 }: ClientesModuleProps) {
   const canCreate = hasModulePermission(currentUser, 'clientes', 'create');
   const canEdit = hasModulePermission(currentUser, 'clientes', 'edit');
@@ -437,6 +445,17 @@ export default function ClientesModule({
 
   const customerVehicles = selectedCustomer ? vehicles.filter(v => v.customerId === selectedCustomer.id) : [];
   const customerHistory = selectedCustomer ? history.filter(h => h.customerId === selectedCustomer.id) : [];
+  const customerLoyaltyEntries = selectedCustomer ? loyaltyEntries.filter(entry => entry.customerId === selectedCustomer.id) : [];
+  const customerLoyaltyBalance = Math.max(0, customerLoyaltyEntries.reduce((sum, entry) => sum + entry.delta, 0));
+
+  const handleAdjustLoyalty = async (delta: 1 | -1) => {
+    if (!selectedCustomer || !canEdit || isSaving) return;
+    setIsSaving(true);
+    setErrorMessage(null);
+    try { await onAdjustLoyaltyMark(selectedCustomer.id, delta); }
+    catch (error: any) { setErrorMessage(error?.message || 'Não foi possível alterar o cartão fidelidade.'); }
+    finally { setIsSaving(false); }
+  };
 
   return (
     <div className="space-y-6 animate-fadeIn" id="clientes-module-view">
@@ -702,6 +721,23 @@ export default function ClientesModule({
                   </div>
                 )}
               </div>
+
+              <section className="space-y-3 bg-slate-950/60 border border-slate-800 p-4 rounded-xl" id="customer-loyalty-card">
+                <div className="flex justify-between items-center">
+                  <div><h4 className="text-xs font-bold text-white uppercase flex items-center gap-1.5"><Star size={13} className="text-amber-400"/>Cartão fidelidade</h4><p className="text-[10px] text-slate-400 mt-1">{customerLoyaltyBalance} de {loyaltyTarget} marcações</p></div>
+                  <div className="flex gap-2">
+                    <button type="button" disabled={!canEdit || isSaving || customerLoyaltyBalance === 0} onClick={() => void handleAdjustLoyalty(-1)} className="p-2 rounded-lg bg-slate-900 border border-slate-700 text-red-400 disabled:opacity-40" title="Remover marcação"><Minus size={14}/></button>
+                    <button type="button" disabled={!canEdit || isSaving} onClick={() => void handleAdjustLoyalty(1)} className="p-2 rounded-lg bg-sky-600 text-white disabled:opacity-40" title="Adicionar marcação"><Plus size={14}/></button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-10 gap-1.5">
+                  {Array.from({ length: loyaltyTarget }, (_, index) => <span key={index} className={`aspect-square rounded-full border flex items-center justify-center text-[9px] font-bold ${index < customerLoyaltyBalance ? 'bg-sky-500 border-sky-400 text-slate-950' : 'border-dashed border-slate-700 text-slate-600'}`}>{index < customerLoyaltyBalance ? '✓' : index + 1}</span>)}
+                </div>
+                <div className="pt-2 border-t border-slate-800"><h5 className="text-[9px] uppercase text-slate-500 font-bold flex items-center gap-1 mb-2"><History size={11}/>Histórico de alterações</h5><div className="space-y-1.5 max-h-32 overflow-y-auto">
+                  {customerLoyaltyEntries.map(entry => <div key={entry.id} className="text-[10px] flex justify-between gap-2 bg-slate-900/60 rounded-lg p-2"><div><span className={entry.delta > 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>{entry.delta > 0 ? '+1' : '-1'} marcação</span><p className="text-slate-500">{entry.source === 'referral' ? 'Indicação concluída' : entry.note}</p></div><div className="text-right text-slate-500"><p>{new Date(entry.createdAt).toLocaleString('pt-BR')}</p><p>{entry.actorName || 'Sistema'}</p></div></div>)}
+                  {customerLoyaltyEntries.length === 0 && <p className="text-[10px] text-slate-500 italic">Nenhuma alteração registrada.</p>}
+                </div></div>
+              </section>
 
               {/* CLIENT-ORIENTED VEHICLE SECTION */}
               <div className="space-y-3">

@@ -6,7 +6,7 @@
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { dbInstance, hasModulePermission, mapDbUserToFrontend } from './db/localDb';
-import { Customer, Vehicle, Service, Appointment, CashTransaction, SystemConfig, AutomationTrigger, AppointmentStatus, User, CreateUserInput, CommissionRecord, SystemModuleId, HistoryRecord, Budget, BudgetDraft, BudgetStatus } from './types';
+import { Customer, Vehicle, Service, Appointment, CashTransaction, SystemConfig, AutomationTrigger, AppointmentStatus, User, CreateUserInput, CommissionRecord, SystemModuleId, HistoryRecord, Budget, BudgetDraft, BudgetStatus, LoyaltyCardEntry } from './types';
 import { ShieldAlert, LogOut, LayoutDashboard } from 'lucide-react';
 import { safeLog } from './security/safeOutput';
 import { isClientPortalEnabled } from './config/publicEnvironment';
@@ -69,6 +69,7 @@ export default function App() {
 
   // React state copies of dbInstance datasets for immediate reactive rendering
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loyaltyEntries, setLoyaltyEntries] = useState<LoyaltyCardEntry[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -256,6 +257,7 @@ export default function App() {
   // Helper to sync local state with the central DB instance
   const syncWithDatabase = () => {
     setCustomers([...dbInstance.customers]);
+    setLoyaltyEntries([...dbInstance.loyaltyEntries]);
     setVehicles([...dbInstance.vehicles]);
     setServices([...dbInstance.services]);
     setAppointments([...dbInstance.appointments]);
@@ -641,6 +643,12 @@ export default function App() {
             onAddVehicle={handleAddVehicle}
             onUpdateVehicle={handleUpdateVehicle}
             onDeleteVehicle={handleDeleteVehicle}
+            loyaltyEntries={loyaltyEntries}
+            loyaltyTarget={config.loyaltyReferralTarget || 10}
+            onAdjustLoyaltyMark={async (customerId: string, delta: 1 | -1) => {
+              await dbInstance.adjustLoyaltyMark(customerId, delta, user?.name || 'Usuário do sistema');
+              syncWithDatabase();
+            }}
           />
         );
       case 'servicos':
@@ -753,9 +761,7 @@ export default function App() {
           <IndicacoesModule 
             customers={customers}
             appointments={appointments}
-            config={config}
-            currentUser={user}
-            onUpdateConfig={handleUpdateConfig}
+            loyaltyEntries={loyaltyEntries}
           />
         );
       case 'configuracoes':

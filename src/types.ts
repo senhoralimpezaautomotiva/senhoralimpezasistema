@@ -23,12 +23,19 @@ export interface Customer {
   // Referral Program Fields
   referralCode?: string;
   referredBy?: string; // id or referral code of the person who referred
-  referralDiscountAvailable?: boolean; // Has a discount from referring someone who did a service
-  referralDiscountUsed?: boolean;
   referralCreatedAt?: string;
-  referralServiceValue?: number;
-  referralBonusPercentUsed?: number;
-  referralBonusAmount?: number;
+}
+
+export interface LoyaltyCardEntry {
+  id: string;
+  customerId: string;
+  delta: 1 | -1;
+  source: 'referral' | 'manual_add' | 'manual_remove';
+  referredCustomerId?: string | null;
+  appointmentId?: string | null;
+  note?: string;
+  actorName?: string;
+  createdAt: string;
 }
 
 export interface Vehicle {
@@ -175,9 +182,7 @@ export interface PublicSystemConfig {
   supabaseAnonKey: string;
   useRealSupabase: boolean;
   
-  // Referral Program Config
-  referralActive?: boolean;
-  referralDiscountPercent?: number; // e.g. 10 for 10%
+  // Loyalty card configuration
   loyaltyReferralTarget?: number;
   portalCatalogSource?: 'system' | 'whatsapp';
   whatsappCatalogUrl?: string;

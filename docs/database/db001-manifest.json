@@ -25,7 +25,8 @@
     "20260805230000_cliente_inativo_seguranca.sql",
     "20260805233000_automacoes_monitoramento_operacional.sql",
     "20260805234000_orcamentos_automacoes.sql",
-    "20260805235000_portal_cliente_experiencia.sql"
+    "20260805235000_portal_cliente_experiencia.sql",
+    "20260806150000_referral_loyalty_ledger.sql"
   ],
   "sqlArtifacts": [
     {
@@ -171,6 +172,15 @@
       "idempotent": "partial",
       "risk": "low",
       "recommendation": "Aplicar antes do codigo do novo portal e validar configuracao, grants e retorno agregado sob sessao autenticada."
+    },
+    {
+      "path": "supabase/migrations/20260806150000_referral_loyalty_ledger.sql",
+      "category": ["official-migration", "loyalty", "referral", "schema"],
+      "purpose": "Substitui descontos de indicação por um ledger de marcações fidelidade idempotente, com ajustes manuais e histórico.",
+      "rerunnable": "partial",
+      "idempotent": "partial",
+      "risk": "medium",
+      "recommendation": "Aplicar após backup e validar backfill, trigger de primeira conclusão, saldo e RPC de ajuste manual."
     },
     {
       "path": "configuracoes_empresa.sql",
@@ -417,6 +427,18 @@
     }
   ],
   "catalog": [
+    {
+      "name": "public.loyalty_card_entries",
+      "kind": "table",
+      "evidenceStatus": "migration_and_runtime_contract",
+      "purpose": "Ledger auditável de marcações automáticas por indicação e ajustes manuais.",
+      "columnsObserved": ["id", "customer_id", "delta", "source", "referred_customer_id", "appointment_id", "note", "actor_name", "created_at"],
+      "constraintsAndDefaults": "Delta limitado a -1/+1 e índice único parcial impede duas marcações automáticas para o mesmo indicado.",
+      "relationships": "customer_id e referred_customer_id referenciam clientes; appointment_id referencia agendamentos.",
+      "rls": "Leitura e inserção seguem o contrato administrativo existente; ajuste manual ocorre por RPC transacional.",
+      "consumers": ["src/db/localDb.ts", "src/components/ClientesModule.tsx", "src/components/IndicacoesModule.tsx"],
+      "remoteConfirmation": "pending"
+    },
     {
       "name": "public.configuracoes_empresa",
       "kind": "table",

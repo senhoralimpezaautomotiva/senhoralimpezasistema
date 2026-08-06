@@ -25,6 +25,7 @@
     "test:automations": "tsx --test tests/automation-behavior.test.ts",
     "test:pilot": "tsx --test tests/pilot-readiness.test.ts",
     "test:portal001": "tsx --test tests/portal001-auth-isolation.test.ts",
+    "test:referral-loyalty": "tsx --test tests/referral-loyalty.test.ts",
     "test:go-live001": "tsx --test tests/go-live001-deployment.test.ts",
     "go-live:validate-env": "tsx scripts/pilot/validate-go-live-environment.ts",
     "go-live:smtp:check": "tsx scripts/pilot/configure-supabase-auth.ts",
