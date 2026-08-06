@@ -3231,3 +3231,61 @@ As alterações funcionais e migrations estão relacionadas na entrada
   ledger para auditoria; não apagar movimentações.
 - Não restaurar os campos de desconto sem uma nova decisão de produto e migration
   explícita.
+
+## 2026-08-06-042 — Commit e push da fidelidade; deploy aguardando acesso aos painéis
+
+### Tarefa relacionada
+
+- Publicação da alteração registrada em `2026-08-06-041` para testes.
+
+### Objetivo
+
+- Versionar e enviar a implementação ao repositório canônico, aplicar a migration
+  antes da aplicação e publicar no Render.
+
+### Resumo do que foi feito
+
+- Reconstruídos os metadados Git locais a partir da branch remota
+  `portal-cliente-layout`, sem sobrescrever o workspace.
+- Alterações antigas e não relacionadas de automações foram mantidas fora do
+  stage e do commit.
+- Criado o commit `17fa2d0` (`feat: integrar indicacoes ao cartao fidelidade`) e
+  realizado push para `senhoralimpezaautomotiva/senhoralimpezasistema` na branch
+  `portal-cliente-layout`.
+- O commit remoto foi confirmado pela API do GitHub.
+- A migration e o deploy não foram executados: não há CLI/token do Supabase ou
+  Render neste terminal, e o controlador do navegador autenticado falhou ao
+  inicializar seus arquivos internos. O deploy foi interrompido deliberadamente
+  para não publicar o runtime novo antes do schema necessário.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md` nesta etapa documental.
+- Os 14 arquivos do commit funcional estão registrados em `2026-08-06-041`.
+
+### Banco, hospedagem e serviços externos
+
+- GitHub: commit `17fa2d0` publicado em `portal-cliente-layout`.
+- Supabase: nenhuma migration aplicada nesta etapa.
+- Render: nenhum deploy iniciado nesta etapa.
+
+### Verificações e resultados
+
+- Repositório canônico e permissão de push confirmados.
+- `git diff --cached --check`: aprovado antes do commit.
+- Push confirmado de `07df5c4` para `17fa2d0`.
+- Consulta do commit pela API do GitHub retornou o SHA completo
+  `17fa2d0946f9151b4b3e6598ea6dfb2ea9b06345`.
+
+### Riscos, limitações e pendências
+
+- Aplicar `20260806150000_referral_loyalty_ledger.sql` no Supabase e validar seus
+  objetos antes de qualquer deploy no Render.
+- Após a migration, publicar a branch e confirmar health check, commit ativo e
+  telas autenticadas.
+
+### Como desfazer
+
+- Enquanto não houver migration ou deploy, criar um commit de reversão na branch
+  caso seja necessário retirar a implementação do GitHub; não reescrever o
+  histórico remoto.
