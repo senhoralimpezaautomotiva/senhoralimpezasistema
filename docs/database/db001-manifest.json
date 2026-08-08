@@ -26,7 +26,8 @@
     "20260805233000_automacoes_monitoramento_operacional.sql",
     "20260805234000_orcamentos_automacoes.sql",
     "20260805235000_portal_cliente_experiencia.sql",
-    "20260806150000_referral_loyalty_ledger.sql"
+    "20260806150000_referral_loyalty_ledger.sql",
+    "20260807213000_fix_referral_code_validation.sql"
   ],
   "sqlArtifacts": [
     {
@@ -181,6 +182,15 @@
       "idempotent": "partial",
       "risk": "medium",
       "recommendation": "Aplicar após backup e validar backfill, trigger de primeira conclusão, saldo e RPC de ajuste manual."
+    },
+    {
+      "path": "supabase/migrations/20260807213000_fix_referral_code_validation.sql",
+      "category": ["official-migration", "referral", "security"],
+      "purpose": "Corrige a normalização e comparação do código de indicação nas RPCs do portal para aceitar letras minúsculas e maiúsculas de forma insensível à caixa.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Aplicar para atualizar as funções RPC portal_validate_referral_code e portal_create_cliente no Supabase."
     },
     {
       "path": "configuracoes_empresa.sql",

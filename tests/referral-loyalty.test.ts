@@ -34,3 +34,12 @@ test('runtime atual não oferece nem calcula desconto de indicação', () => {
   assert.doesNotMatch(currentRuntime, /referralDiscount|referralBonus|referral_discount_percent/);
   assert.doesNotMatch(portal, /Desconto de Indicação|desconto especial de indicação/i);
 });
+
+test('nova migração de validação do código de indicação normaliza maiúsculas, minúsculas e espaços', () => {
+  const fixMigration = read('supabase', 'migrations', '20260807213000_fix_referral_code_validation.sql');
+  assert.ok(fixMigration.includes('public.portal_validate_referral_code'));
+  assert.ok(fixMigration.includes('public.portal_create_cliente'));
+  assert.ok(fixMigration.includes('[^a-zA-Z0-9-]'));
+  assert.ok(fixMigration.includes("upper(public.portal_customer_metadata(nome)->>'referralCode')"));
+  assert.ok(fixMigration.includes('id is distinct from public.portal_current_cliente_id()'));
+});

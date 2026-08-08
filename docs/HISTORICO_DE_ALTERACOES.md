@@ -3289,3 +3289,221 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Enquanto não houver migration ou deploy, criar um commit de reversão na branch
   caso seja necessário retirar a implementação do GitHub; não reescrever o
   histórico remoto.
+
+## 2026-08-06-043 — Retomada do deploy bloqueada no editor SQL
+
+### Tarefa relacionada
+
+- Continuação da publicação registrada em `2026-08-06-042`.
+
+### Objetivo
+
+- Aplicar a migration de fidelidade no Supabase antes de publicar o runtime no
+  Render.
+
+### Resumo do que foi feito
+
+- A sessão autenticada do Supabase voltou a funcionar no navegador integrado.
+- Foram confirmados a organização, o projeto de produção e o estado saudável do
+  banco.
+- A migration local foi carregada e conferida, mas o editor SQL do painel não
+  aceitou digitação nem colagem pelo controlador do navegador.
+- O botão de execução não chegou a executar SQL; a área de resultados permaneceu
+  no estado inicial, solicitando a execução da consulta.
+- O deploy no Render não foi iniciado para preservar a ordem segura banco antes
+  de aplicação.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md` para registrar esta tentativa.
+- Nenhum arquivo funcional foi criado, alterado ou removido.
+
+### Banco, hospedagem e serviços externos
+
+- Supabase: acesso e saúde confirmados; nenhuma migration ou consulta foi
+  executada nesta etapa.
+- Render: nenhum deploy iniciado.
+- GitHub, Make e provedores de mensagens: nenhuma alteração.
+
+### Verificações e resultados
+
+- Projeto Supabase `ansrnnydksrjwefnntaw` confirmado como `Healthy`.
+- Última migration exibida pelo painel ainda era `portal_cliente_experiencia`.
+- Editor SQL permaneceu com a mensagem `Click Run to execute your query`, sem
+  resultado de sucesso ou erro de execução.
+
+### Riscos, limitações e pendências
+
+- Permanece obrigatório aplicar e validar
+  `20260806150000_referral_loyalty_ledger.sql` antes do deploy no Render.
+- A aplicação depende de entrada manual no editor SQL ou de outro meio
+  autenticado para aplicar a migration.
+
+### Como desfazer
+
+- Esta etapa não modificou código funcional, banco, hospedagem ou serviços
+  externos; não há reversão operacional a realizar.
+- Para desfazer apenas este registro, criar uma nova entrada corretiva; não
+  apagar nem reescrever o histórico.
+
+## 2026-08-06-044 — Migration da fidelidade aplicada; deploy aguarda login no Render
+
+### Tarefa relacionada
+
+- Continuação operacional das etapas `2026-08-06-042` e `2026-08-06-043`.
+
+### Objetivo
+
+- Aplicar e validar a migration de fidelidade no banco de produção antes de
+  publicar o runtime correspondente no Render.
+
+### Resumo do que foi feito
+
+- O conteúdo integral da migration foi conferido no editor SQL do Supabase,
+  incluindo `begin;`, 152 linhas úteis e `commit;` final.
+- A execução foi confirmada no aviso de operação destrutiva do painel e concluiu
+  com `Success. No rows returned`.
+- O ledger da migration passou a constar como a entrada mais recente do histórico
+  de migrations do Supabase.
+- A nova tabela `loyalty_card_entries` foi confirmada no catálogo com nove
+  colunas e zero registros; o backfill não encontrou indicação antiga elegível.
+- O painel do Render foi aberto para iniciar o deploy, mas a sessão não estava
+  autenticada. Nenhuma publicação foi iniciada.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md` nesta etapa documental.
+- Nenhum arquivo funcional foi criado, alterado ou removido.
+
+### Banco, hospedagem e serviços externos
+
+- Supabase de produção: migration `20260806150000_referral_loyalty_ledger.sql`
+  aplicada e registrada como `20260806150000` / `referral_loyalty_ledger`.
+- Render: nenhuma alteração; deploy aguardando autenticação do usuário.
+- GitHub, Make e provedores de mensagens: nenhuma alteração nesta etapa.
+
+### Verificações e resultados
+
+- Editor SQL: `Success. No rows returned`.
+- Ledger de migrations: `20260806150000 referral_loyalty_ledger` confirmado como
+  registro mais recente.
+- Catálogo do banco: tabela `public.loyalty_card_entries` confirmada com nove
+  colunas, zero linhas e RLS habilitada no schema, embora a tela de listagem do
+  painel represente a exposição pela Data API como `Disabled`.
+- Render: tela de login exibida; serviço e deploy ainda não inspecionados nesta
+  etapa.
+
+### Riscos, limitações e pendências
+
+- O runtime novo ainda não está publicado; até o deploy, o banco contém objetos
+  compatíveis adicionais que não são usados pela versão ativa da aplicação.
+- É necessário autenticar no Render, publicar a branch
+  `portal-cliente-layout` e confirmar commit ativo, health check e telas.
+- Não houve indicação histórica elegível para validar visualmente o backfill com
+  saldo positivo.
+
+### Como desfazer
+
+- Enquanto o runtime novo não for publicado, manter a migration aditiva é a
+  opção de menor risco.
+- Se a reversão do banco se tornar indispensável, criar migration corretiva para
+  desabilitar `trg_award_referral_loyalty_mark` e revogar a RPC; preservar a
+  tabela e eventuais movimentações para auditoria.
+- Não apagar o registro do ledger de migrations nem reescrever o histórico.
+
+## 2026-08-06-045 — Fidelidade publicada no Render
+
+### Tarefa relacionada
+
+- Conclusão do deploy iniciado após a migration registrada em `2026-08-06-044`.
+
+### Objetivo
+
+- Publicar a implementação da fidelidade integrada às indicações somente após a
+  preparação bem-sucedida do banco de produção.
+
+### Resumo do que foi feito
+
+- O serviço `senhora-limpeza-piloto` foi confirmado na branch
+  `portal-cliente-layout`.
+- Foi iniciado pelo painel um deploy manual do commit mais recente da branch,
+  `9950d47`, que contém o commit funcional `17fa2d0`.
+- O build concluiu com sucesso e o Render marcou o deploy
+  `dep-d9qh40pt0dsc73823ob0` como `live`.
+- A tentativa posterior de abrir a aplicação pública para health check e inspeção
+  visual foi impedida pela política de navegação da sessão; não foi utilizado
+  meio alternativo para contornar o bloqueio.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado somente `docs/HISTORICO_DE_ALTERACOES.md` nesta etapa documental.
+- Nenhum arquivo funcional foi criado, alterado ou removido.
+
+### Banco, hospedagem e serviços externos
+
+- Render: deploy manual do commit `9950d47b413546df28916f969f87e9f57348074a`
+  concluído como `live` no serviço de produção.
+- Supabase: nenhuma alteração adicional após a migration confirmada em
+  `2026-08-06-044`.
+- GitHub, Make e provedores de mensagens: nenhuma alteração nesta etapa.
+
+### Verificações e resultados
+
+- Render: `Build successful` confirmado nos logs.
+- Render: processo iniciou com `npm start` e `node dist/server.cjs`.
+- Render: estado final do deploy confirmado como `live`.
+- Health check público e inspeção visual autenticada: não executados porque a
+  navegação para a URL pública foi bloqueada pela política da sessão.
+
+### Riscos, limitações e pendências
+
+- Falta confirmar externamente a resposta HTTP de `/health` e fazer a inspeção
+  visual das telas de fidelidade e indicações na versão publicada.
+- O serviço permanece no plano gratuito e pode sofrer cold start.
+- A tabela de fidelidade iniciou sem registros de backfill; a primeira marcação
+  real deverá ser acompanhada operacionalmente para confirmar o fluxo ponta a
+  ponta com dados de produção.
+
+### Como desfazer
+
+- Render: executar rollback pelo painel para o deploy estável anterior do commit
+  `068220c`, caso seja necessário retirar o runtime novo.
+- Banco: manter o schema aditivo para auditoria. Se uma reversão funcional for
+  indispensável, criar migration corretiva que desabilite o trigger e revogue a
+  RPC, sem apagar a tabela nem suas movimentações.
+- GitHub: realizar reversão por novo commit; não reescrever o histórico remoto.
+
+---
+
+## 2026-08-07-001 — Correção da validação de código de indicação no Portal do Cliente
+
+**Etapa relacionada:** Correção da validação de código de indicação.
+
+**Objetivo:** Corrigir a validação do código de indicação no Portal do Cliente para que códigos válidos existentes no banco de dados sejam reconhecidos corretamente, suportando maiúsculas, minúsculas e espaços acidentais.
+
+### Trabalho realizado
+
+- Analisada a validação do código de indicação no Portal do Cliente (`src/components/ClientPortal.tsx`, `src/portal/portalSupabase.ts`).
+- Identificada a causa exata no banco de dados: a função SQL `portal_validate_referral_code` (e `portal_create_cliente`) utilizava a expressão regular `[^A-Z0-9-]` aplicada *antes* do `upper()`, o que removia todas as letras minúsculas (ex: `sl-abc123` virava `-123`), além de fazer busca sensível à caixa via `LIKE` em formato JSON.
+- Criada nova migration `supabase/migrations/20260807213000_fix_referral_code_validation.sql` para atualizar com `CREATE OR REPLACE FUNCTION` as funções `portal_validate_referral_code` e `portal_create_cliente`:
+  1. Alterada a regex para `[^a-zA-Z0-9-]`, preservando letras em minúsculas/maiúsculas antes da conversão para maiúsculas.
+  2. Atualizada a consulta para comparar `upper(public.portal_customer_metadata(nome)->>'referralCode')` com o valor digitado normalizado em maiúsculas, tornando a validação case-insensitive.
+  3. Mantidas todas as demais regras do cadastro/portal e a proteção contra autoindicação (`id is distinct from public.portal_current_cliente_id()`).
+- Atualizado o manifesto do banco (`docs/database/db001-manifest.json`) e adicionados testes unitários em `tests/referral-loyalty.test.ts` e `tests/db001-baseline.test.ts`.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260807213000_fix_referral_code_validation.sql`
+- Alterados: `docs/database/db001-manifest.json`, `tests/db001-baseline.test.ts`, `tests/referral-loyalty.test.ts`, `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e serviços externos
+
+- Supabase: criada nova migration `20260807213000_fix_referral_code_validation.sql` com `CREATE OR REPLACE FUNCTION` para atualização do banco existente. Nenhuma migration antiga foi alterada.
+
+### Verificações e resultados
+
+- `npx tsx --test tests/db001-baseline.test.ts tests/referral-loyalty.test.ts`: 16 testes aprovados sem falhas.
+
+### Como desfazer
+
+- Remover o arquivo `supabase/migrations/20260807213000_fix_referral_code_validation.sql` e restaurar o manifesto e arquivos de teste para a versão anterior.
