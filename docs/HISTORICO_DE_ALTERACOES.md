@@ -3510,6 +3510,47 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 ---
 
+## 2026-08-15-001 - Correcao minima da RPC `portal_create_cliente`
+
+**Etapa relacionada:** Correcao do erro Supabase `42703` no cadastro do cliente pelo Portal do Cliente.
+
+**Objetivo:** Corrigir a funcao `public.portal_create_cliente` para parar de consultar a coluna inexistente `cliente_id` em `public.clientes`.
+
+### Trabalho realizado
+
+- Criada nova migration com `CREATE OR REPLACE FUNCTION public.portal_create_cliente(...)`.
+- Mantida a funcao semanticamente igual a versao anterior, alterando somente as duas consultas de cliente existente:
+  - `select cliente_id from public.clientes` para `select id from public.clientes` no caminho de identidade por e-mail.
+  - `select cliente_id from public.clientes` para `select id from public.clientes` no caminho de identidade por telefone.
+- Nenhuma migration antiga foi reescrita.
+- Nenhum deploy foi executado.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260815120000_fix_portal_create_cliente_customer_lookup.sql`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Supabase: nenhuma alteracao remota aplicada nesta etapa; a migration foi criada apenas localmente.
+- Hospedagem e servicos externos: nenhuma alteracao.
+
+### Verificacoes e resultados
+
+- `rg -n "select\s+cliente_id|from public\.clientes|select\s+id" supabase\migrations\20260815120000_fix_portal_create_cliente_customer_lookup.sql` confirmou que a nova migration consulta `public.clientes` usando `select id`.
+
+### Riscos, limitacoes e pendencias
+
+- A migration ainda precisa ser aplicada no Supabase de producao para corrigir a RPC ativa.
+- Nao foram executados testes de integracao contra o Supabase remoto nesta etapa.
+
+### Como desfazer
+
+- Antes de aplicar no banco: remover o arquivo `supabase/migrations/20260815120000_fix_portal_create_cliente_customer_lookup.sql`.
+- Depois de aplicar no banco: criar nova migration com `CREATE OR REPLACE FUNCTION` restaurando a versao anterior da RPC, se uma reversao for indispensavel.
+
+---
+
 ## 2026-08-15-002 - Atualizacao automatica do portal administrativo
 
 **Etapa relacionada:** Atualizacao automatica dos dados do portal administrativo sem F5.
@@ -3547,3 +3588,85 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter em `src/App.tsx` a importacao de `useRef`, a constante `adminAutoRefreshInFlightRef` e restaurar o `useEffect` de sincronizacao administrativa para uma chamada unica a `dbInstance.syncWithSupabase()`.
+
+---
+
+## 2026-08-15-003 - Correcao de sintaxe em `localDb.ts` e ajuste do teste do portal
+
+**Etapa relacionada:** Correção da falha da suíte `portal001-auth-isolation` após a atualização automática do painel administrativo.
+
+**Objetivo:** Corrigir apenas o erro de sintaxe que impedia a compilação dos testes e alinhar o teste estático do portal ao comportamento atual do painel administrativo.
+
+### Trabalho realizado
+
+- Restaurado o fechamento estrutural do bloco assíncrono em `src/db/localDb.ts`, incluindo o registro de falha de enfileiramento, o método `addLog` e o início de `validateReferralCode`.
+- Atualizado somente o teste `tests/portal001-auth-isolation.test.ts` para refletir a guarda atual da sincronização administrativa:
+  `!user || isClientPortal || !config.useRealSupabase`.
+- Nenhuma regra de negócio, banco de dados, migration ou funcionalidade não relacionada foi alterada.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteração.
+- Hospedagem, Supabase remoto e demais serviços externos: nenhuma alteração ou deploy executado.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests\portal001-auth-isolation.test.ts`: 13 testes aprovados.
+- Suíte de testes do projeto via scripts `test:*`: parou em `test:db001` após `test:sec002`, `test:sec003`, `test:sec004` e `test:sec005` aprovarem.
+- Falhas em `test:db001`: migrations locais novas `20260815120000_fix_portal_create_cliente_customer_lookup.sql` e `20260815123000_fix_referral_loyalty_completed_status.sql` aparecem no diretório oficial, mas ainda não estão refletidas nas expectativas DB-001.
+
+### Riscos, limitacoes e pendencias
+
+- A suíte completa permanece bloqueada por divergência DB-001 não relacionada à correção de sintaxe nem ao teste do portal.
+- Não foi feita classificação/manifesto das migrations novas nesta etapa para não alterar escopo.
+
+### Como desfazer
+
+- Reverter a restauração estrutural em `src/db/localDb.ts` apenas se uma versão correta equivalente já tiver sido aplicada por outro commit.
+- Reverter as três expectativas atualizadas em `tests/portal001-auth-isolation.test.ts` caso a sincronização administrativa volte ao comportamento antigo.
+
+---
+
+## 2026-08-15-004 - Atualizacao do baseline DB-001 para migrations corretivas
+
+**Etapa relacionada:** Correcao da falha da suite `test:db001` apos criacao de migrations corretivas locais.
+
+**Objetivo:** Refletir no baseline DB-001 as migrations oficiais presentes no diretorio `supabase/migrations`.
+
+### Trabalho realizado
+
+- Confirmado que as migrations `20260815120000_fix_portal_create_cliente_customer_lookup.sql` e `20260815123000_fix_referral_loyalty_completed_status.sql` existem no diretorio oficial de migrations do projeto.
+- Atualizada a lista esperada em `tests/db001-baseline.test.ts`.
+- Atualizado `docs/database/db001-manifest.json` para classificar as duas migrations como oficiais, com proposito, risco e recomendacao.
+- Nenhuma regra de negocio, banco de dados, migration SQL ou funcionalidade nao relacionada foi alterada.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Hospedagem, Supabase remoto e demais servicos externos: nenhuma alteracao ou deploy executado.
+
+### Verificacoes e resultados
+
+- `npm run test:db001`: 11 testes aprovados.
+- Suite `test:*` do projeto executada em sequencia: `test:sec002`, `test:sec003`, `test:sec004`, `test:sec005`, `test:db001`, `test:automations`, `test:stabilization`, `test:pilot`, `test:portal001`, `test:referral-loyalty` e `test:go-live001` aprovados.
+
+### Riscos, limitacoes e pendencias
+
+- As migrations foram refletidas no baseline local; a aplicacao remota dessas migrations continua dependendo de execucao controlada no Supabase quando solicitada.
+- Esta etapa nao valida o estado remoto do ledger de migrations.
+
+### Como desfazer
+
+- Remover as duas migrations das listas em `docs/database/db001-manifest.json` e `tests/db001-baseline.test.ts` somente se os arquivos SQL forem retirados do diretorio oficial por decisao explicita.

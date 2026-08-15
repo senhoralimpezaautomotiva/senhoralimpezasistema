@@ -27,7 +27,9 @@
     "20260805234000_orcamentos_automacoes.sql",
     "20260805235000_portal_cliente_experiencia.sql",
     "20260806150000_referral_loyalty_ledger.sql",
-    "20260807213000_fix_referral_code_validation.sql"
+    "20260807213000_fix_referral_code_validation.sql",
+    "20260815120000_fix_portal_create_cliente_customer_lookup.sql",
+    "20260815123000_fix_referral_loyalty_completed_status.sql"
   ],
   "sqlArtifacts": [
     {
@@ -191,6 +193,24 @@
       "idempotent": "yes",
       "risk": "low",
       "recommendation": "Aplicar para atualizar as funções RPC portal_validate_referral_code e portal_create_cliente no Supabase."
+    },
+    {
+      "path": "supabase/migrations/20260815120000_fix_portal_create_cliente_customer_lookup.sql",
+      "category": ["official-migration", "portal", "rpc", "security"],
+      "purpose": "Corrige a RPC portal_create_cliente para consultar public.clientes.id em vez da coluna inexistente public.clientes.cliente_id ao localizar cadastro existente.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Aplicar para substituir somente a função public.portal_create_cliente no Supabase, sem alterar schema ou regras de negócio."
+    },
+    {
+      "path": "supabase/migrations/20260815123000_fix_referral_loyalty_completed_status.sql",
+      "category": ["official-migration", "loyalty", "referral", "rpc"],
+      "purpose": "Corrige a função award_referral_loyalty_mark para reconhecer o status Concluído com normalização de acento ao conceder marcação por indicação.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "low",
+      "recommendation": "Aplicar para substituir somente a função public.award_referral_loyalty_mark no Supabase, mantendo a lógica de ledger existente."
     },
     {
       "path": "configuracoes_empresa.sql",

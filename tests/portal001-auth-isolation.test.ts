@@ -131,8 +131,9 @@ test('dados de cliente e operação são removidos e não regravados no localSto
 
 test('sincronização administrativa só ocorre após perfil autenticado', () => {
   const app = readPortalFile('src', 'App.tsx');
-  assert.match(app, /if \(!user \|\| !dbInstance\.config\.useRealSupabase\) return/);
-  assert.match(app, /void dbInstance\.syncWithSupabase\(\)/);
+  assert.match(app, /if \(!user \|\| isClientPortal \|\| !config\.useRealSupabase\) return/);
+  assert.match(app, /await dbInstance\.syncWithSupabase\(\)/);
+  assert.match(app, /window\.setInterval\([\s\S]*60_000/);
 });
 
 test('nova navegacao preserva o fluxo de agendamento e oferece telas somente leitura', () => {
