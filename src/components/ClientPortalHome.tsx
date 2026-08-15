@@ -5,6 +5,7 @@ import {
   CalendarPlus,
   Check,
   ChevronRight,
+  Copy,
   ExternalLink,
   Gift,
   History,
@@ -76,6 +77,7 @@ export default function ClientPortalHome({
   const loyaltyTarget = Math.max(1, portalSettings.loyaltyTarget || config?.loyaltyReferralTarget || 10);
   const completedReferrals = Math.min(referralProgress, loyaltyTarget);
   const remainingReferrals = Math.max(0, loyaltyTarget - completedReferrals);
+  const [copyFeedback, setCopyFeedback] = useState(false);
   const completedAppointments = useMemo(
     () => appointments
       .filter(item => item.status === 'finalizado' || item.status === 'entregue')
@@ -86,6 +88,12 @@ export default function ClientPortalHome({
   const lastService = lastAppointment
     ? services.find(item => item.id === lastAppointment.serviceId)?.name || 'Serviço realizado'
     : 'Nenhum serviço concluído';
+  const handleCopyReferralCode = async () => {
+    if (!customer.referralCode) return;
+    await navigator.clipboard.writeText(customer.referralCode);
+    setCopyFeedback(true);
+    window.setTimeout(() => setCopyFeedback(false), 2000);
+  };
 
   if (section === 'home') {
     return (
@@ -93,6 +101,23 @@ export default function ClientPortalHome({
         <div className="text-center pt-1">
           <p className="text-slate-400">Olá,</p>
           <h2 className="text-2xl font-black text-white">{customer.name}!</h2>
+          {customer.referralCode && (
+            <div className="mt-3 flex flex-col sm:flex-row items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleCopyReferralCode()}
+                className="inline-flex items-center gap-2 rounded-2xl border border-sky-500/30 bg-slate-950/80 px-3 py-2 text-sky-300 hover:bg-sky-500/10 transition-colors"
+                title="Copiar código de indicação"
+              >
+                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Código de indicação</span>
+                <strong className="font-mono text-sm tracking-widest text-sky-400">{customer.referralCode}</strong>
+                {copyFeedback ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+              </button>
+              {copyFeedback && (
+                <span className="text-[10px] text-emerald-300 font-bold">Código copiado com sucesso</span>
+              )}
+            </div>
+          )}
           <p className="text-slate-400 mt-1">Como podemos cuidar do seu carro hoje?</p>
         </div>
 

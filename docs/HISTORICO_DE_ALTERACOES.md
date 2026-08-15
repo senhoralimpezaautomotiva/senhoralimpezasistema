@@ -3712,3 +3712,44 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Remover o bloco `overrides` de `package.json` e regenerar `bun.lock` somente se uma atualizacao de `postcss` ou `vite` resolver `nanoid` para versao segura sem override.
+
+---
+
+## 2026-08-15-006 - Reorganizacao responsiva do Portal do Cliente
+
+**Etapa relacionada:** Melhoria da experiencia do Portal do Cliente em celular, tablet e desktop.
+
+**Objetivo:** Tornar o codigo de indicacao sempre visivel na tela inicial e reduzir a rolagem da etapa de agendamento sem mudar regras de negocio ou fluxo.
+
+### Trabalho realizado
+
+- Movido o codigo de indicacao para a saudacao da tela inicial do Portal do Cliente.
+- Adicionada copia automatica ao tocar no codigo, com confirmacao discreta de sucesso.
+- Removido o card de codigo de indicacao da area de agendamento e removida a acao de compartilhamento.
+- Reposicionado o painel de resumo da selecao para o topo da etapa de escolha de servicos, mantendo os mesmos dados de servicos selecionados, tempo total, valor estimado e navegacao.
+- Mantidas as regras atuais de selecao, calculo de preco, validacao e fluxo de agendamento.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `src/components/ClientPortalHome.tsx`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Hospedagem, Supabase remoto e demais servicos externos: nenhuma alteracao ou deploy executado.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 13 testes aprovados.
+- `npm run lint`: aprovado sem erros de TypeScript.
+
+### Riscos, limitacoes e pendencias
+
+- A copia do codigo depende da API de clipboard disponivel no navegador do cliente.
+- Nao foi feita validacao visual em navegador real nesta etapa.
+
+### Como desfazer
+
+- Reverter as alteracoes em `src/components/ClientPortal.tsx` e `src/components/ClientPortalHome.tsx` para restaurar o card antigo de indicacao e a posicao anterior do resumo.

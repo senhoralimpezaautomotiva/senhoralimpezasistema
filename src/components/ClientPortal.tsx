@@ -8,7 +8,7 @@ import {
   Phone, User, Mail, Car, Calendar, Clock, ChevronRight, ChevronLeft, 
   Plus, Check, ShieldAlert, AlertCircle, LogOut,
   Clock3, CheckCircle2, X, FileSignature,
-  Gift, Copy, Share2, Search
+  Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { dbInstance } from '../db/localDb';
@@ -16,7 +16,6 @@ import { Customer, Vehicle, Service, Appointment, AppointmentStatus, SystemConfi
 import { safeLog } from '../security/safeOutput';
 import { useVehicleCatalog } from '../hooks/useVehicleCatalog';
 import { sizeCategoryToPorte } from '../utils/vehicleCatalog';
-import { useManagedTimeout } from '../hooks/useManagedTimeout';
 import PortalAuthGate from '../portal/PortalAuthGate';
 import {
   addPortalVehicle,
@@ -158,7 +157,6 @@ function AuthenticatedClientPortal({
   authenticatedPhone,
   initialData
 }: AuthenticatedClientPortalProps) {
-  const scheduleTimeout = useManagedTimeout();
   // Navigation steps: 
   // 2 = Client Registration (Name, Email) - if not exists
   // 3 = Vehicle Selection / Creation
@@ -177,7 +175,6 @@ function AuthenticatedClientPortal({
   const [whatsapp, setWhatsapp] = useState(authenticatedPhone.replace(/\D/g, ''));
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [copyFeedback, setCopyFeedback] = useState(false);
   const [duplicatePlateError, setDuplicatePlateError] = useState(false);
 
   // Core domain states
@@ -924,66 +921,6 @@ function AuthenticatedClientPortal({
           />
         ) : (
         <>
-        {/* Meu Código de Indicação Card */}
-        {customer && customer.referralCode && (
-          <div className="mb-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-sky-500/30 rounded-3xl p-5 shadow-2xl relative overflow-hidden" id="meu-codigo-indicacao-card">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-sky-500/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="p-1.5 bg-sky-500/10 rounded-lg text-sky-400">
-                    <Gift size={16} className="animate-pulse" />
-                  </span>
-                  <h3 className="text-xs font-black text-white uppercase tracking-wider">Meu Código de Indicação</h3>
-                </div>
-                <p className="text-[11px] text-slate-400 max-w-md leading-relaxed">
-                  Indique amigos! Quando eles concluírem o primeiro serviço, você ganha uma marcação no cartão fidelidade.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 bg-slate-950/80 p-2 rounded-2xl border border-slate-800 self-start md:self-auto shrink-0">
-                <div className="px-4 py-1.5 bg-slate-900 rounded-xl border border-slate-800">
-                  <span className="text-sm font-black font-mono tracking-widest text-sky-400 select-all">{customer.referralCode}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(customer.referralCode || '');
-                    setCopyFeedback(true);
-                    scheduleTimeout(() => setCopyFeedback(false), 2000);
-                  }}
-                  className="p-2.5 bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-white rounded-xl border border-slate-800 transition-all flex items-center gap-1.5 text-[10px] font-bold"
-                  title="Copiar Código"
-                >
-                  {copyFeedback ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                  <span>{copyFeedback ? 'Copiado!' : 'Copiar'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const shareText = `Faça seu agendamento na Senhora Limpeza usando meu código de indicação ${customer.referralCode}. Quando você concluir o primeiro serviço, eu ganho uma marcação no cartão fidelidade!`;
-                    if (navigator.share) {
-                      navigator.share({
-                        title: 'Indicação - Senhora Limpeza',
-                        text: shareText,
-                        url: window.location.href
-                      }).catch(error => {
-                        safeLog('warn', 'client_portal.referral.share', 'ignored', { error });
-                      });
-                    } else {
-                      const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`;
-                      window.open(url, '_blank');
-                    }
-                  }}
-                  className="p-2.5 bg-sky-500 hover:bg-sky-600 text-slate-950 font-black rounded-xl transition-all flex items-center gap-1.5 text-[10px] shadow-lg shadow-sky-500/10"
-                >
-                  <Share2 size={12} />
-                  <span>Compartilhar</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         <AnimatePresence mode="wait">
 
           {/* STEP 2: New Customer Registration Form */}
@@ -1548,6 +1485,55 @@ function AuthenticatedClientPortal({
                     </div>
                   )}
 
+                  {/* Realtime Pricing Board */}
+                  <div className="bg-slate-950 border border-slate-850 p-4 rounded-2xl space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Serviços</span>
+                        <p className="text-xs font-black text-white font-mono">{selectedServiceIds.length} selecionado(s)</p>
+                      </div>
+                      <div className="space-y-0.5 sm:border-l border-slate-850 sm:pl-3">
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Tempo Total</span>
+                        <p className="text-xs font-black text-slate-300 font-mono flex items-center gap-1">
+                          <Clock3 size={11} className="text-sky-400" />
+                          {formatDuration(totalTime)}
+                        </p>
+                      </div>
+                      <div className="space-y-0.5 sm:text-right">
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Valor Estimado</span>
+                        <p className="text-sm font-black text-sky-400 font-mono">{formatBRL(totalValue)}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => setStep(3)}
+                        className="px-5 py-3.5 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold rounded-2xl transition-colors text-xs"
+                      >
+                        Voltar
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if (selectedServiceIds.length === 0) {
+                            setErrorMessage('Por favor, selecione pelo menos um serviço para o seu agendamento.');
+                            return;
+                          }
+                          setErrorMessage(null);
+                          const hasSuggestions = adjustedServices.some(s => s.portalVisibility === 'sugestao' || (!s.portalVisibility && s.isFeatured));
+                          if (hasSuggestions) {
+                            setShowSuggestionsScreen(true);
+                          } else {
+                            setStep(5);
+                          }
+                        }}
+                        className="flex-1 py-3.5 bg-sky-500 hover:bg-sky-600 text-slate-950 font-black rounded-2xl transition-all shadow-lg shadow-sky-500/10 hover:shadow-sky-500/20 flex items-center justify-center gap-1 text-xs cursor-pointer"
+                      >
+                        <span>Avançar</span>
+                        <ChevronRight size={15} />
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Main Service cards grid (only listed services) */}
                   <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1 scrollbar-thin">
                     {adjustedServices
@@ -1592,55 +1578,6 @@ function AuthenticatedClientPortal({
                       })}
                   </div>
 
-                  {/* Bottom Realtime Pricing Board */}
-                  <div className="bg-slate-950 border border-slate-850 p-4 rounded-2xl flex justify-between items-center flex-wrap gap-4">
-                    <div className="flex gap-4">
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Serviços</span>
-                        <p className="text-xs font-black text-white font-mono">{selectedServiceIds.length} selecionado(s)</p>
-                      </div>
-                      <div className="space-y-0.5 border-l border-slate-850 pl-4">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Tempo Total</span>
-                        <p className="text-xs font-black text-slate-300 font-mono flex items-center gap-1">
-                          <Clock3 size={11} className="text-sky-400" />
-                          {formatDuration(totalTime)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="text-right space-y-0.5">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Valor Estimado</span>
-                      <p className="text-sm font-black text-sky-400 font-mono">{formatBRL(totalValue)}</p>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 flex gap-3">
-                    <button 
-                      onClick={() => setStep(3)}
-                      className="px-5 py-3.5 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold rounded-2xl transition-colors text-xs"
-                    >
-                      Voltar
-                    </button>
-                    <button 
-                      onClick={() => {
-                        if (selectedServiceIds.length === 0) {
-                          setErrorMessage('Por favor, selecione pelo menos um serviço para o seu agendamento.');
-                          return;
-                        }
-                        setErrorMessage(null);
-                        const hasSuggestions = adjustedServices.some(s => s.portalVisibility === 'sugestao' || (!s.portalVisibility && s.isFeatured));
-                        if (hasSuggestions) {
-                          setShowSuggestionsScreen(true);
-                        } else {
-                          setStep(5);
-                        }
-                      }}
-                      className="flex-1 py-3.5 bg-sky-500 hover:bg-sky-600 text-slate-950 font-black rounded-2xl transition-all shadow-lg shadow-sky-500/10 hover:shadow-sky-500/20 flex items-center justify-center gap-1 text-xs cursor-pointer"
-                    >
-                      <span>Avançar</span>
-                      <ChevronRight size={15} />
-                    </button>
-                  </div>
                 </motion.div>
               ) : (
                 <motion.div 
