@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { lazy, Suspense, useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { dbInstance, hasModulePermission, mapDbUserToFrontend } from './db/localDb';
 import { Customer, Vehicle, Service, Appointment, CashTransaction, SystemConfig, AutomationTrigger, AppointmentStatus, User, CreateUserInput, CommissionRecord, SystemModuleId, HistoryRecord, Budget, BudgetDraft, BudgetStatus, LoyaltyCardEntry } from './types';
@@ -80,6 +80,7 @@ export default function App() {
   const [automations, setAutomations] = useState<AutomationTrigger[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [commissions, setCommissions] = useState<CommissionRecord[]>([]);
+  const adminAutoRefreshInFlightRef = useRef(false);
 
   // Restore and monitor the real Supabase Auth session.
   useEffect(() => {
@@ -238,9 +239,27 @@ export default function App() {
   // Dados operacionais só são sincronizados depois que o perfil administrativo
   // autenticado e ativo foi validado. O portal usa um cliente Supabase isolado.
   useEffect(() => {
-    if (!user || !dbInstance.config.useRealSupabase) return;
-    void dbInstance.syncWithSupabase();
-  }, [user?.id]);
+    if (!user || isClientPortal || !config.useRealSupabase) return;
+
+    const refreshAdminData = async () => {
+      if (adminAutoRefreshInFlightRef.current) return;
+      adminAutoRefreshInFlightRef.current = true;
+      try {
+        await dbInstance.syncWithSupabase();
+      } finally {
+        adminAutoRefreshInFlightRef.current = false;
+      }
+    };
+
+    void refreshAdminData();
+    const intervalId = window.setInterval(() => {
+      void refreshAdminData();
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [user?.id, isClientPortal, config.useRealSupabase]);
 
   // Synchronize CSS class with active system theme
   useEffect(() => {

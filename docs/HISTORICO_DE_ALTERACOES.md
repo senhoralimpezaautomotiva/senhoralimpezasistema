@@ -3507,3 +3507,43 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Remover o arquivo `supabase/migrations/20260807213000_fix_referral_code_validation.sql` e restaurar o manifesto e arquivos de teste para a versão anterior.
+
+---
+
+## 2026-08-15-002 - Atualizacao automatica do portal administrativo
+
+**Etapa relacionada:** Atualizacao automatica dos dados do portal administrativo sem F5.
+
+**Objetivo:** Fazer o painel administrativo recarregar os dados do Supabase a cada 60 segundos, sem alterar banco de dados, migrations ou regras de negocio.
+
+### Trabalho realizado
+
+- Alterado somente o frontend em `src/App.tsx`.
+- A sincronizacao administrativa que ja ocorria apos validacao do usuario autenticado passou a executar tambem em intervalo de 60 segundos.
+- Adicionada trava em memoria com `useRef` para evitar chamadas sobrepostas caso uma sincronizacao demore mais que o intervalo.
+- O intervalo roda apenas para usuario administrativo autenticado, fora da rota do Portal do Cliente, e somente quando `useRealSupabase` esta ativo.
+- Nenhuma regra de negocio, schema, migration ou servico externo foi alterado.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/App.tsx`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Hospedagem, Supabase remoto e demais servicos externos: nenhuma alteracao ou deploy executado.
+
+### Verificacoes e resultados
+
+- `git diff -- src\App.tsx`: confirmou alteracao limitada ao hook de sincronizacao administrativa.
+- `npm run lint`: nao concluiu por erros de sintaxe ja presentes em `src/db/localDb.ts` na regiao da linha 1669, fora do escopo desta alteracao.
+
+### Riscos, limitacoes e pendencias
+
+- A atualizacao automatica depende da mesma funcao existente `dbInstance.syncWithSupabase()`.
+- O typecheck completo permanece bloqueado ate corrigir os erros preexistentes em `src/db/localDb.ts`.
+
+### Como desfazer
+
+- Reverter em `src/App.tsx` a importacao de `useRef`, a constante `adminAutoRefreshInFlightRef` e restaurar o `useEffect` de sincronizacao administrativa para uma chamada unica a `dbInstance.syncWithSupabase()`.
