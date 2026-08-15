@@ -3753,3 +3753,45 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter as alteracoes em `src/components/ClientPortal.tsx` e `src/components/ClientPortalHome.tsx` para restaurar o card antigo de indicacao e a posicao anterior do resumo.
+
+---
+
+## 2026-08-15-007 - Padronizacao da selecao de data e horario do Portal
+
+**Etapa relacionada:** Reorganizacao da etapa de agendamento do Portal do Cliente com base na tela Consultar agenda.
+
+**Objetivo:** Usar o mesmo padrao visual de calendario e horarios disponiveis nas telas de consulta e agendamento, preservando regras de negocio.
+
+### Trabalho realizado
+
+- Criado painel reutilizavel `PortalAvailabilityPanel` para escolha de data e exibicao de horarios.
+- Atualizada a tela Consultar agenda para usar o painel compartilhado.
+- Atualizada a etapa de data e horario do agendamento para usar o mesmo painel visual, mantendo `selectedDate`, `selectedTime`, `timeSlots` e `takenSlots` existentes.
+- Mantido o campo de observacao logo abaixo da selecao de horario e antes do botao de revisao.
+- Ajustadas as grades e controles com quebras responsivas para evitar overflow horizontal em celular, tablet e desktop.
+- Nenhuma regra de negocio, calculo, validacao de disponibilidade ou fluxo de confirmacao foi alterado.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `src/components/ClientPortalHome.tsx`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Hospedagem, Supabase remoto e demais servicos externos: nenhuma alteracao ou deploy executado.
+
+### Verificacoes e resultados
+
+- `npm run lint`: aprovado sem erros de TypeScript.
+- `npm run test:portal001`: 13 testes aprovados.
+
+### Riscos, limitacoes e pendencias
+
+- Nao foi feita validacao visual em navegador real nesta etapa.
+- Datas fora do intervalo ativo continuam sem horario selecionavel, preservando a restricao operacional existente.
+
+### Como desfazer
+
+- Reverter as alteracoes em `src/components/ClientPortal.tsx` e `src/components/ClientPortalHome.tsx` para restaurar a selecao horizontal anterior da etapa de agendamento e a implementacao local antiga da consulta de agenda.

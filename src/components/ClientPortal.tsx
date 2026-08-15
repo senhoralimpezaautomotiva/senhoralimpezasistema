@@ -27,7 +27,7 @@ import {
   type PortalData
 } from '../portal/portalSupabase';
 import { activePortalAuthProvider } from '../portal/auth/emailPasswordAuthProvider';
-import ClientPortalHome, { type ClientPortalSection } from './ClientPortalHome';
+import ClientPortalHome, { PortalAvailabilityPanel, type ClientPortalSection } from './ClientPortalHome';
 
 const BrandLogo = ({ brand }: { brand: string }) => {
   const name = brand.trim().toLowerCase();
@@ -1741,92 +1741,25 @@ function AuthenticatedClientPortal({
                 </div>
               )}
 
-              {/* Day horizontal scroll selector */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Selecione o Dia
-                </label>
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent snap-x">
-                  {availableDaysList.map(d => {
-                    const isSelected = selectedDate === d.dateStr;
-                    return (
-                      <div 
-                        key={d.dateStr}
-                        onClick={() => {
-                          setSelectedDate(d.dateStr);
-                          setSelectedTime(''); // Reset selected time
-                        }}
-                        className={`flex-none snap-start w-[64px] py-3 border rounded-2xl text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${
-                          isSelected 
-                            ? 'bg-sky-500 border-sky-500 text-slate-950 font-bold shadow-lg shadow-sky-500/10' 
-                            : 'bg-slate-950/40 border-slate-850 hover:border-slate-700 text-slate-300'
-                        }`}
-                      >
-                        <span className={`text-[9px] uppercase tracking-wider font-semibold ${isSelected ? 'text-slate-950' : 'text-slate-500'}`}>
-                          {d.weekday}
-                        </span>
-                        <span className="text-sm font-extrabold font-mono">
-                          {d.dayNum}
-                        </span>
-                        <span className={`text-[9px] capitalize ${isSelected ? 'text-slate-900' : 'text-slate-400'}`}>
-                          {d.monthLabel}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Grid of hourly slots */}
-              {selectedDate ? (
-                <div className="space-y-2.5">
-                  <div className="flex justify-between items-center">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      Horários Disponíveis em <span className="text-white font-mono">{new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
-                    </label>
-                    <div className="flex items-center gap-3 text-[10px]">
-                      <span className="flex items-center gap-1 text-slate-500">
-                        <span className="w-2 h-2 rounded bg-slate-950/40 border border-slate-850" />
-                        Livre
-                      </span>
-                      <span className="flex items-center gap-1 text-slate-500">
-                        <span className="w-2 h-2 rounded bg-red-500/10 border border-red-500/20" />
-                        Ocupado
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-5 gap-2">
-                    {timeSlots.map(time => {
-                      const isTaken = takenSlots.includes(time);
-                      const isSelected = selectedTime === time;
-
-                      return (
-                        <button 
-                          key={time}
-                          type="button"
-                          disabled={isTaken}
-                          onClick={() => setSelectedTime(time)}
-                          className={`py-2 px-1 border rounded-xl text-center font-bold font-mono transition-all text-[11px] ${
-                            isTaken
-                              ? 'bg-red-500/5 text-red-500/30 border-red-500/10 cursor-not-allowed opacity-40'
-                              : isSelected
-                                ? 'bg-sky-500 border-sky-500 text-slate-950 shadow-md shadow-sky-500/10'
-                                : 'bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-700'
-                          }`}
-                        >
-                          {time}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-slate-950/40 border border-slate-850 rounded-2xl py-8 text-center text-slate-500">
-                  <Calendar size={22} className="mx-auto mb-2 text-slate-600" />
-                  <span>Por favor, escolha um dia para consultar horários livres.</span>
-                </div>
-              )}
+              <PortalAvailabilityPanel
+                date={selectedDate}
+                onDateChange={(date) => {
+                  setSelectedDate(date);
+                  setSelectedTime('');
+                }}
+                minDate={availableDaysList[0]?.dateStr}
+                maxDate={availableDaysList[availableDaysList.length - 1]?.dateStr}
+                slots={timeSlots.map(time => {
+                  const dateAvailable = availableDaysList.some(day => day.dateStr === selectedDate);
+                  return {
+                    time,
+                    occupied: !dateAvailable || takenSlots.includes(time),
+                    selected: selectedTime === time
+                  };
+                })}
+                onSlotSelect={setSelectedTime}
+                emptyMessage="Escolha uma data para consultar horários livres."
+              />
 
               {/* Extra booking comments */}
               <div>

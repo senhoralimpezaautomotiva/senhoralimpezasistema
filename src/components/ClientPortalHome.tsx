@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   ArrowLeft,
   BookOpen,
+  Calendar,
   CalendarPlus,
   Check,
   ChevronRight,
@@ -39,6 +40,26 @@ interface ClientPortalHomeProps {
     loyaltyTarget: number;
     agenda?: AgendaConfig;
   };
+}
+
+export interface PortalAvailabilitySlot {
+  time: string;
+  occupied: boolean;
+  selected?: boolean;
+}
+
+interface PortalAvailabilityPanelProps {
+  date: string;
+  onDateChange: (date: string) => void;
+  slots: PortalAvailabilitySlot[];
+  minDate?: string;
+  maxDate?: string;
+  onSlotSelect?: (time: string) => void;
+  onConsult?: () => void;
+  loading?: boolean;
+  error?: string;
+  emptyMessage?: string;
+  helperText?: string;
 }
 
 const dateLabel = (value: string): string =>
@@ -264,18 +285,105 @@ function AvailabilityView({ agenda, onBack }: { agenda?: AgendaConfig; onBack: (
   return (
     <div>
       <PortalBack title="Consultar agenda" onClick={onBack} />
-      <div className="rounded-2xl border-2 border-sky-500/30 bg-sky-500/[0.06] p-4 mb-4">
+      <PortalAvailabilityPanel
+        date={date}
+        onDateChange={setDate}
+        minDate={today}
+        slots={slots.map(slot => ({ time: slot.time, occupied: busyTimes.includes(slot.time) }))}
+        onConsult={consult}
+        loading={loading}
+        error={error}
+        helperText="Somente consulta. Nenhum horário é reservado nesta tela."
+      />
+    </div>
+  );
+}
+
+export function PortalAvailabilityPanel({
+  date,
+  onDateChange,
+  slots,
+  minDate,
+  maxDate,
+  onSlotSelect,
+  onConsult,
+  loading = false,
+  error = '',
+  emptyMessage = 'Por favor, escolha um dia para consultar horários livres.',
+  helperText
+}: PortalAvailabilityPanelProps) {
+  return (
+    <div className="space-y-4 min-w-0">
+      <div className="rounded-2xl border-2 border-sky-500/30 bg-sky-500/[0.06] p-4">
         <label className="text-[10px] uppercase tracking-wider text-slate-400 block mb-2">Escolha uma data</label>
-        <div className="flex gap-2"><input type="date" min={today} value={date} onChange={event => setDate(event.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white" /><button type="button" onClick={() => void consult()} className="px-4 py-2.5 rounded-xl bg-sky-500 text-slate-950 font-black">{loading ? 'Consultando...' : 'Consultar'}</button></div>
+        <div className="flex flex-col sm:flex-row gap-2 min-w-0">
+          <input
+            type="date"
+            min={minDate}
+            max={maxDate}
+            value={date}
+            onChange={event => onDateChange(event.target.value)}
+            className="min-w-0 flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white"
+          />
+          {onConsult && (
+            <button type="button" onClick={() => void onConsult()} className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-sky-500 text-slate-950 font-black">
+              {loading ? 'Consultando...' : 'Consultar'}
+            </button>
+          )}
+        </div>
       </div>
+
       {error && <p className="text-rose-300 border border-rose-500/25 bg-rose-500/10 rounded-xl p-3">{error}</p>}
-      <div className="grid grid-cols-3 gap-2">
-        {slots.map(slot => {
-          const occupied = busyTimes.includes(slot.time);
-          return <div key={slot.id} className={`rounded-xl border p-3 text-center ${occupied ? 'border-slate-800 bg-slate-900/60 text-slate-600' : 'border-sky-500/30 bg-sky-500/[0.06] text-sky-300'}`}><strong className="font-mono">{slot.time}</strong><span className="block text-[9px] mt-1">{occupied ? 'Ocupado' : 'Disponível'}</span></div>;
-        })}
-      </div>
-      <p className="text-center text-[10px] text-slate-500 mt-4">Somente consulta. Nenhum horário é reservado nesta tela.</p>
+
+      {date ? (
+        <div className="space-y-2.5 min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Horários Disponíveis em <span className="text-white font-mono">{new Date(date + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+            </label>
+            <div className="flex items-center gap-3 text-[10px]">
+              <span className="flex items-center gap-1 text-slate-500">
+                <span className="w-2 h-2 rounded bg-slate-950/40 border border-slate-850" />
+                Livre
+              </span>
+              <span className="flex items-center gap-1 text-slate-500">
+                <span className="w-2 h-2 rounded bg-red-500/10 border border-red-500/20" />
+                Ocupado
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 min-w-0">
+            {slots.map(slot => {
+              const clickable = Boolean(onSlotSelect) && !slot.occupied;
+              const classes = slot.occupied
+                ? 'bg-red-500/5 text-red-500/30 border-red-500/10 cursor-not-allowed opacity-40'
+                : slot.selected
+                  ? 'bg-sky-500 border-sky-500 text-slate-950 shadow-md shadow-sky-500/10'
+                  : 'bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-700';
+              return (
+                <button
+                  key={slot.time}
+                  type="button"
+                  disabled={!clickable}
+                  onClick={() => onSlotSelect?.(slot.time)}
+                  className={`min-w-0 rounded-xl border p-3 text-center transition-all ${classes}`}
+                >
+                  <strong className="font-mono text-[11px]">{slot.time}</strong>
+                  <span className="block text-[9px] mt-1">{slot.occupied ? 'Ocupado' : 'Disponível'}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-slate-950/40 border border-slate-850 rounded-2xl py-8 px-4 text-center text-slate-500">
+          <Calendar size={22} className="mx-auto mb-2 text-slate-600" />
+          <span>{emptyMessage}</span>
+        </div>
+      )}
+
+      {helperText && <p className="text-center text-[10px] text-slate-500">{helperText}</p>}
     </div>
   );
 }
