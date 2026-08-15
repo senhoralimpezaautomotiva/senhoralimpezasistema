@@ -3670,3 +3670,45 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Remover as duas migrations das listas em `docs/database/db001-manifest.json` e `tests/db001-baseline.test.ts` somente se os arquivos SQL forem retirados do diretorio oficial por decisao explicita.
+
+---
+
+## 2026-08-15-005 - Correcao da auditoria de dependencias do Render
+
+**Etapa relacionada:** Falha de deploy no Render apos `bun audit --audit-level=high` detectar vulnerabilidade alta em `nanoid` abaixo de 3.3.18.
+
+**Objetivo:** Preservar a auditoria de dependencias no build e corrigir minimamente a versao transitiva vulneravel.
+
+### Trabalho realizado
+
+- Adicionado override de dependencias em `package.json` para forcar `nanoid` em `3.3.18`.
+- Regenerado `bun.lock` para resolver a dependencia transitiva usada por `postcss` como `nanoid@3.3.18`.
+- Mantido o comando `bun audit --audit-level=high` no fluxo de seguranca, sem relaxar a verificacao.
+- Nenhuma regra de negocio, banco de dados, migration ou funcionalidade de aplicacao foi alterada.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `package.json`.
+- Alterado: `bun.lock`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Hospedagem e Render: nenhum deploy executado nesta etapa; alteracao apenas versionada no repositorio.
+- Servicos externos: `bun audit` consultou o registro de vulnerabilidades, sem alterar servicos externos.
+
+### Verificacoes e resultados
+
+- `bun pm why nanoid`: confirmou `nanoid@3.3.18` como dependencia transitiva de `postcss`.
+- `bun audit --audit-level=high`: aprovado sem vulnerabilidades altas reportadas.
+- Suite `test:*` do projeto executada em sequencia: `test:sec002`, `test:sec003`, `test:sec004`, `test:sec005`, `test:db001`, `test:automations`, `test:stabilization`, `test:pilot`, `test:portal001`, `test:referral-loyalty` e `test:go-live001` aprovados.
+
+### Riscos, limitacoes e pendencias
+
+- A correcao depende do Render respeitar `bun install --frozen-lockfile` com o `bun.lock` atualizado.
+- Nao foi executado deploy remoto nesta etapa.
+
+### Como desfazer
+
+- Remover o bloco `overrides` de `package.json` e regenerar `bun.lock` somente se uma atualizacao de `postcss` ou `vite` resolver `nanoid` para versao segura sem override.
