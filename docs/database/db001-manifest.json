@@ -29,7 +29,8 @@
     "20260806150000_referral_loyalty_ledger.sql",
     "20260807213000_fix_referral_code_validation.sql",
     "20260815120000_fix_portal_create_cliente_customer_lookup.sql",
-    "20260815123000_fix_referral_loyalty_completed_status.sql"
+    "20260815123000_fix_referral_loyalty_completed_status.sql",
+    "20260816143000_portal_force_password_change_backend_guard.sql"
   ],
   "sqlArtifacts": [
     {
@@ -211,6 +212,15 @@
       "idempotent": "yes",
       "risk": "low",
       "recommendation": "Aplicar para substituir somente a função public.award_referral_loyalty_mark no Supabase, mantendo a lógica de ledger existente."
+    },
+    {
+      "path": "supabase/migrations/20260816143000_portal_force_password_change_backend_guard.sql",
+      "category": ["official-migration", "portal", "auth", "security"],
+      "purpose": "Adiciona guarda central por app_metadata.force_password_change para bloquear RLS, RPCs e leituras normais do Portal ate a troca obrigatoria de senha.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "medium",
+      "recommendation": "Aplicar junto da publicacao das Edge Functions de provisionamento e limpeza da flag para reforcar o bloqueio no backend."
     },
     {
       "path": "configuracoes_empresa.sql",
@@ -506,6 +516,18 @@
       "remoteConfirmation": "pending"
     },
     {
+      "name": "public.portal_client_identities",
+      "kind": "table",
+      "evidenceStatus": "migration_and_runtime_contract",
+      "purpose": "Vincula usuarios Supabase Auth aos cadastros de clientes do Portal do Cliente.",
+      "columnsObserved": ["auth_user_id", "cliente_id", "identity_provider", "identity_value"],
+      "constraintsAndDefaults": "Migration define auth_user_id como PK, cliente_id unico e provider email/phone.",
+      "relationships": "auth_user_id -> auth.users.id; cliente_id -> public.clientes.id.",
+      "rls": "Leitura do proprio vinculo ou staff; a migration de force_password_change bloqueia leitura de cliente marcado ate troca da senha.",
+      "consumers": ["src/portal/portalSupabase.ts", "supabase/functions/admin-create-client-user/index.ts"],
+      "remoteConfirmation": "pending"
+    },
+    {
       "name": "public.servicos_disponiveis",
       "kind": "table",
       "evidenceStatus": "runtime_contract",
@@ -687,6 +709,14 @@
     "edgeFunctions": [
       {
         "name": "admin-create-user",
+        "status": "present_in_repository"
+      },
+      {
+        "name": "admin-create-client-user",
+        "status": "present_in_repository"
+      },
+      {
+        "name": "portal-clear-password-change",
         "status": "present_in_repository"
       }
     ]

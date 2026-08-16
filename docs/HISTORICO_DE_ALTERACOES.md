@@ -3795,3 +3795,129 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter as alteracoes em `src/components/ClientPortal.tsx` e `src/components/ClientPortalHome.tsx` para restaurar a selecao horizontal anterior da etapa de agendamento e a implementacao local antiga da consulta de agenda.
+
+---
+
+## 2026-08-16-001 - Provisionamento de acesso do cliente cadastrado pelo administrativo
+
+**Etapa relacionada:** Cadastro administrativo de clientes com acesso inicial ao Portal do Cliente.
+
+**Objetivo:** Criar automaticamente usuario no Supabase Auth para clientes cadastrados pelo sistema administrativo, exigir troca da senha temporaria no primeiro acesso e liberar o portal somente apos a redefinicao segura.
+
+### Trabalho realizado
+
+- Criada a Edge Function `admin-create-client-user` para uso administrativo autenticado, com validacao de perfil ativo e permissao de criacao em `clientes`.
+- O cadastro administrativo de cliente passou a chamar a funcao apos salvar o cliente e o codigo de indicacao, usando a senha temporaria padrao `123456`.
+- A funcao cria ou atualiza o usuario do Supabase Auth com e-mail confirmado, grava `app_metadata.force_password_change` e vincula o usuario ao cliente em `portal_client_identities`.
+- Criada a Edge Function autenticada `portal-clear-password-change` para limpar a marcacao administrativa apos a troca de senha bem-sucedida.
+- O Portal do Cliente passou a verificar imediatamente a metadata `force_password_change` ao restaurar sessao ou ao fazer login.
+- Quando a flag esta ativa, o portal nao carrega dados, nao executa claim do cliente e exibe somente a tela de definicao de nova senha.
+- A redefinicao reaproveita a validacao existente de senha forte do portal, atualiza a senha via Supabase Auth e limpa a flag `force_password_change` via Edge Function antes de liberar o acesso normal.
+- Nao foi implementada opcao de alterar senha no portal, nem fluxo de esqueci minha senha novo, nem alteracao no cadastro existente feito pelo proprio Portal do Cliente.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/functions/admin-create-client-user/index.ts`.
+- Criado: `supabase/functions/portal-clear-password-change/index.ts`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `src/portal/PortalAuthGate.tsx`.
+- Alterado: `src/portal/auth/emailPasswordAuthProvider.ts`.
+- Alterado: `src/portal/auth/portalAuthProvider.ts`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration criada ou aplicada.
+- Supabase Auth: nenhuma alteracao remota executada nesta etapa; foi criado apenas o codigo da Edge Function local.
+- Hospedagem, deploy e servicos externos: nenhuma alteracao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 14 testes aprovados.
+- `npm run lint`: aprovado sem erros de TypeScript.
+- `npm run build`: aprovado, incluindo validacoes `security:artifact` e `pilot:artifact`.
+- `npm run test:sec002`: 8 testes aprovados.
+- `npm run test:sec003`: 9 testes aprovados.
+- `npm run test:sec004`: 11 testes aprovados.
+- `npm run test:sec005`: 16 testes aprovados.
+- `npm run test:go-live001`: 9 testes aprovados.
+
+### Riscos, limitacoes e pendencias
+
+- A Edge Function precisa ser publicada no Supabase antes de o fluxo funcionar no ambiente remoto.
+- Se a criacao do usuario Auth falhar depois de o cliente ser salvo, o cadastro do cliente permanece no banco e a interface retorna erro para o operador provisionar novamente apos a correcao.
+- A senha temporaria `123456` e aceita apenas para o primeiro login; a nova senha continua seguindo a politica forte do portal.
+
+### Como desfazer
+
+- Remover a chamada a `admin-create-client-user` em `src/db/localDb.ts`.
+- Reverter as alteracoes de flag em `src/portal/PortalAuthGate.tsx`, `src/portal/auth/emailPasswordAuthProvider.ts` e `src/portal/auth/portalAuthProvider.ts`.
+- Remover `supabase/functions/admin-create-client-user/index.ts` e o teste adicionado em `tests/portal001-auth-isolation.test.ts`.
+- Se a funcao ja tiver sido publicada, despublicar/remover a Edge Function pelo processo operacional do Supabase, sem apagar usuarios Auth existentes sem auditoria previa.
+
+---
+
+## 2026-08-16-002 - Correcao final de atomicidade e guarda backend da troca obrigatoria
+
+**Etapa relacionada:** Revisao final do cadastro administrativo de clientes com acesso ao Portal.
+
+**Objetivo:** Corrigir riscos finais do fluxo: cadastro parcial quando o Auth falha, mensagem incorreta para e-mail ja existente, bloqueio apenas frontend de `force_password_change` e sessao/JWT stale apos troca de senha.
+
+### Trabalho realizado
+
+- O cadastro administrativo agora valida e-mail antes de inserir cliente quando `useRealSupabase` esta ativo.
+- Se a Edge Function de provisionamento do Auth falhar apos a criacao do cliente novo, o cliente recem-criado e removido por rollback pontual antes de retornar erro.
+- O erro retornado pela Edge Function passa a ser preservado pelo fluxo e exibido pelo modulo de clientes.
+- A Edge Function `admin-create-client-user` retorna mensagem especifica quando o Supabase Auth recusa criacao por e-mail ja cadastrado: `Ja existe um acesso ao Portal do Cliente cadastrado para este e-mail.`
+- A Edge Function `portal-clear-password-change` passou a aceitar somente sessoes ainda marcadas com `app_metadata.force_password_change = true`.
+- Criada a migration `20260816143000_portal_force_password_change_backend_guard.sql` com funcoes centrais `portal_password_change_required` e `portal_password_change_allowed`.
+- A migration reforca RLS e RPCs do Portal para bloquear usuario marcado em leituras de cliente, vinculo, veiculos, agendamentos, catalogos autenticados, configuracoes autenticadas e RPCs normais do Portal.
+- A troca de senha agora chama `auth.refreshSession()` apos limpar a flag e o gate usa a sessao atual do cliente Supabase antes de carregar dados normais.
+- Atualizados testes e manifesto DB-001 para cobrir a migration, Edge Functions, mensagens, rollback, guarda backend e renovacao do JWT.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260816143000_portal_force_password_change_backend_guard.sql`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `src/components/ClientesModule.tsx`.
+- Alterado: `src/portal/PortalAuthGate.tsx`.
+- Alterado: `src/portal/auth/emailPasswordAuthProvider.ts`.
+- Alterado: `supabase/functions/admin-create-client-user/index.ts`.
+- Alterado: `supabase/functions/portal-clear-password-change/index.ts`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration aplicada remotamente nesta etapa; a migration foi criada apenas localmente.
+- Supabase Auth e Edge Functions: nenhuma alteracao remota executada.
+- Hospedagem, deploy e demais servicos externos: nenhuma alteracao executada.
+
+### Verificacoes e resultados
+
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+- `npm run test:portal001`: 15 testes aprovados.
+- `npm run test:db001`: 11 testes aprovados.
+- `npm run test:sec002`: 8 testes aprovados.
+- `npm run test:sec003`: 9 testes aprovados.
+- `npm run test:sec004`: 11 testes aprovados.
+- `npm run test:sec005`: 16 testes aprovados.
+- `npm run test:go-live001`: 9 testes aprovados.
+
+### Riscos, limitacoes e pendencias
+
+- A migration e as Edge Functions precisam ser publicadas/aplicadas juntas para que o reforco backend funcione em ambiente remoto.
+- O rollback de cadastro parcial cobre o cliente novo criado por este fluxo; se a exclusao de rollback falhar por erro remoto, o sistema retorna erro explicito informando que nao conseguiu desfazer automaticamente.
+- Nao foi executado teste de integracao contra Supabase remoto nesta etapa.
+
+### Como desfazer
+
+- Reverter a chamada de rollback e leitura de erro em `src/db/localDb.ts`.
+- Reverter a preservacao de erro em `src/components/ClientesModule.tsx`.
+- Remover `supabase/migrations/20260816143000_portal_force_password_change_backend_guard.sql` antes de aplicar no banco.
+- Reverter a checagem restritiva em `portal-clear-password-change` e a mensagem especifica em `admin-create-client-user`.
+- Reverter os testes e o manifesto DB-001 adicionados nesta etapa.

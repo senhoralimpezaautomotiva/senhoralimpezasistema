@@ -22,12 +22,15 @@ test('senha do portal exige comprimento e composição mínimos', () => {
 
 test('cadastro, login, confirmação e recuperação usam e-mail do Supabase Auth', () => {
   const source = readPortalFile('src', 'portal', 'auth', 'emailPasswordAuthProvider.ts');
+  const contract = readPortalFile('src', 'portal', 'auth', 'portalAuthProvider.ts');
   assert.match(source, /\.auth\.signUp\(\{\s*email,\s*password/s);
   assert.match(source, /emailRedirectTo:\s*portalRedirectUrl\(false\)/);
   assert.match(source, /\.auth\.signInWithPassword\(\{/);
   assert.match(source, /\.auth\.resetPasswordForEmail\(/);
   assert.match(source, /redirectTo:\s*portalRedirectUrl\(true\)/);
-  assert.match(source, /\.auth\.updateUser\(\{\s*password\s*\}\)/);
+  assert.match(contract, /PORTAL_FORCE_PASSWORD_CHANGE_FLAG = 'force_password_change'/);
+  assert.match(source, /\.auth\.updateUser\(\{\s*password,[\s\S]*\[PORTAL_FORCE_PASSWORD_CHANGE_FLAG\]: false/);
+  assert.match(source, /functions\.invoke\('portal-clear-password-change'\)/);
   assert.doesNotMatch(source, /signInWithOtp|verifyOtp/);
 });
 
@@ -146,6 +149,69 @@ test('nova navegacao preserva o fluxo de agendamento e oferece telas somente lei
   assert.match(home, /Consultar agenda/);
   assert.match(home, /Somente consulta/);
   assert.doesNotMatch(home, /createPortalAppointment|cancelPortalAppointment/);
+});
+
+test('cadastro administrativo de cliente provisiona Auth temporario e portal bloqueia ate trocar senha', () => {
+  const localDb = readPortalFile('src', 'db', 'localDb.ts');
+  const gate = readPortalFile('src', 'portal', 'PortalAuthGate.tsx');
+  const clientesModule = readPortalFile('src', 'components', 'ClientesModule.tsx');
+  const functionSource = readPortalFile(
+    'supabase',
+    'functions',
+    'admin-create-client-user',
+    'index.ts'
+  );
+  const clearFunctionSource = readPortalFile(
+    'supabase',
+    'functions',
+    'portal-clear-password-change',
+    'index.ts'
+  );
+
+  assert.match(localDb, /CLIENT_PORTAL_TEMPORARY_PASSWORD = '123456'/);
+  assert.match(localDb, /readSupabaseFunctionErrorMessage/);
+  assert.match(localDb, /\.from\('clientes'\)\.delete\(\)\.eq\('id', id\)/);
+  assert.match(localDb, /throw new Error\(authErrorMessage\)/);
+  assert.match(clientesModule, /setErrorMessage\(err\?\.message \|\|/);
+  assert.doesNotMatch(clientesModule, /telefone j.{1,4} est.{1,4} cadastrado/);
+  assert.match(localDb, /supabase\.functions\.invoke\('admin-create-client-user'/);
+  assert.match(localDb, /Authorization:\s*`Bearer \$\{sessionData\.session\.access_token\}`/);
+  assert.match(functionSource, /auth\.admin\.createUser\(\{[\s\S]*password,[\s\S]*email_confirm: true/);
+  assert.match(functionSource, /app_metadata:\s*\{[\s\S]*FORCE_PASSWORD_CHANGE_FLAG/);
+  assert.match(functionSource, /Ja existe um acesso ao Portal do Cliente cadastrado para este e-mail/);
+  assert.match(functionSource, /portal_client_identities/);
+  assert.match(functionSource, /canCreateCustomers/);
+  assert.match(clearFunctionSource, /auth\.admin\.updateUserById/);
+  assert.match(clearFunctionSource, /requester\.app_metadata\?\.\[FORCE_PASSWORD_CHANGE_FLAG\] !== true/);
+  assert.match(clearFunctionSource, /app_metadata:\s*nextAppMetadata/);
+  assert.match(gate, /mustChangePortalPassword\(activeSession\)/);
+  assert.match(gate, /setMode\('new-password'\)/);
+  assert.match(gate, /isRecoveryCallback \|\| mustChangePortalPassword\(data\.session\)/);
+});
+
+test('force_password_change tambem bloqueia acesso direto ao backend do portal', () => {
+  const migration = readPortalFile(
+    'supabase',
+    'migrations',
+    '20260816143000_portal_force_password_change_backend_guard.sql'
+  );
+  const provider = readPortalFile('src', 'portal', 'auth', 'emailPasswordAuthProvider.ts');
+  const gate = readPortalFile('src', 'portal', 'PortalAuthGate.tsx');
+
+  assert.match(migration, /portal_password_change_required\(\)/);
+  assert.match(migration, /auth\.jwt\(\) -> 'app_metadata' ->> 'force_password_change'/);
+  assert.match(migration, /portal_password_change_allowed\(\)/);
+  assert.match(migration, /message = 'PASSWORD_CHANGE_REQUIRED'/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.portal_current_cliente_id\(\)[\s\S]*public\.portal_password_change_allowed\(\)/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.portal_resolve_auth_identity\(\)[\s\S]*public\.portal_password_change_required\(\)/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.portal_busy_intervals\(p_date date\)[\s\S]*PASSWORD_CHANGE_REQUIRED/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.portal_referral_progress\(\)[\s\S]*PASSWORD_CHANGE_REQUIRED/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.portal_validate_referral_code\(p_code text\)[\s\S]*PASSWORD_CHANGE_REQUIRED/);
+  assert.match(migration, /configuracoes_empresa_select_public[\s\S]*portal_password_change_allowed\(\)/);
+  assert.match(migration, /servicos_catalog_read[\s\S]*portal_password_change_allowed\(\)/);
+  assert.match(provider, /functions\.invoke\('portal-clear-password-change'\)/);
+  assert.match(provider, /\.auth\.refreshSession\(\)/);
+  assert.match(gate, /const activeSession = \(await client\.auth\.getSession\(\)\)\.data\.session/);
 });
 
 test('fidelidade usa agregado seguro e catalogo possui fonte administravel', () => {

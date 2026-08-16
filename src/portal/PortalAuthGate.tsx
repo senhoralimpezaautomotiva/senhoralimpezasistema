@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { safeLog } from '../security/safeOutput';
 import { activePortalAuthProvider } from './auth/emailPasswordAuthProvider';
+import { PORTAL_FORCE_PASSWORD_CHANGE_FLAG } from './auth/portalAuthProvider';
 import {
   claimExistingPortalCustomer,
   getPortalSupabaseClient,
@@ -45,6 +46,10 @@ const friendlyAuthError = (error: unknown): string => {
   return message || 'Não foi possível concluir a autenticação.';
 };
 
+const mustChangePortalPassword = (activeSession: Session | null): boolean =>
+  activeSession?.user.app_metadata?.[PORTAL_FORCE_PASSWORD_CHANGE_FLAG] === true ||
+  activeSession?.user.user_metadata?.[PORTAL_FORCE_PASSWORD_CHANGE_FLAG] === true;
+
 export default function PortalAuthGate({
   onBackToAdmin,
   children
@@ -61,6 +66,12 @@ export default function PortalAuthGate({
   const [errorMessage, setErrorMessage] = useState('');
 
   const prepareAuthenticatedPortal = async (activeSession: Session) => {
+    if (mustChangePortalPassword(activeSession)) {
+      setSession(activeSession);
+      setPortalData(null);
+      setMode('new-password');
+      return;
+    }
     await claimExistingPortalCustomer();
     const data = await loadPortalData();
     setPortalData(data);
@@ -88,7 +99,7 @@ export default function PortalAuthGate({
         const isRecoveryCallback =
           typeof window !== 'undefined' &&
           new URL(window.location.href).searchParams.get('recovery') === 'true';
-        if (isRecoveryCallback) {
+        if (isRecoveryCallback || mustChangePortalPassword(data.session)) {
           if (!disposed && currentRequest === requestId) {
             setSession(data.session);
             setPortalData(null);
@@ -204,16 +215,21 @@ export default function PortalAuthGate({
     setLoading(true);
     try {
       await authProvider.updatePassword(password);
-      const activeSession =
-        session || (await getPortalSupabaseClient().auth.getSession()).data.session;
+      const client = getPortalSupabaseClient();
+      const activeSession = (await client.auth.getSession()).data.session;
       if (!activeSession) throw new Error('Sessão de recuperação expirada.');
+
+      const { data: refreshedUser } = await client.auth.getUser();
+      const refreshedSession = refreshedUser.user
+        ? { ...activeSession, user: refreshedUser.user }
+        : activeSession;
 
       if (typeof window !== 'undefined') {
         const url = new URL(window.location.href);
         url.searchParams.delete('recovery');
         window.history.replaceState({}, '', url);
       }
-      await prepareAuthenticatedPortal(activeSession);
+      await prepareAuthenticatedPortal(refreshedSession);
     } catch (error) {
       safeLog('warn', 'client_portal.auth.recovery.update', 'error', { error });
       setErrorMessage(friendlyAuthError(error));

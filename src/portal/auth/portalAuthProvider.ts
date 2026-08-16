@@ -16,6 +16,8 @@ export interface PortalAuthProvider {
   signOut(): Promise<void>;
 }
 
+export const PORTAL_FORCE_PASSWORD_CHANGE_FLAG = 'force_password_change';
+
 export function validatePortalPassword(password: string): string | null {
   if (password.length < 8) return 'A senha deve ter pelo menos 8 caracteres.';
   if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) {

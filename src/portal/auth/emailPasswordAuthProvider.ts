@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { getPortalSupabaseClient } from '../portalSupabase';
 import {
+  PORTAL_FORCE_PASSWORD_CHANGE_FLAG,
   validatePortalPassword,
   type PortalAuthProvider
 } from './portalAuthProvider';
@@ -86,8 +87,22 @@ export const emailPasswordAuthProvider: PortalAuthProvider = {
   async updatePassword(password: string): Promise<void> {
     const passwordError = validatePortalPassword(password);
     if (passwordError) throw new Error(passwordError);
-    const { error } = await getPortalSupabaseClient().auth.updateUser({ password });
+    const client = getPortalSupabaseClient();
+    const { data: userResult, error: userError } = await client.auth.getUser();
+    assertNoError(userError, 'Nao foi possivel validar a sessao.');
+    const currentMetadata = userResult.user?.user_metadata || {};
+    const { error } = await client.auth.updateUser({
+      password,
+      data: {
+        ...currentMetadata,
+        [PORTAL_FORCE_PASSWORD_CHANGE_FLAG]: false
+      }
+    });
     assertNoError(error, 'Não foi possível atualizar a senha.');
+    const { error: clearFlagError } = await client.functions.invoke('portal-clear-password-change');
+    assertNoError(clearFlagError, 'Nao foi possivel liberar o acesso ao portal.');
+    const { error: refreshError } = await client.auth.refreshSession();
+    assertNoError(refreshError, 'Nao foi possivel renovar a sessao do portal.');
   },
 
   async signOut(): Promise<void> {

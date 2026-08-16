@@ -99,7 +99,8 @@ test('supabase/migrations é a única fonte oficial e contém a baseline remota 
     '20260806150000_referral_loyalty_ledger.sql',
     '20260807213000_fix_referral_code_validation.sql',
     '20260815120000_fix_portal_create_cliente_customer_lookup.sql',
-    '20260815123000_fix_referral_loyalty_completed_status.sql'
+    '20260815123000_fix_referral_loyalty_completed_status.sql',
+    '20260816143000_portal_force_password_change_backend_guard.sql'
   ]);
 
   const pattern = new RegExp(manifest.expectedBaselineFilenamePattern);

@@ -250,7 +250,7 @@ export default function ClientesModule({
       }
     } catch (err: any) {
       safeLog('error', 'customers.customer.create', 'error', { error: err });
-      setErrorMessage('Erro ao salvar cliente. Verifique se o telefone já está cadastrado.');
+      setErrorMessage(err?.message || 'Erro ao salvar cliente. Verifique se os dados ja estao cadastrados.');
     } finally {
       setIsSaving(false);
     }

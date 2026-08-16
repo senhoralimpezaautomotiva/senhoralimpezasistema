@@ -456,6 +456,24 @@ function generateUUID(): string {
   });
 }
 
+const CLIENT_PORTAL_TEMPORARY_PASSWORD = '123456';
+
+const isValidEmailAddress = (value: string): boolean =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
+
+const readSupabaseFunctionErrorMessage = async (error: any): Promise<string> => {
+  const context = error?.context;
+  if (context && typeof context.json === 'function') {
+    try {
+      const body = await context.json();
+      if (typeof body?.error === 'string') return body.error;
+    } catch {
+      // Supabase function error bodies are best-effort diagnostics.
+    }
+  }
+  return error?.message || 'Nao foi possivel concluir a operacao.';
+};
+
 // ==========================================
 // MAPPING FUNCTIONS: SUPABASE <-> FRONTEND
 // ==========================================
@@ -1726,6 +1744,10 @@ class LocalDatabase {
       referralCreatedAt: customer.referralCreatedAt || clientSince
     };
 
+    if (this.config.useRealSupabase && !isValidEmailAddress(customerObjWithoutCode.email)) {
+      throw new Error('Informe um e-mail valido para criar o acesso do cliente ao Portal.');
+    }
+
     // 2. Cliente é salvo no Supabase (cliente salvo)
     if (this.config.useRealSupabase) {
       const supabase = this.getSupabaseClient();
@@ -1785,6 +1807,47 @@ class LocalDatabase {
         entityId: id,
         operation: 'local'
       });
+    }
+
+    if (this.config.useRealSupabase && isValidEmailAddress(finalCustomer.email)) {
+      const supabase = this.getSupabaseClient();
+      safeLog('info', 'customer.portal_auth.create', 'started', { entityId: id });
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session?.access_token) {
+        safeLog('error', 'customer.portal_auth.create', 'error', {
+          entityId: id,
+          error: sessionError,
+          reason: 'missing_admin_session'
+        });
+        throw new Error('Sessao administrativa expirada. Entre novamente para criar o acesso do cliente.');
+      }
+
+      const { error: authError } = await supabase.functions.invoke('admin-create-client-user', {
+        body: {
+          clienteId: finalCustomer.id,
+          nome: finalCustomer.name,
+          email: finalCustomer.email,
+          password: CLIENT_PORTAL_TEMPORARY_PASSWORD
+        },
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`
+        }
+      });
+
+      if (authError) {
+        const authErrorMessage = await readSupabaseFunctionErrorMessage(authError);
+        const { error: rollbackError } = await supabase.from('clientes').delete().eq('id', id);
+        safeLog('error', 'customer.portal_auth.create', 'error', {
+          entityId: id,
+          error: authError,
+          reason: rollbackError ? 'auth_failed_customer_rollback_failed' : 'auth_failed_customer_rolled_back'
+        });
+        if (rollbackError) {
+          throw new Error(`${authErrorMessage} O cliente foi salvo, mas nao foi possivel desfazer automaticamente.`);
+        }
+        throw new Error(authErrorMessage);
+      }
+      safeLog('info', 'customer.portal_auth.create', 'success', { entityId: id });
     }
 
     // 6. Atualizar o estado local
