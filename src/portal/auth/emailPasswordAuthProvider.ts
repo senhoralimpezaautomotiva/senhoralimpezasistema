@@ -32,6 +32,14 @@ const assertNoError = (error: { message?: string } | null, fallback: string): vo
   if (error) throw new Error(error.message || fallback);
 };
 
+const currentPortalEmail = async (): Promise<string> => {
+  const { data, error } = await getPortalSupabaseClient().auth.getUser();
+  assertNoError(error, 'Nao foi possivel validar a sessao.');
+  const email = data.user?.email ? normalizeEmail(data.user.email) : '';
+  if (!email) throw new Error('Sessao sem e-mail confirmado.');
+  return email;
+};
+
 export const emailPasswordAuthProvider: PortalAuthProvider = {
   id: 'email_password',
   identifierLabel: 'E-mail',
@@ -103,6 +111,20 @@ export const emailPasswordAuthProvider: PortalAuthProvider = {
     assertNoError(clearFlagError, 'Nao foi possivel liberar o acesso ao portal.');
     const { error: refreshError } = await client.auth.refreshSession();
     assertNoError(refreshError, 'Nao foi possivel renovar a sessao do portal.');
+  },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    const passwordError = validatePortalPassword(newPassword);
+    if (passwordError) throw new Error(passwordError);
+    const email = await currentPortalEmail();
+    const client = getPortalSupabaseClient();
+    const { error: reauthError } = await client.auth.signInWithPassword({
+      email,
+      password: currentPassword
+    });
+    assertNoError(reauthError, 'Senha atual incorreta.');
+    const { error: updateError } = await client.auth.updateUser({ password: newPassword });
+    assertNoError(updateError, 'Nao foi possivel alterar a senha.');
   },
 
   async signOut(): Promise<void> {

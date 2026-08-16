@@ -13,6 +13,7 @@ export interface PortalAuthProvider {
   signIn(identifier: string, password: string): Promise<Session>;
   requestPasswordRecovery(identifier: string): Promise<void>;
   updatePassword(password: string): Promise<void>;
+  changePassword(currentPassword: string, newPassword: string): Promise<void>;
   signOut(): Promise<void>;
 }
 

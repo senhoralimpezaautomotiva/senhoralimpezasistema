@@ -10,9 +10,11 @@ import {
   ExternalLink,
   Gift,
   History,
+  KeyRound,
   MessageCircle,
   Search,
-  ShieldCheck
+  ShieldCheck,
+  UserRound
 } from 'lucide-react';
 import type { AgendaConfig, Appointment, Customer, Service, SystemConfig, Vehicle } from '../types';
 import { loadPortalData } from '../portal/portalSupabase';
@@ -23,7 +25,9 @@ export type ClientPortalSection =
   | 'catalog'
   | 'loyalty'
   | 'history'
-  | 'availability';
+  | 'availability'
+  | 'profile'
+  | 'change-password';
 
 interface ClientPortalHomeProps {
   section: Exclude<ClientPortalSection, 'booking'>;
@@ -40,6 +44,7 @@ interface ClientPortalHomeProps {
     loyaltyTarget: number;
     agenda?: AgendaConfig;
   };
+  onChangePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 export interface PortalAvailabilitySlot {
@@ -93,12 +98,21 @@ export default function ClientPortalHome({
   appointments,
   config,
   referralProgress,
-  portalSettings
+  portalSettings,
+  onChangePassword
 }: ClientPortalHomeProps) {
   const loyaltyTarget = Math.max(1, portalSettings.loyaltyTarget || config?.loyaltyReferralTarget || 10);
   const completedReferrals = Math.min(referralProgress, loyaltyTarget);
   const remainingReferrals = Math.max(0, loyaltyTarget - completedReferrals);
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmation: ''
+  });
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const completedAppointments = useMemo(
     () => appointments
       .filter(item => item.status === 'finalizado' || item.status === 'entregue')
@@ -114,6 +128,35 @@ export default function ClientPortalHome({
     await navigator.clipboard.writeText(customer.referralCode);
     setCopyFeedback(true);
     window.setTimeout(() => setCopyFeedback(false), 2000);
+  };
+
+  const submitPasswordChange = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+    if (passwordForm.newPassword !== passwordForm.confirmation) {
+      setPasswordError('A nova senha e a confirmacao nao coincidem.');
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      await onChangePassword(passwordForm.currentPassword, passwordForm.newPassword);
+      setPasswordSuccess('Senha alterada com sucesso. Voce sera redirecionado para entrar novamente.');
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmation: '' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (/invalid login|invalid credentials|senha atual/i.test(message)) {
+        setPasswordError('A senha atual esta incorreta.');
+      } else if (/rate|too many|over.*limit/i.test(message)) {
+        setPasswordError('Muitas tentativas. Aguarde alguns minutos e tente novamente.');
+      } else if (/password|senha/i.test(message)) {
+        setPasswordError('Nao foi possivel salvar essa senha. Verifique as regras e tente novamente.');
+      } else {
+        setPasswordError(message || 'Nao foi possivel alterar a senha. Tente novamente.');
+      }
+    } finally {
+      setPasswordSaving(false);
+    }
   };
 
   if (section === 'home') {
@@ -171,6 +214,9 @@ export default function ClientPortalHome({
           <button type="button" onClick={() => onNavigate('history')} className="rounded-2xl border-2 border-indigo-500/35 bg-indigo-500/[0.06] hover:bg-indigo-500/10 flex flex-col items-center justify-center text-center gap-3 p-4 transition-colors">
             <History size={25} className="text-indigo-400" />
             <span><strong className="block text-white">Histórico</strong><small className="text-[10px] text-slate-400">Consulte serviços realizados</small></span>
+          </button>
+          <button type="button" onClick={() => onNavigate('profile')} className="col-span-2 h-16 rounded-2xl border-2 border-indigo-500/35 bg-indigo-500/[0.06] hover:bg-indigo-500/10 flex items-center justify-center gap-3 font-black text-white transition-colors">
+            <UserRound size={18} className="text-indigo-400" /> Perfil <ChevronRight size={17} />
           </button>
           <button type="button" onClick={() => onNavigate('availability')} className="col-span-2 h-16 rounded-2xl border-2 border-sky-500/35 bg-sky-500/[0.07] hover:bg-sky-500/12 flex items-center justify-center gap-3 font-black text-white transition-colors">
             <Search size={18} className="text-sky-400" /> Consultar agenda <ChevronRight size={17} />
@@ -254,6 +300,113 @@ export default function ClientPortalHome({
             );
           }) : <p className="text-center text-slate-400 py-12">Você ainda não possui agendamentos.</p>}
         </div>
+      </div>
+    );
+  }
+
+  if (section === 'profile') {
+    return (
+      <div>
+        <PortalBack title="Perfil" onClick={() => onNavigate('home')} />
+        <div className="space-y-4">
+          <div className="rounded-3xl border-2 border-sky-500/30 bg-sky-500/[0.06] p-5">
+            <div className="flex items-start gap-4">
+              <span className="w-12 h-12 rounded-2xl bg-sky-500/15 border border-sky-500/25 text-sky-300 flex items-center justify-center shrink-0">
+                <UserRound size={22} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Cliente</p>
+                <h3 className="text-lg font-black text-white break-words">{customer.name}</h3>
+                <p className="text-slate-400 mt-1 break-words">{customer.email || 'E-mail do portal'}</p>
+                <p className="text-slate-500 mt-1">{customer.whatsapp || customer.phone}</p>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('change-password')}
+            className="w-full rounded-2xl border-2 border-indigo-500/35 bg-indigo-500/[0.06] hover:bg-indigo-500/10 p-4 flex items-center justify-between gap-4 text-left transition-colors"
+          >
+            <span className="flex items-center gap-3 min-w-0">
+              <span className="w-10 h-10 rounded-xl bg-indigo-500/15 text-indigo-300 flex items-center justify-center shrink-0">
+                <KeyRound size={18} />
+              </span>
+              <span className="min-w-0">
+                <strong className="block text-white">Alterar senha</strong>
+                <small className="text-slate-400">Atualize seu acesso ao Portal do Cliente</small>
+              </span>
+            </span>
+            <ChevronRight size={17} className="text-indigo-300 shrink-0" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (section === 'change-password') {
+    return (
+      <div>
+        <PortalBack title="Alterar senha" onClick={() => onNavigate('profile')} />
+        <form onSubmit={(event) => void submitPasswordChange(event)} className="space-y-4">
+          {passwordError && (
+            <div className="rounded-2xl border border-rose-500/25 bg-rose-500/10 p-3 text-rose-300">
+              {passwordError}
+            </div>
+          )}
+          {passwordSuccess && (
+            <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-emerald-300 font-semibold">
+              {passwordSuccess}
+            </div>
+          )}
+
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-1.5">Senha atual</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              required
+              value={passwordForm.currentPassword}
+              onChange={event => setPasswordForm({ ...passwordForm, currentPassword: event.target.value })}
+              className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 outline-none rounded-2xl px-4 py-3 text-sm text-white"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-1.5">Nova senha</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              value={passwordForm.newPassword}
+              onChange={event => setPasswordForm({ ...passwordForm, newPassword: event.target.value })}
+              className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 outline-none rounded-2xl px-4 py-3 text-sm text-white"
+            />
+            <span className="block text-[10px] text-slate-500 mt-1.5">
+              MÃ­nimo de 8 caracteres, com maiÃºscula, minÃºscula e nÃºmero.
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-1.5">Confirmar nova senha</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              value={passwordForm.confirmation}
+              onChange={event => setPasswordForm({ ...passwordForm, confirmation: event.target.value })}
+              className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 outline-none rounded-2xl px-4 py-3 text-sm text-white"
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={passwordSaving || Boolean(passwordSuccess)}
+            className="w-full rounded-2xl bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 font-black py-3.5"
+          >
+            {passwordSaving ? 'Salvando...' : 'Salvar nova senha'}
+          </button>
+        </form>
       </div>
     );
   }

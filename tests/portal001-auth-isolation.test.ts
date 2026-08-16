@@ -33,7 +33,31 @@ test('cadastro, login, confirmação e recuperação usam e-mail do Supabase Aut
   assert.match(source, /functions\.invoke\('portal-clear-password-change'\)/);
   assert.doesNotMatch(source, /signInWithOtp|verifyOtp/);
 });
+test('portal permite alterar senha logado com reautenticacao e logout obrigatorio', () => {
+  const contract = readPortalFile('src', 'portal', 'auth', 'portalAuthProvider.ts');
+  const provider = readPortalFile('src', 'portal', 'auth', 'emailPasswordAuthProvider.ts');
+  const portal = readPortalFile('src', 'components', 'ClientPortal.tsx');
+  const home = readPortalFile('src', 'components', 'ClientPortalHome.tsx');
+  const gate = readPortalFile('src', 'portal', 'PortalAuthGate.tsx');
 
+  assert.match(contract, /changePassword\(currentPassword: string, newPassword: string\): Promise<void>/);
+  assert.match(provider, /async changePassword\(currentPassword: string, newPassword: string\)/);
+  assert.match(provider, /validatePortalPassword\(newPassword\)/);
+  assert.match(provider, /password:\s*currentPassword/);
+  assert.match(provider, /\.auth\.updateUser\(\{\s*password:\s*newPassword\s*\}\)/);
+  assert.match(portal, /handlePortalPasswordChange/);
+  assert.match(portal, /activePortalAuthProvider\.changePassword\(currentPassword, newPassword\)/);
+  assert.match(portal, /sl_portal_auth_notice/);
+  assert.match(portal, /activePortalAuthProvider\.signOut\(\)/);
+  assert.match(home, /'profile'/);
+  assert.match(home, /'change-password'/);
+  assert.match(home, /Alterar senha/);
+  assert.match(home, /autoComplete="current-password"/);
+  assert.match(home, /autoComplete="new-password"/);
+  assert.match(home, /onChangePassword\(passwordForm\.currentPassword, passwordForm\.newPassword\)/);
+  assert.match(gate, /sessionStorage\.getItem\('sl_portal_auth_notice'\)/);
+  assert.match(gate, /setSuccessMessage\(storedNotice\)/);
+});
 test('provedor de autenticação é substituível sem alterar o portal', () => {
   const contract = readPortalFile('src', 'portal', 'auth', 'portalAuthProvider.ts');
   const provider = readPortalFile('src', 'portal', 'auth', 'emailPasswordAuthProvider.ts');

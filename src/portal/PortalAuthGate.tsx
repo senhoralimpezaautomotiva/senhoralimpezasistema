@@ -34,6 +34,12 @@ const friendlyAuthError = (error: unknown): string => {
   if (/invalid login|invalid credentials/i.test(message)) {
     return 'E-mail ou senha incorretos.';
   }
+  if (/edge function|failed to send|functions.*request|network|fetch/i.test(message)) {
+    return 'Nao foi possivel concluir a operacao agora. Tente novamente em alguns instantes.';
+  }
+  if (/refresh|jwt|token|session/i.test(message)) {
+    return 'Sua sessao expirou. Entre novamente para continuar.';
+  }
   if (/email not confirmed/i.test(message)) {
     return 'Confirme seu e-mail antes de entrar.';
   }
@@ -64,6 +70,7 @@ export default function PortalAuthGate({
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const prepareAuthenticatedPortal = async (activeSession: Session) => {
     if (mustChangePortalPassword(activeSession)) {
@@ -92,6 +99,14 @@ export default function PortalAuthGate({
           if (!disposed) {
             setSession(null);
             setPortalData(null);
+            const storedNotice =
+              typeof window !== 'undefined'
+                ? window.sessionStorage.getItem('sl_portal_auth_notice')
+                : null;
+            if (storedNotice) {
+              window.sessionStorage.removeItem('sl_portal_auth_notice');
+              setSuccessMessage(storedNotice);
+            }
           }
           return;
         }
@@ -139,6 +154,14 @@ export default function PortalAuthGate({
         setSession(null);
         setPortalData(null);
         setMode('login');
+        const storedNotice =
+          typeof window !== 'undefined'
+            ? window.sessionStorage.getItem('sl_portal_auth_notice')
+            : null;
+        if (storedNotice) {
+          window.sessionStorage.removeItem('sl_portal_auth_notice');
+          setSuccessMessage(storedNotice);
+        }
         setInitializing(false);
       }
     });
@@ -155,6 +178,7 @@ export default function PortalAuthGate({
     event.preventDefault();
     setLoading(true);
     setErrorMessage('');
+    setSuccessMessage('');
     try {
       const activeSession = await authProvider.signIn(identifier, password);
       await prepareAuthenticatedPortal(activeSession);
@@ -170,6 +194,7 @@ export default function PortalAuthGate({
   const submitSignup = async (event: React.FormEvent) => {
     event.preventDefault();
     setErrorMessage('');
+    setSuccessMessage('');
     if (password !== passwordConfirmation) {
       setErrorMessage('As senhas não coincidem.');
       return;
@@ -194,6 +219,7 @@ export default function PortalAuthGate({
     event.preventDefault();
     setLoading(true);
     setErrorMessage('');
+    setSuccessMessage('');
     try {
       await authProvider.requestPasswordRecovery(identifier);
       setMode('recovery-sent');
@@ -208,6 +234,7 @@ export default function PortalAuthGate({
   const submitNewPassword = async (event: React.FormEvent) => {
     event.preventDefault();
     setErrorMessage('');
+    setSuccessMessage('');
     if (password !== passwordConfirmation) {
       setErrorMessage('As senhas não coincidem.');
       return;
@@ -286,6 +313,12 @@ export default function PortalAuthGate({
               <div className="mb-4 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded-2xl p-3 flex gap-2 text-xs">
                 <AlertCircle size={15} className="shrink-0" />
                 <span>{errorMessage}</span>
+              </div>
+            )}
+
+            {successMessage && (
+              <div className="mb-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 rounded-2xl p-3 text-xs font-semibold">
+                {successMessage}
               </div>
             )}
 

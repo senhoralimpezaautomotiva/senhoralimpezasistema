@@ -3921,3 +3921,57 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Remover `supabase/migrations/20260816143000_portal_force_password_change_backend_guard.sql` antes de aplicar no banco.
 - Reverter a checagem restritiva em `portal-clear-password-change` e a mensagem especifica em `admin-create-client-user`.
 - Reverter os testes e o manifesto DB-001 adicionados nesta etapa.
+
+---
+
+## 2026-08-16-003 - Alteracao de senha no Portal do Cliente
+
+**Etapa relacionada:** Implementacao da opcao Alterar Senha para clientes ja autenticados no Portal.
+
+**Objetivo:** Permitir que o cliente logado altere sua senha pelo Portal, usando as mesmas regras do primeiro acesso, e ajustar mensagens/redirecionamento do fluxo de nova senha.
+
+### Trabalho realizado
+
+- Adicionado contrato `changePassword` ao provedor de autenticacao do Portal.
+- Implementada alteracao de senha com validacao forte, reautenticacao pela senha atual e atualizacao no Supabase Auth.
+- Criada navegacao de perfil no Portal com botao `Alterar senha`.
+- Criada tela dedicada de alteracao de senha com campos de senha atual, nova senha e confirmacao, sem modal.
+- Apos alteracao bem-sucedida, o Portal exibe mensagem em portugues, encerra a sessao e retorna ao login.
+- O gate de autenticacao passa a preservar aviso de sucesso apos logout e a traduzir erros tecnicos de rede/sessao para mensagens em portugues.
+- Atualizados testes do Portal para cobrir a alteracao de senha autenticada, reautenticacao, logout e aviso pos-redirecionamento.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/portal/auth/portalAuthProvider.ts`.
+- Alterado: `src/portal/auth/emailPasswordAuthProvider.ts`.
+- Alterado: `src/portal/PortalAuthGate.tsx`.
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `src/components/ClientPortalHome.tsx`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration criada ou aplicada.
+- Supabase Auth e Edge Functions: nenhuma alteracao remota executada.
+- Hospedagem, deploy e demais servicos externos: nenhuma alteracao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 16 testes aprovados.
+- `npm run test:sec003`: 9 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Nao foi executado teste manual contra Supabase remoto nesta etapa.
+- Existem alteracoes locais antigas fora desta funcionalidade no working tree; elas nao foram modificadas por esta etapa.
+
+### Como desfazer
+
+- Remover `changePassword` do contrato e do provider em `src/portal/auth`.
+- Remover `handlePortalPasswordChange` e a prop `onChangePassword` no Portal.
+- Remover as secoes `profile` e `change-password` adicionadas em `ClientPortalHome`.
+- Reverter o aviso `sl_portal_auth_notice` e as mensagens novas em `PortalAuthGate`.
+- Remover o teste `portal permite alterar senha logado com reautenticacao e logout obrigatorio`.

@@ -852,6 +852,23 @@ function AuthenticatedClientPortal({
     }
   };
 
+  const handlePortalPasswordChange = async (currentPassword: string, newPassword: string) => {
+    await activePortalAuthProvider.changePassword(currentPassword, newPassword);
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(
+        'sl_portal_auth_notice',
+        'Senha alterada com sucesso. Entre novamente com sua nova senha.'
+      );
+      window.setTimeout(() => {
+        void activePortalAuthProvider.signOut().catch(error => {
+          safeLog('warn', 'client_portal.auth.password_change.sign_out', 'error', { error });
+        });
+      }, 1200);
+    } else {
+      await activePortalAuthProvider.signOut();
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto bg-gradient-to-t from-indigo-950/45 via-slate-900 to-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative flex flex-col min-h-[580px] text-xs font-sans text-slate-100" id="client-portal-card">
       
@@ -918,6 +935,7 @@ function AuthenticatedClientPortal({
             config={config}
             referralProgress={referralProgress}
             portalSettings={portalSettings}
+            onChangePassword={handlePortalPasswordChange}
           />
         ) : (
         <>
