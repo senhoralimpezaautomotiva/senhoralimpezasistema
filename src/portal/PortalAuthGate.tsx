@@ -71,18 +71,21 @@ export default function PortalAuthGate({
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [portalDataLoadError, setPortalDataLoadError] = useState(false);
 
   const prepareAuthenticatedPortal = async (activeSession: Session) => {
     if (mustChangePortalPassword(activeSession)) {
       setSession(activeSession);
       setPortalData(null);
+      setPortalDataLoadError(false);
       setMode('new-password');
       return;
     }
+    setSession(activeSession);
+    setPortalDataLoadError(false);
     await claimExistingPortalCustomer();
     const data = await loadPortalData();
     setPortalData(data);
-    setSession(activeSession);
   };
 
   useEffect(() => {
@@ -99,6 +102,7 @@ export default function PortalAuthGate({
           if (!disposed) {
             setSession(null);
             setPortalData(null);
+            setPortalDataLoadError(false);
             const storedNotice =
               typeof window !== 'undefined'
                 ? window.sessionStorage.getItem('sl_portal_auth_notice')
@@ -128,13 +132,20 @@ export default function PortalAuthGate({
         if (!disposed && currentRequest === requestId) {
           setSession(data.session);
           setPortalData(restoredData);
+          setPortalDataLoadError(false);
         }
       } catch (error) {
         safeLog('error', 'client_portal.auth.restore', 'error', { error });
         if (!disposed) {
-          setSession(null);
           setPortalData(null);
-          setErrorMessage('Não foi possível restaurar a sessão. Entre novamente.');
+          const activeSession = (await client.auth.getSession()).data.session;
+          setSession(activeSession);
+          setPortalDataLoadError(Boolean(activeSession));
+          setErrorMessage(
+            activeSession
+              ? 'Nao foi possivel carregar os dados do portal agora. Sua sessao continua ativa; tente novamente em instantes.'
+              : 'Não foi possível restaurar a sessão. Entre novamente.'
+          );
         }
       } finally {
         if (!disposed) setInitializing(false);
@@ -146,6 +157,7 @@ export default function PortalAuthGate({
         requestId++;
         setSession(nextSession);
         setPortalData(null);
+        setPortalDataLoadError(false);
         setMode('new-password');
         setInitializing(false);
       }
@@ -153,6 +165,7 @@ export default function PortalAuthGate({
         requestId++;
         setSession(null);
         setPortalData(null);
+        setPortalDataLoadError(false);
         setMode('login');
         const storedNotice =
           typeof window !== 'undefined'
@@ -179,12 +192,19 @@ export default function PortalAuthGate({
     setLoading(true);
     setErrorMessage('');
     setSuccessMessage('');
+    let authenticatedSession: Session | null = null;
     try {
       const activeSession = await authProvider.signIn(identifier, password);
+      authenticatedSession = activeSession;
       await prepareAuthenticatedPortal(activeSession);
     } catch (error) {
       safeLog('warn', 'client_portal.auth.login', 'error', { error });
-      setErrorMessage(friendlyAuthError(error));
+      setPortalDataLoadError(Boolean(authenticatedSession));
+      setErrorMessage(
+        authenticatedSession
+          ? 'Nao foi possivel carregar os dados do portal agora. Sua sessao continua ativa; tente novamente em instantes.'
+          : friendlyAuthError(error)
+      );
     } finally {
       setLoading(false);
       setInitializing(false);
@@ -200,16 +220,23 @@ export default function PortalAuthGate({
       return;
     }
     setLoading(true);
+    let authenticatedSession: Session | null = null;
     try {
       const activeSession = await authProvider.signUp(identifier, password);
       if (activeSession) {
+        authenticatedSession = activeSession;
         await prepareAuthenticatedPortal(activeSession);
       } else {
         setMode('confirmation-sent');
       }
     } catch (error) {
       safeLog('warn', 'client_portal.auth.signup', 'error', { error });
-      setErrorMessage(friendlyAuthError(error));
+      setPortalDataLoadError(Boolean(authenticatedSession));
+      setErrorMessage(
+        authenticatedSession
+          ? 'Nao foi possivel carregar os dados do portal agora. Sua sessao continua ativa; tente novamente em instantes.'
+          : friendlyAuthError(error)
+      );
     } finally {
       setLoading(false);
     }
@@ -269,6 +296,31 @@ export default function PortalAuthGate({
     return <>{children(session, portalData)}</>;
   }
 
+  const retryPortalDataLoad = async () => {
+    if (!session) return;
+    setLoading(true);
+    setErrorMessage('');
+    try {
+      await prepareAuthenticatedPortal(session);
+    } catch (error) {
+      safeLog('warn', 'client_portal.auth.data.retry', 'error', { error });
+      setPortalDataLoadError(true);
+      setErrorMessage('Nao foi possivel carregar os dados do portal agora. Sua sessao continua ativa; tente novamente em instantes.');
+    } finally {
+      setLoading(false);
+      setInitializing(false);
+    }
+  };
+
+  const signOutFromDataLoadError = async () => {
+    setLoading(true);
+    try {
+      await authProvider.signOut();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const title =
     mode === 'signup' ? 'Criar conta segura' :
     mode === 'recovery' ? 'Recuperar senha' :
@@ -279,6 +331,59 @@ export default function PortalAuthGate({
 
   const informationalMode =
     mode === 'confirmation-sent' || mode === 'recovery-sent';
+
+  if (session && portalDataLoadError && mode !== 'new-password') {
+    return (
+      <div className="min-h-screen bg-gradient-to-t from-indigo-950/50 via-slate-950 to-slate-950 text-slate-100 flex items-center justify-center px-4 py-8">
+        <main className="w-full max-w-md bg-slate-900 border-2 border-sky-500/25 rounded-3xl p-6 shadow-2xl">
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div>
+              <img src="/senhora-limpeza-logo.jpeg" alt="Logotipo Senhora Limpeza" className="w-24 h-24 rounded-2xl object-cover border-2 border-sky-500/25 mb-4" />
+              <h1 className="text-xl font-black">Portal do Cliente</h1>
+              <p className="text-xs text-slate-400 mt-1">
+                Sessao autenticada.
+              </p>
+            </div>
+            {onBackToAdmin && (
+              <button
+                type="button"
+                onClick={onBackToAdmin}
+                className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
+              >
+                <ChevronLeft size={14} /> Administracao
+              </button>
+            )}
+          </div>
+
+          {errorMessage && (
+            <div className="mb-4 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded-2xl p-3 flex gap-2 text-xs">
+              <AlertCircle size={15} className="shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void retryPortalDataLoad()}
+              className="flex-1 bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 font-black rounded-2xl py-3.5 text-sm"
+            >
+              {loading ? 'Aguarde...' : 'Tentar novamente'}
+            </button>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void signOutFromDataLoadError()}
+              className="flex-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-bold rounded-2xl py-3.5 text-sm"
+            >
+              Sair
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-t from-indigo-950/50 via-slate-950 to-slate-950 text-slate-100 flex items-center justify-center px-4 py-8">

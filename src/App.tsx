@@ -48,6 +48,13 @@ const ClientPortal = CLIENT_PORTAL_ENABLED
   ? lazy(() => import('./components/ClientPortal'))
   : null;
 
+class InvalidAdministrativeProfileError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidAdministrativeProfileError';
+  }
+}
+
 const ModuleLoader = () => (
   <div className="min-h-[40vh] flex flex-col items-center justify-center gap-3 text-slate-400">
     <div className="w-7 h-7 rounded-full border-2 border-slate-700 border-t-sky-500 animate-spin" />
@@ -60,6 +67,8 @@ export default function App() {
   const [user, setUser] = useState<(User & { authProvider?: 'supabase' }) | null>(null);
   const [authInitializing, setAuthInitializing] = useState(true);
   const [authError, setAuthError] = useState('');
+  const [authenticatedSessionNeedsRetry, setAuthenticatedSessionNeedsRetry] = useState(false);
+  const [authRetryNonce, setAuthRetryNonce] = useState(0);
   
   // Navigation active tab
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -111,6 +120,7 @@ export default function App() {
       if (!disposed) {
         setAuthInitializing(true);
         setAuthError('');
+        setAuthenticatedSessionNeedsRetry(false);
       }
 
       try {
@@ -141,33 +151,42 @@ export default function App() {
         }
 
         if (!profileRow) {
-          throw new Error(
+          throw new InvalidAdministrativeProfileError(
             'Perfil não encontrado para o usuário autenticado. Verifique se public.usuarios.auth_user_id corresponde ao ID do usuário no Supabase Auth.'
           );
         }
 
         if (profileRow.auth_user_id !== session.user.id) {
-          throw new Error('O perfil retornado não corresponde ao usuário autenticado.');
+          throw new InvalidAdministrativeProfileError('O perfil retornado não corresponde ao usuário autenticado.');
         }
 
         const profile = mapDbUserToFrontend(profileRow);
         if (profile.status !== 'ativo') {
-          throw new Error('Sua conta de usuário está inativa. Entre em contato com o administrador do sistema.');
+          throw new InvalidAdministrativeProfileError('Sua conta de usuário está inativa. Entre em contato com o administrador do sistema.');
         }
 
         setUser({ ...profile, authProvider: 'supabase' });
+        setAuthenticatedSessionNeedsRetry(false);
       } catch (error: any) {
         safeLog('error', 'authentication.profile.validate', 'error', { error });
         if (!disposed && currentRequestId === profileRequestId) {
-          setUser(null);
-          setAuthError('Não foi possível validar o perfil autenticado.');
+          if (error instanceof InvalidAdministrativeProfileError) {
+            setUser(null);
+            setAuthError(error.message);
+            setAuthenticatedSessionNeedsRetry(false);
+          } else {
+            setAuthError('Não foi possível carregar o perfil agora. Sua sessão continua ativa; tente novamente em instantes.');
+            setAuthenticatedSessionNeedsRetry(true);
+          }
         }
 
-        const { error: signOutError } = await supabase.auth.signOut();
-        if (signOutError) {
-          safeLog('error', 'authentication.invalid_session.sign_out', 'error', {
-            error: signOutError
-          });
+        if (error instanceof InvalidAdministrativeProfileError) {
+          const { error: signOutError } = await supabase.auth.signOut();
+          if (signOutError) {
+            safeLog('error', 'authentication.invalid_session.sign_out', 'error', {
+              error: signOutError
+            });
+          }
         }
       } finally {
         if (!disposed && currentRequestId === profileRequestId) {
@@ -205,7 +224,7 @@ export default function App() {
       profileRequestId++;
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [authRetryNonce]);
 
   // Hydrate all non-authentication states on mount
   useEffect(() => {
@@ -358,6 +377,7 @@ export default function App() {
 
     setUser(null);
     setAuthError('');
+    setAuthenticatedSessionNeedsRetry(false);
   };
 
   // Customer handlers
@@ -566,6 +586,36 @@ export default function App() {
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 rounded-full border-2 border-slate-700 border-t-sky-500 animate-spin" />
           <span className="text-xs font-mono">Validando sessão...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (authenticatedSessionNeedsRetry && !user) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-300 px-4">
+        <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 text-center shadow-2xl">
+          <ShieldAlert className="w-10 h-10 text-amber-300 mx-auto mb-4" />
+          <h1 className="text-lg font-bold text-white mb-2">Sessão autenticada</h1>
+          <p className="text-sm text-slate-400 mb-5">
+            {authError}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              type="button"
+              onClick={() => setAuthRetryNonce(value => value + 1)}
+              className="flex-1 px-4 py-3 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm rounded-xl transition-colors"
+            >
+              Tentar novamente
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm rounded-xl transition-colors"
+            >
+              Sair
+            </button>
+          </div>
         </div>
       </div>
     );

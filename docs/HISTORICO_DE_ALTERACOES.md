@@ -3975,3 +3975,53 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Remover as secoes `profile` e `change-password` adicionadas em `ClientPortalHome`.
 - Reverter o aviso `sl_portal_auth_notice` e as mensagens novas em `PortalAuthGate`.
 - Remover o teste `portal permite alterar senha logado com reautenticacao e logout obrigatorio`.
+
+---
+
+## 2026-08-17-001 - Correcao de logout indevido apos login
+
+**Etapa relacionada:** Correcao da validacao pos-login no sistema administrativo e no Portal do Cliente.
+
+**Objetivo:** Impedir que falhas temporarias no carregamento do perfil ou dos dados do portal encerrem automaticamente uma sessao autenticada valida, preservando o bloqueio para usuarios administrativos inexistentes, divergentes ou inativos.
+
+### Trabalho realizado
+
+- Separada a falha definitiva de perfil administrativo invalido/inativo das falhas transitorias ao consultar `public.usuarios`.
+- O fluxo administrativo passou a executar `signOut` somente quando o perfil autenticado e definitivamente invalido, divergente ou inativo.
+- Em erro temporario de consulta do perfil administrativo, a sessao Supabase e preservada e a interface exibe uma tela de sessao autenticada com opcao de tentar novamente ou sair manualmente.
+- O Portal do Cliente passou a aplicar a sessao antes de executar `claimExistingPortalCustomer` e `loadPortalData`.
+- Em falha temporaria ao carregar dados do portal, a sessao do cliente e preservada e a interface exibe opcao de retentativa ou saida manual.
+- O fluxo de troca obrigatoria de senha por `force_password_change` foi preservado sem alteracao de regra.
+- Nao foi alterado o erro independente de `vehicle-models`/`PGRST205`.
+- Adicionado teste de regressao cobrindo que falha temporaria de perfil/dados nao dispara logout automatico.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/App.tsx`.
+- Alterado: `src/portal/PortalAuthGate.tsx`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration criada ou aplicada.
+- Supabase Auth, Edge Functions e servicos remotos: nenhuma alteracao remota executada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 17 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Nao foi executado teste manual contra Supabase remoto nesta etapa.
+- A tela de retentativa depende de nova tentativa do usuario quando a consulta de perfil/dados falha; nao foi adicionado retry automatico em loop.
+- Existem alteracoes locais antigas fora desta tarefa no working tree; elas nao foram modificadas por esta etapa.
+
+### Como desfazer
+
+- Em `src/App.tsx`, remover `InvalidAdministrativeProfileError`, os estados de retentativa e a tela de sessao autenticada, restaurando o tratamento anterior de erro pos-login.
+- Em `src/portal/PortalAuthGate.tsx`, remover `portalDataLoadError`, a aplicacao antecipada da sessao e a tela de retentativa do portal.
+- Em `tests/portal001-auth-isolation.test.ts`, remover o teste `falha temporaria ao carregar perfil nao encerra sessao autenticada`.

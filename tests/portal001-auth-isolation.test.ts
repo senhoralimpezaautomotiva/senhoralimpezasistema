@@ -163,6 +163,24 @@ test('sincronização administrativa só ocorre após perfil autenticado', () =>
   assert.match(app, /window\.setInterval\([\s\S]*60_000/);
 });
 
+test('falha temporaria ao carregar perfil nao encerra sessao autenticada', () => {
+  const app = readPortalFile('src', 'App.tsx');
+  const gate = readPortalFile('src', 'portal', 'PortalAuthGate.tsx');
+
+  assert.match(app, /class InvalidAdministrativeProfileError extends Error/);
+  assert.match(app, /profileError[\s\S]*throw new Error/);
+  assert.match(app, /error instanceof InvalidAdministrativeProfileError[\s\S]*supabase\.auth\.signOut\(\)/);
+  assert.match(app, /setAuthenticatedSessionNeedsRetry\(true\)/);
+  assert.match(app, /continua ativa/);
+  assert.match(app, /Tentar novamente/);
+
+  assert.match(gate, /setSession\(activeSession\);[\s\S]*await claimExistingPortalCustomer\(\)/);
+  assert.match(gate, /portalDataLoadError/);
+  assert.match(gate, /Sua sessao continua ativa/);
+  assert.match(gate, /retryPortalDataLoad/);
+  assert.doesNotMatch(gate, /catch \(error\) \{[\s\S]{0,180}authProvider\.signOut\(\)/);
+});
+
 test('nova navegacao preserva o fluxo de agendamento e oferece telas somente leitura', () => {
   const portal = readPortalFile('src', 'components', 'ClientPortal.tsx');
   const home = readPortalFile('src', 'components', 'ClientPortalHome.tsx');
