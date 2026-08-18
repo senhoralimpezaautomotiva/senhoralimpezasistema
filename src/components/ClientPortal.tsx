@@ -1672,7 +1672,7 @@ function AuthenticatedClientPortal({
                             <img
                               src={primarySuggestion.offerImageUrl}
                               alt={primarySuggestion.name}
-                              className="absolute inset-0 h-full w-full object-cover"
+                              className="absolute inset-0 h-full w-full object-contain"
                             />
                           )}
                           {!primarySuggestion.offerImageUrl && (

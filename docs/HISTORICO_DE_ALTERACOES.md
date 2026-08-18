@@ -4595,3 +4595,42 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter a alteracao em `src/components/ClientPortal.tsx` e esta entrada do historico.
+
+---
+
+## 2026-08-18-008 - Ajuste de encaixe da imagem de oferta
+
+**Etapa relacionada:** Ajuste visual da tela de sugestoes exclusivas para imagens cadastradas em ofertas upsell.
+
+**Objetivo:** Fazer a imagem cadastrada da oferta aparecer inteira, sem corte na parte inferior e sem distorcao.
+
+### Trabalho realizado
+
+- Ajustada a renderizacao da imagem da oferta em `offerImageUrl` para usar encaixe proporcional sem corte.
+- Nenhuma regra de negocio, fluxo, texto, banco, Storage, policy ou migration foi alterado.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Supabase Storage e policies: nenhuma alteracao.
+- Migrations: nenhuma migration criada ou alterada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 22 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Nao foram executados testes visuais em navegador nesta etapa.
+
+### Como desfazer
+
+- Reverter a alteracao em `src/components/ClientPortal.tsx` e esta entrada do historico.
