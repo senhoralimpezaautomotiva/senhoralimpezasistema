@@ -4126,3 +4126,95 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Em `src/portal/PortalAuthGate.tsx`, remover `getRecoveryUrlState` e a chamada a `auth.exchangeCodeForSession(code)`.
 - Em `src/db/supabaseClient.ts`, restaurar `detectSessionInUrl: isBrowser`.
 - Em `tests/portal001-auth-isolation.test.ts`, remover o teste `portal troca codigo de recuperacao antes de restaurar sessao` e as expectativas de `isPortalRecoveryCallback`.
+
+---
+
+## 2026-08-17-004 - Layout da tela de sugestao de servicos do Portal
+
+**Etapa relacionada:** Reproducao visual da tela de sugestao de servicos conforme referencia aprovada.
+
+**Objetivo:** Atualizar somente a apresentacao da tela de sugestao de servicos do Portal, mantendo tempo e valor dinamicos vindos das tabelas existentes, sem alterar regras de negocio nem a atualizacao automatica do resumo.
+
+### Trabalho realizado
+
+- A tela de sugestao passou a exibir um card promocional unico com selo `Sugestões Exclusivas`, imagem visual de para-brisa sob chuva, divisao antes/depois, icone de protecao, headline e CTA amarelo.
+- O servico sugerido principal continua vindo dinamicamente da lista de servicos com `portalVisibility = 'sugestao'` ou destaque, ordenado por `displayOrder`.
+- O tempo e o valor exibidos no card usam `primarySuggestion.estimatedTime` e `primarySuggestion.basePrice`, ja ajustados pelo porte/tabelas existentes.
+- O botao de aceite passou a exibir o texto `🛡️ Sim, quero essa proteção`.
+- A selecao continua atualizando `selectedServiceIds`, preservando a atualizacao automatica de `totalTime` e `totalValue` no resumo inferior.
+- A lista antiga de sugestoes foi mantida oculta para preservar referencia de estrutura sem alterar regras de negocio.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration criada ou aplicada.
+- Supabase Auth e Edge Functions: nenhuma alteracao remota executada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 21 testes aprovados.
+- `npm run test:stabilization`: 22 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A arte do para-brisa foi reproduzida em CSS dentro do componente; nao foi criado asset externo.
+- Se houver multiplas sugestoes, o card visual usa a primeira por `displayOrder`, mantendo o comportamento de resumo dinamico para o servico exibido.
+- Existem alteracoes locais antigas fora desta tarefa no working tree; elas nao foram modificadas por esta etapa.
+
+### Como desfazer
+
+- Em `src/components/ClientPortal.tsx`, remover `suggestionServices`, `primarySuggestion`, `toggleSuggestedService` e o card promocional inserido na tela de sugestao.
+- Restaurar a lista visivel de sugestoes, removendo `className="hidden"` da lista antiga e do cabecalho antigo.
+- Remover o teste `tela de sugestao usa card visual e mantem resumo dinamico` de `tests/portal001-auth-isolation.test.ts`.
+
+---
+
+## 2026-08-17-005 - Estilo premium da tela de selecao de servicos do Portal
+
+**Etapa relacionada:** Ajuste visual da tela de selecao de servicos anterior a tela de sugestoes.
+
+**Objetivo:** Aplicar a mesma linguagem visual premium da tela de sugestoes exclusivas na selecao de servicos, usando dourado nos nomes dos servicos, icones e estado selecionado do card, sem alterar layout, regras de negocio, valores ou tempos dinamicos.
+
+### Trabalho realizado
+
+- A tela de selecao de servicos recebeu destaques em dourado no seletor de veiculo, no quadro de resumo, nos cards de servico, nos icones, nos nomes dos servicos, nos precos e no CTA de avancar.
+- O estado selecionado do card passou a usar borda, fundo e sombra em dourado, mantendo o mesmo clique e a mesma fonte de dados.
+- Foram preservados os calculos existentes de `totalTime` e `totalValue`, alem das chamadas a `formatDuration` e `formatBRL`.
+- Foi adicionado teste de regressao para garantir o estilo dourado e a permanencia dos valores e tempos dinamicos.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration criada ou aplicada.
+- Supabase Auth e Edge Functions: nenhuma alteracao remota executada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 22 testes aprovados.
+- `npm run test:stabilization`: 22 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Nao foi executada validacao visual manual em navegador; a verificacao foi feita por testes automatizados, lint e build.
+- Existem alteracoes locais antigas fora desta tarefa no working tree; elas nao foram modificadas por esta etapa.
+
+### Como desfazer
+
+- Em `src/components/ClientPortal.tsx`, restaurar as classes visuais anteriores da tela de selecao de servicos.
+- Remover o teste `tela de selecao de servicos usa destaque dourado sem alterar resumo dinamico` de `tests/portal001-auth-isolation.test.ts`.

@@ -140,6 +140,33 @@ test('portal pré-seleciona automaticamente o primeiro veículo quando disponív
   assert.match(portal, /vehicles\.some\(v => v\.id === selectedVehicleId\)/);
 });
 
+test('tela de sugestao usa card visual e mantem resumo dinamico', () => {
+  const portal = readPortalFile('src', 'components', 'ClientPortal.tsx');
+
+  assert.match(portal, /primarySuggestion/);
+  assert.match(portal, /Dirija com mais segurança/);
+  assert.match(portal, /em dias de chuva/);
+  assert.match(portal, /🛡️ Sim, quero essa proteção/);
+  assert.match(portal, /Apenas mais \{formatDuration\(primarySuggestion\.estimatedTime\)\}/);
+  assert.match(portal, /\{formatBRL\(primarySuggestion\.basePrice\)\}/);
+  assert.match(portal, /\{formatDuration\(totalTime\)\}/);
+  assert.match(portal, /\{formatBRL\(totalValue\)\}/);
+});
+
+test('tela de selecao de servicos usa destaque dourado sem alterar resumo dinamico', () => {
+  const portal = readPortalFile('src', 'components', 'ClientPortal.tsx');
+
+  assert.match(portal, /border-amber-400\/20 p-4 rounded-2xl space-y-4/);
+  assert.match(portal, /text-amber-300/);
+  assert.match(portal, /text-amber-200 text-xs/);
+  assert.match(portal, /bg-amber-500\/\[0\.06\] border-amber-400\/80/);
+  assert.match(portal, /from-amber-300 to-amber-500/);
+  assert.match(portal, /\{formatDuration\(s\.estimatedTime\)\}/);
+  assert.match(portal, /\{formatBRL\(s\.basePrice\)\}/);
+  assert.match(portal, /\{formatDuration\(totalTime\)\}/);
+  assert.match(portal, /\{formatBRL\(totalValue\)\}/);
+});
+
 test('RLS vincula uma identidade a somente um cliente e bloqueia acesso cruzado', () => {
   const migration = readPortalFile(
     'supabase',

@@ -869,6 +869,25 @@ function AuthenticatedClientPortal({
     }
   };
 
+  const suggestionServices = adjustedServices
+    .filter(s => s.portalVisibility === 'sugestao' || (!s.portalVisibility && s.isFeatured))
+    .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+
+  const primarySuggestion = suggestionServices[0];
+
+  const toggleSuggestedService = (serviceId: string) => {
+    setSelectedServiceIds(prev => {
+      if (prev.includes(serviceId)) {
+        return prev.filter(id => id !== serviceId);
+      }
+      const next = [...prev, serviceId];
+      if (!selectedMainServiceId) {
+        setSelectedMainServiceId(serviceId);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="max-w-2xl mx-auto bg-gradient-to-t from-indigo-950/45 via-slate-900 to-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative flex flex-col min-h-[580px] text-xs font-sans text-slate-100" id="client-portal-card">
       
@@ -1470,8 +1489,8 @@ function AuthenticatedClientPortal({
                       <p className="text-slate-400 text-xs">Olá, <strong className="text-white">{customer?.name}</strong>! Selecione os cuidados desejados para o seu veículo:</p>
                     </div>
                     {/* Vehicle Selection dropdown in case the customer has existing vehicles */}
-                    <div className="bg-slate-950 p-2 border border-slate-800 rounded-2xl flex items-center gap-2 max-w-[240px]">
-                      <Car size={15} className="text-sky-400 shrink-0" />
+                    <div className="bg-slate-950 p-2 border border-amber-400/25 rounded-2xl flex items-center gap-2 max-w-[240px] shadow-lg shadow-amber-500/5">
+                      <Car size={15} className="text-amber-300 shrink-0" />
                       <select 
                         value={selectedVehicleId}
                         onChange={(e) => {
@@ -1489,7 +1508,7 @@ function AuthenticatedClientPortal({
                             {v.brand} {v.model} ({v.plate || 'Sem Placa'})
                           </option>
                         ))}
-                        <option value="new_v" className="bg-slate-950 text-sky-400 font-bold">
+                        <option value="new_v" className="bg-slate-950 text-amber-300 font-bold">
                           + Adicionar Novo Veículo
                         </option>
                       </select>
@@ -1504,7 +1523,7 @@ function AuthenticatedClientPortal({
                   )}
 
                   {/* Realtime Pricing Board */}
-                  <div className="bg-slate-950 border border-slate-850 p-4 rounded-2xl space-y-4">
+                  <div className="bg-slate-950 border border-amber-400/20 p-4 rounded-2xl space-y-4 shadow-xl shadow-amber-500/5">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div className="space-y-0.5">
                         <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Serviços</span>
@@ -1513,13 +1532,13 @@ function AuthenticatedClientPortal({
                       <div className="space-y-0.5 sm:border-l border-slate-850 sm:pl-3">
                         <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Tempo Total</span>
                         <p className="text-xs font-black text-slate-300 font-mono flex items-center gap-1">
-                          <Clock3 size={11} className="text-sky-400" />
+                          <Clock3 size={11} className="text-amber-300" />
                           {formatDuration(totalTime)}
                         </p>
                       </div>
                       <div className="space-y-0.5 sm:text-right">
                         <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Valor Estimado</span>
-                        <p className="text-sm font-black text-sky-400 font-mono">{formatBRL(totalValue)}</p>
+                        <p className="text-sm font-black text-amber-300 font-mono">{formatBRL(totalValue)}</p>
                       </div>
                     </div>
 
@@ -1544,7 +1563,7 @@ function AuthenticatedClientPortal({
                             setStep(5);
                           }
                         }}
-                        className="flex-1 py-3.5 bg-sky-500 hover:bg-sky-600 text-slate-950 font-black rounded-2xl transition-all shadow-lg shadow-sky-500/10 hover:shadow-sky-500/20 flex items-center justify-center gap-1 text-xs cursor-pointer"
+                        className="flex-1 py-3.5 bg-gradient-to-b from-amber-300 to-amber-500 hover:from-amber-200 hover:to-amber-400 text-slate-950 font-black rounded-2xl transition-all shadow-lg shadow-amber-500/10 hover:shadow-amber-500/20 flex items-center justify-center gap-1 text-xs cursor-pointer"
                       >
                         <span>Avançar</span>
                         <ChevronRight size={15} />
@@ -1564,15 +1583,15 @@ function AuthenticatedClientPortal({
                             onClick={() => handleSelectMainService(s.id)}
                             className={`p-3.5 border rounded-2xl cursor-pointer transition-all flex justify-between items-center gap-4 ${
                               isSelected 
-                                ? 'bg-sky-500/5 border-sky-500 shadow-lg shadow-sky-500/5 font-bold' 
-                                : 'bg-slate-950/40 border-slate-800 hover:border-slate-700 hover:bg-slate-950/70'
+                                ? 'bg-amber-500/[0.06] border-amber-400/80 shadow-lg shadow-amber-500/10 font-bold' 
+                                : 'bg-slate-950/40 border-slate-800 hover:border-amber-400/40 hover:bg-slate-950/70'
                             }`}
                           >
                             <div className="space-y-1">
                               <div className="flex items-center gap-2">
-                                <span className="font-bold text-white text-xs">{s.name}</span>
-                                <span className="px-2 py-0.5 bg-slate-900 border border-slate-800 rounded-lg text-[9px] text-slate-400 font-mono flex items-center gap-1 shrink-0">
-                                  <Clock3 size={10} className="text-sky-400" />
+                                <span className="font-black text-amber-200 text-xs">{s.name}</span>
+                                <span className="px-2 py-0.5 bg-slate-900 border border-amber-400/20 rounded-lg text-[9px] text-slate-300 font-mono flex items-center gap-1 shrink-0">
+                                  <Clock3 size={10} className="text-amber-300" />
                                   {formatDuration(s.estimatedTime)}
                                 </span>
                               </div>
@@ -1582,11 +1601,11 @@ function AuthenticatedClientPortal({
                             </div>
 
                             <div className="flex items-center gap-3 shrink-0">
-                              <span className="text-xs font-bold text-sky-400 font-mono">
+                              <span className="text-xs font-bold text-amber-300 font-mono">
                                 {formatBRL(s.basePrice)}
                               </span>
                               <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
-                                isSelected ? 'bg-sky-500 border-sky-500 text-slate-950' : 'border-slate-800 bg-slate-950/40'
+                                isSelected ? 'bg-amber-400 border-amber-300 text-slate-950 shadow-md shadow-amber-500/20' : 'border-amber-400/25 bg-slate-950/40'
                               }`}>
                                 {isSelected && <Check size={12} strokeWidth={3} />}
                               </div>
@@ -1603,9 +1622,9 @@ function AuthenticatedClientPortal({
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
-                  className="space-y-5"
+                  className="space-y-4"
                 >
-                  <div>
+                  <div className="hidden">
                     <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold uppercase tracking-wider rounded-lg">
                       ✨ Sugestões Exclusivas
                     </span>
@@ -1615,8 +1634,70 @@ function AuthenticatedClientPortal({
                     </p>
                   </div>
 
+                  {primarySuggestion && (
+                    <>
+                      <div className="flex justify-center">
+                        <span className="px-9 py-2 bg-slate-950/70 text-amber-300 border border-amber-400/60 text-[10px] font-black uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/5">
+                          ✨ Sugestões Exclusivas
+                        </span>
+                      </div>
+
+                      <div className="rounded-2xl border border-amber-400/70 bg-[#050b1c] overflow-hidden shadow-2xl shadow-amber-500/10">
+                        <div
+                          className="relative h-[190px] overflow-hidden border-b border-amber-400/30"
+                          style={{
+                            backgroundImage:
+                              'linear-gradient(90deg, rgba(4,8,16,0.92) 0%, rgba(28,19,10,0.78) 48%, rgba(8,28,42,0.55) 52%, rgba(5,16,28,0.82) 100%), radial-gradient(circle at 30% 34%, rgba(245,166,35,0.95) 0 4px, transparent 8px), radial-gradient(circle at 42% 43%, rgba(245,166,35,0.75) 0 5px, transparent 10px), radial-gradient(circle at 64% 19%, rgba(255,255,255,0.95) 0 4px, transparent 9px), radial-gradient(circle at 74% 27%, rgba(255,255,255,0.7) 0 3px, transparent 8px), linear-gradient(160deg, #1f2937 0%, #0f172a 45%, #1e3a5f 54%, #08111e 100%)'
+                          }}
+                        >
+                          <div className="absolute inset-0 opacity-60 bg-[radial-gradient(circle_at_12%_18%,rgba(255,255,255,0.8)_0_1px,transparent_2px),radial-gradient(circle_at_18%_31%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_27%_14%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_35%_38%,rgba(255,255,255,0.7)_0_1px,transparent_2px),radial-gradient(circle_at_58%_17%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_68%_36%,rgba(255,255,255,0.75)_0_1px,transparent_2px),radial-gradient(circle_at_78%_18%,rgba(255,255,255,0.7)_0_1px,transparent_2px),radial-gradient(circle_at_88%_30%,rgba(255,255,255,0.75)_0_1px,transparent_2px)]" />
+                          <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/75 to-transparent" />
+                          <div className="absolute inset-x-0 bottom-0 h-8 bg-slate-950/80 rounded-t-[60%]" />
+                          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.8)]" />
+                          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 rounded-full border border-amber-400/40 bg-slate-950/55 flex items-center justify-center text-amber-300 shadow-xl shadow-amber-500/20">
+                            <ShieldAlert size={28} strokeWidth={2.2} />
+                          </div>
+                        </div>
+
+                        <div className="px-6 py-5 text-center bg-gradient-to-b from-[#08112a] to-[#050a18]">
+                          <h2 className="text-[26px] sm:text-[32px] leading-tight font-black text-white font-serif tracking-normal">
+                            Dirija com mais segurança
+                            <span className="block text-amber-300">em dias de chuva.</span>
+                          </h2>
+                          <p className="mt-2 text-sm text-slate-200">{primarySuggestion.name}</p>
+
+                          <div className="mt-5 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-8 text-sm">
+                            <div className="flex items-center gap-2 text-slate-200">
+                              <Clock3 size={15} className="text-amber-300" />
+                              <span>Apenas mais {formatDuration(primarySuggestion.estimatedTime)}</span>
+                            </div>
+                            <div className="hidden sm:block h-7 w-px bg-slate-700" />
+                            <div className="flex items-center gap-2 text-amber-300 font-black font-mono">
+                              <FileSignature size={15} />
+                              <span>{formatBRL(primarySuggestion.basePrice)}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => toggleSuggestedService(primarySuggestion.id)}
+                            className={`mt-5 w-full rounded-xl py-4 text-sm sm:text-base font-black transition-all shadow-lg cursor-pointer ${
+                              selectedServiceIds.includes(primarySuggestion.id)
+                                ? 'bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30'
+                                : 'bg-gradient-to-b from-amber-300 to-amber-500 hover:from-amber-200 hover:to-amber-400 text-slate-950 shadow-amber-500/20'
+                            }`}
+                          >
+                            {selectedServiceIds.includes(primarySuggestion.id)
+                              ? 'Remover proteção'
+                              : '🛡️ Sim, quero essa proteção'}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
                   {/* Suggestion cards list */}
-                  <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1 scrollbar-thin">
+                  <div className="hidden">
                     {adjustedServices
                       .filter(s => s.portalVisibility === 'sugestao' || (!s.portalVisibility && s.isFeatured))
                       .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
