@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { dbInstance } from '../db/localDb';
-import { Customer, Vehicle, Service, Appointment, AppointmentStatus, SystemConfig } from '../types';
+import { Customer, Vehicle, Service, Appointment, AppointmentStatus, SystemConfig, LoyaltyRewardCredit } from '../types';
 import { safeLog } from '../security/safeOutput';
 import { useVehicleCatalog } from '../hooks/useVehicleCatalog';
 import { sizeCategoryToPorte } from '../utils/vehicleCatalog';
@@ -184,6 +184,9 @@ function AuthenticatedClientPortal({
   const [appointments, setAppointments] = useState<Appointment[]>(
     initialData.appointments
   );
+  const [loyaltyRewardCredits, setLoyaltyRewardCredits] = useState<LoyaltyRewardCredit[]>(
+    initialData.loyaltyRewardCredits
+  );
   const [referralProgress] = useState(initialData.referralProgress);
   const [portalSettings] = useState(initialData.portalSettings);
 
@@ -254,6 +257,7 @@ function AuthenticatedClientPortal({
           setServices(data.services);
           setServicosPrecos(data.servicePrices);
           setAppointments([...data.appointments, ...data.busyAppointments]);
+          setLoyaltyRewardCredits(data.loyaltyRewardCredits);
         }
       } catch (err) {
         safeLog('error', 'client_portal.availability.load', 'error', { error: err });
@@ -477,6 +481,12 @@ function AuthenticatedClientPortal({
     if (currentPorte === 'Pequeno') porteCode = 'P';
     if (currentPorte === 'Grande') porteCode = 'G';
 
+    const availableCreditServiceIds = new Set(
+      loyaltyRewardCredits
+        .filter(credit => credit.status === 'available')
+        .map(credit => credit.serviceId)
+    );
+
     return services.map(s => {
       // 0. New pricingType logic
       if (s.pricingType === 'porte') {
@@ -487,12 +497,12 @@ function AuthenticatedClientPortal({
         
         return {
           ...s,
-          basePrice: finalPrice
+          basePrice: availableCreditServiceIds.has(s.id) ? 0 : finalPrice
         };
       } else if (s.pricingType === 'unico') {
         return {
           ...s,
-          basePrice: s.basePrice
+          basePrice: availableCreditServiceIds.has(s.id) ? 0 : s.basePrice
         };
       }
 
@@ -503,7 +513,7 @@ function AuthenticatedClientPortal({
       if (customPrice) {
         return {
           ...s,
-          basePrice: Number(customPrice.preco),
+          basePrice: availableCreditServiceIds.has(s.id) ? 0 : Number(customPrice.preco),
           estimatedTime: Number(customPrice.tempo_estimado_minutos)
         };
       }
@@ -522,11 +532,11 @@ function AuthenticatedClientPortal({
       
       return {
         ...s,
-        basePrice: Math.round(adjustedPrice),
+        basePrice: availableCreditServiceIds.has(s.id) ? 0 : Math.round(adjustedPrice),
         estimatedTime: adjustedTime
       };
     });
-  }, [selectedVehicleId, vehicles, services, servicosPrecos]);
+  }, [selectedVehicleId, vehicles, services, servicosPrecos, loyaltyRewardCredits]);
 
   // Computations for Selected Services
   const { totalValue, totalTime } = useMemo(() => {
@@ -722,6 +732,7 @@ function AuthenticatedClientPortal({
         setServices(data.services);
         setAppointments(data.appointments);
         setServicosPrecos(data.servicePrices);
+        setLoyaltyRewardCredits(data.loyaltyRewardCredits);
         // Clear booking choices
         setSelectedServiceIds([]);
         setSelectedDate('');
@@ -772,6 +783,7 @@ function AuthenticatedClientPortal({
       await cancelPortalAppointment(apptId);
       const data = await loadPortalData();
       setAppointments(data.appointments);
+      setLoyaltyRewardCredits(data.loyaltyRewardCredits);
     } catch (err: any) {
       safeLog('error', 'client_portal.appointment.cancel', 'error', {
         entityId: apptId,

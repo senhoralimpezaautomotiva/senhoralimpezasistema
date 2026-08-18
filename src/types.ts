@@ -29,13 +29,24 @@ export interface Customer {
 export interface LoyaltyCardEntry {
   id: string;
   customerId: string;
-  delta: 1 | -1;
-  source: 'referral' | 'manual_add' | 'manual_remove';
+  delta: number;
+  source: 'referral' | 'own_service' | 'reward_redeem' | 'manual_add' | 'manual_remove';
   referredCustomerId?: string | null;
   appointmentId?: string | null;
   note?: string;
   actorName?: string;
   createdAt: string;
+}
+
+export interface LoyaltyRewardCredit {
+  id: string;
+  customerId: string;
+  serviceId: string;
+  status: 'available' | 'redeemed' | 'cancelled';
+  earnedFromEntryId?: string | null;
+  redeemedAppointmentId?: string | null;
+  createdAt: string;
+  redeemedAt?: string | null;
 }
 
 export interface Vehicle {

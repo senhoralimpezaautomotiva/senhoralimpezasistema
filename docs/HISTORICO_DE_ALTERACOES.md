@@ -4218,3 +4218,60 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 - Em `src/components/ClientPortal.tsx`, restaurar as classes visuais anteriores da tela de selecao de servicos.
 - Remover o teste `tela de selecao de servicos usa destaque dourado sem alterar resumo dinamico` de `tests/portal001-auth-isolation.test.ts`.
+
+---
+
+## 2026-08-17-006 - Evolucao da regra do cartao fidelidade
+
+**Etapa relacionada:** Regra completa de acumulacao por limpezas elegiveis, indicacoes e credito automatico.
+
+**Objetivo:** Permitir duas formas independentes de marcacao no cartao fidelidade, preservando a regra atual de indicacao: marcacao por primeiro servico valido do indicado para quem indicou, e marcacao por servico proprio concluido apenas para limpezas elegiveis. Ao atingir 10 marcacoes, gerar credito automatico somente de Limpeza de manutencao e protecao, disponivel no Portal com valor zerado, reiniciando o ciclo.
+
+### Trabalho realizado
+
+- Criada migration local para adicionar a origem `own_service`, a baixa `reward_redeem`, a tabela `loyalty_reward_credits`, funcoes auxiliares de elegibilidade e o gatilho de emissao de credito ao completar 10 marcacoes.
+- A regra de indicacao existente foi preservada: o indicado continua concedendo 1 marcacao para quem indicou somente na primeira conclusao valida, com idempotencia por indicado.
+- Adicionada marcacao independente para agendamentos concluidos/finalizados/entregues do proprio cliente quando houver servico elegivel.
+- Foram bloqueados para marcacao propria os servicos de polimento, higienizacao, motor, cristalizacao/vidros, plasticos, farois e vitrificacao.
+- O Portal passou a carregar creditos disponiveis por RPC e zerar dinamicamente o valor apenas do servico vinculado ao credito de fidelidade.
+- A RPC de criacao de agendamento passou a consumir um credito disponivel somente quando o servico selecionado corresponde ao credito permitido, registrando o agendamento com desconto equivalente e marcando o credito como usado.
+- O espelho local da regra em `localDb` passou a conceder marcacao por servico proprio elegivel quando nao estiver usando Supabase real.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260817173000_loyalty_service_rewards.sql`.
+- Alterado: `src/types.ts`.
+- Alterado: `src/portal/portalSupabase.ts`.
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `tests/referral-loyalty.test.ts`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: migration criada apenas localmente; nenhuma migration remota aplicada.
+- Supabase Auth e Edge Functions: nenhuma alteracao remota executada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/referral-loyalty.test.ts tests/db001-baseline.test.ts`: 20 testes aprovados.
+- `npm run test:portal001`: 22 testes aprovados.
+- `npm run test:stabilization`: 22 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A nova regra depende da aplicacao posterior da migration `20260817173000_loyalty_service_rewards.sql` no Supabase para funcionar em ambiente remoto.
+- O credito automatico exige que exista servico ativo cujo nome corresponda a Limpeza de manutencao e protecao.
+- Nao foi executado teste real contra banco remoto nem deploy.
+- Existem alteracoes locais antigas fora desta tarefa no working tree; elas nao foram modificadas por esta etapa.
+
+### Como desfazer
+
+- Remover a migration `supabase/migrations/20260817173000_loyalty_service_rewards.sql` antes de aplica-la no banco.
+- Reverter os ajustes de credito em `src/portal/portalSupabase.ts`, `src/components/ClientPortal.tsx`, `src/types.ts` e `src/db/localDb.ts`.
+- Remover os testes adicionados em `tests/referral-loyalty.test.ts` e a inclusao da migration em `tests/db001-baseline.test.ts` e `docs/database/db001-manifest.json`.

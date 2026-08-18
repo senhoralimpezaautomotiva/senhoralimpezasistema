@@ -7,7 +7,7 @@ import {
   mapDbVehicleToFrontend,
   mapFrontendVehicleToDb
 } from '../db/localDb';
-import type { AgendaConfig, Appointment, Customer, Service, Vehicle } from '../types';
+import type { AgendaConfig, Appointment, Customer, LoyaltyRewardCredit, Service, Vehicle } from '../types';
 
 const PORTAL_AUTH_STORAGE_KEY = 'sl_portal_auth_session';
 
@@ -26,6 +26,7 @@ export interface PortalData {
   }>;
   busyAppointments: Appointment[];
   referralProgress: number;
+  loyaltyRewardCredits: LoyaltyRewardCredit[];
   portalSettings: {
     catalogSource: 'system' | 'whatsapp';
     whatsappCatalogUrl: string;
@@ -111,7 +112,8 @@ export async function loadPortalData(date?: string): Promise<PortalData> {
     priceResult,
     busyResult,
     settingsResult,
-    referralProgressResult
+    referralProgressResult,
+    loyaltyCreditsResult
   ] = await Promise.all([
     client.from('clientes').select('id,created_at,nome,telefone,data_aniversario').maybeSingle(),
     client.from('veiculos').select('id,cliente_id,placa,modelo,cor,marca,porte').order('placa'),
@@ -129,7 +131,8 @@ export async function loadPortalData(date?: string): Promise<PortalData> {
       .select('portal_catalog_source,whatsapp_catalog_url,loyalty_referral_target,agenda')
       .eq('id', 'c0000000-0000-0000-0000-000000000000')
       .maybeSingle(),
-    client.rpc('portal_referral_progress')
+    client.rpc('portal_referral_progress'),
+    client.rpc('portal_available_loyalty_credits')
   ]);
 
   assertNoError(customerResult.error, 'Não foi possível carregar o cliente.');
@@ -141,6 +144,7 @@ export async function loadPortalData(date?: string): Promise<PortalData> {
 
   assertNoError(settingsResult.error, 'Nao foi possivel carregar as configuracoes do portal.');
   assertNoError(referralProgressResult.error, 'Nao foi possivel carregar o cartao fidelidade.');
+  assertNoError(loyaltyCreditsResult.error, 'Nao foi possivel carregar os creditos de fidelidade.');
 
   const busyAppointments = (busyResult.data || []).map((row: any, index: number) =>
     ({
@@ -173,6 +177,16 @@ export async function loadPortalData(date?: string): Promise<PortalData> {
     })),
     busyAppointments,
     referralProgress: Math.max(0, Number(referralProgressResult.data) || 0),
+    loyaltyRewardCredits: (loyaltyCreditsResult.data || []).map((row: any) => ({
+      id: String(row.id),
+      customerId: String(row.customer_id),
+      serviceId: String(row.service_id),
+      status: 'available',
+      earnedFromEntryId: row.earned_from_entry_id ? String(row.earned_from_entry_id) : null,
+      redeemedAppointmentId: null,
+      createdAt: String(row.created_at),
+      redeemedAt: null
+    })),
     portalSettings: {
       catalogSource: settingsResult.data?.portal_catalog_source === 'whatsapp' ? 'whatsapp' : 'system',
       whatsappCatalogUrl: String(settingsResult.data?.whatsapp_catalog_url || ''),

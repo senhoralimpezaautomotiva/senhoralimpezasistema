@@ -1413,7 +1413,7 @@ class LocalDatabase {
         this.loyaltyEntries = dbLoyaltyEntries.map((row: any) => ({
           id: row.id,
           customerId: row.customer_id,
-          delta: Number(row.delta) as 1 | -1,
+          delta: Number(row.delta),
           source: row.source,
           referredCustomerId: row.referred_customer_id,
           appointmentId: row.appointment_id,
@@ -2086,8 +2086,9 @@ class LocalDatabase {
         this.triggerAutomation('servico_finalizado', { customer, vehicle, service, appointment });
       }
 
-      // Release referral credits
+      // Release loyalty marks
       await this.awardReferralLoyaltyMark(appointment.customerId, appointment.id);
+      await this.awardOwnServiceLoyaltyMark(appointment);
 
       // Refresh dynamic listings locally
       await this.syncWithSupabase();
@@ -2144,6 +2145,7 @@ class LocalDatabase {
       }
 
       await this.awardReferralLoyaltyMark(appointment.customerId, appointment.id);
+      await this.awardOwnServiceLoyaltyMark(appointment);
       await this.syncWithSupabase();
     }
   }
@@ -2303,6 +2305,62 @@ class LocalDatabase {
       id: generateUUID(), customerId: referrer.id, delta: 1, source: 'referral',
       referredCustomerId: customerId, appointmentId, note: `Indicação concluída por ${customer.name}`,
       actorName: 'Sistema', createdAt: new Date().toISOString()
+    });
+    this.save();
+  }
+
+  private normalizeLoyaltyServiceName(value: string): string {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private isOwnServiceLoyaltyEligible(service: Service | undefined): boolean {
+    if (!service) return false;
+    const name = this.normalizeLoyaltyServiceName(`${service.name} ${service.description || ''}`);
+    const blocked = [
+      'polimento',
+      'higienizacao',
+      'motor',
+      'cristalizacao',
+      'vidro',
+      'plastic',
+      'farol',
+      'vitrificacao'
+    ];
+    if (blocked.some(term => name.includes(term))) return false;
+    return (
+      name.includes('manutencao e protecao') ||
+      name.includes('manutencao') ||
+      name.includes('limpeza tecnica')
+    );
+  }
+
+  async awardOwnServiceLoyaltyMark(appointment: Appointment): Promise<void> {
+    if (this.config.useRealSupabase) return;
+    if (!appointment.customerId || !appointment.id) return;
+    if (this.loyaltyEntries.some(entry => entry.source === 'own_service' && entry.appointmentId === appointment.id)) return;
+
+    const serviceIds = appointment.serviceIds && appointment.serviceIds.length > 0
+      ? appointment.serviceIds
+      : [appointment.serviceId];
+    const hasEligibleService = serviceIds.some(serviceId =>
+      this.isOwnServiceLoyaltyEligible(this.services.find(service => service.id === serviceId))
+    );
+    if (!hasEligibleService) return;
+
+    this.loyaltyEntries.unshift({
+      id: generateUUID(),
+      customerId: appointment.customerId,
+      delta: 1,
+      source: 'own_service',
+      appointmentId: appointment.id,
+      note: 'Marcação automática por limpeza elegível concluída',
+      actorName: 'Sistema',
+      createdAt: new Date().toISOString()
     });
     this.save();
   }

@@ -30,7 +30,8 @@
     "20260807213000_fix_referral_code_validation.sql",
     "20260815120000_fix_portal_create_cliente_customer_lookup.sql",
     "20260815123000_fix_referral_loyalty_completed_status.sql",
-    "20260816143000_portal_force_password_change_backend_guard.sql"
+    "20260816143000_portal_force_password_change_backend_guard.sql",
+    "20260817173000_loyalty_service_rewards.sql"
   ],
   "sqlArtifacts": [
     {
@@ -221,6 +222,15 @@
       "idempotent": "yes",
       "risk": "medium",
       "recommendation": "Aplicar junto da publicacao das Edge Functions de provisionamento e limpeza da flag para reforcar o bloqueio no backend."
+    },
+    {
+      "path": "supabase/migrations/20260817173000_loyalty_service_rewards.sql",
+      "category": ["official-migration", "loyalty", "portal", "rpc"],
+      "purpose": "Evolui o cartao fidelidade para somar marcacoes por limpezas elegiveis do proprio cliente, preservar indicacoes, gerar credito de Limpeza de manutencao e protecao a cada 10 marcacoes e consumir o credito no portal com valor zerado.",
+      "rerunnable": "yes",
+      "idempotent": "partial",
+      "risk": "medium",
+      "recommendation": "Aplicar somente apos validacao em ambiente controlado; nao disponibiliza credito para outros servicos."
     },
     {
       "path": "configuracoes_empresa.sql",
