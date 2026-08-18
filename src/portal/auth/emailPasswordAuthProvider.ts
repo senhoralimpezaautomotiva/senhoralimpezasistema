@@ -92,7 +92,10 @@ export const emailPasswordAuthProvider: PortalAuthProvider = {
     assertNoError(error, 'Não foi possível enviar o e-mail de recuperação.');
   },
 
-  async updatePassword(password: string): Promise<void> {
+  async updatePassword(
+    password: string,
+    options: { clearForcePasswordChange?: boolean } = {}
+  ): Promise<void> {
     const passwordError = validatePortalPassword(password);
     if (passwordError) throw new Error(passwordError);
     const client = getPortalSupabaseClient();
@@ -107,10 +110,12 @@ export const emailPasswordAuthProvider: PortalAuthProvider = {
       }
     });
     assertNoError(error, 'Não foi possível atualizar a senha.');
-    const { error: clearFlagError } = await client.functions.invoke('portal-clear-password-change');
-    assertNoError(clearFlagError, 'Nao foi possivel liberar o acesso ao portal.');
-    const { error: refreshError } = await client.auth.refreshSession();
-    assertNoError(refreshError, 'Nao foi possivel renovar a sessao do portal.');
+    if (options.clearForcePasswordChange) {
+      const { error: clearFlagError } = await client.functions.invoke('portal-clear-password-change');
+      assertNoError(clearFlagError, 'Nao foi possivel liberar o acesso ao portal.');
+      const { error: refreshError } = await client.auth.refreshSession();
+      assertNoError(refreshError, 'Nao foi possivel renovar a sessao do portal.');
+    }
   },
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {

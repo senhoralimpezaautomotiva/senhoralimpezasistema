@@ -12,7 +12,7 @@ export interface PortalAuthProvider {
   signUp(identifier: string, password: string): Promise<Session | null>;
   signIn(identifier: string, password: string): Promise<Session>;
   requestPasswordRecovery(identifier: string): Promise<void>;
-  updatePassword(password: string): Promise<void>;
+  updatePassword(password: string, options?: { clearForcePasswordChange?: boolean }): Promise<void>;
   changePassword(currentPassword: string, newPassword: string): Promise<void>;
   signOut(): Promise<void>;
 }

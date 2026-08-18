@@ -4025,3 +4025,56 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Em `src/App.tsx`, remover `InvalidAdministrativeProfileError`, os estados de retentativa e a tela de sessao autenticada, restaurando o tratamento anterior de erro pos-login.
 - Em `src/portal/PortalAuthGate.tsx`, remover `portalDataLoadError`, a aplicacao antecipada da sessao e a tela de retentativa do portal.
 - Em `tests/portal001-auth-isolation.test.ts`, remover o teste `falha temporaria ao carregar perfil nao encerra sessao autenticada`.
+
+---
+
+## 2026-08-17-002 - Redefinicao de senha por token do Supabase
+
+**Etapa relacionada:** Tela de redefinicao de senha do Portal do Cliente e orientacao de e-mail do Supabase Auth.
+
+**Objetivo:** Permitir que o cliente redefina a senha pelo token enviado pelo Supabase, reaproveitando a validacao de senha existente, exibindo mensagens em portugues e retornando ao login apos sucesso; documentar separadamente a configuracao necessaria no painel do Supabase.
+
+### Trabalho realizado
+
+- Separado o fluxo de redefinicao por token de recuperacao do fluxo de troca obrigatoria por `force_password_change`.
+- A tela do Portal identifica eventos `PASSWORD_RECOVERY` e URLs `?portal=true&recovery=true` como redefinicao por token.
+- A redefinicao por token usa a mesma validacao existente de senha forte do Portal.
+- Apos redefinir a senha por token, o Portal remove o parametro de recuperacao, encerra a sessao tecnica criada pelo Supabase e volta ao login com mensagem de sucesso em portugues.
+- A troca obrigatoria de senha continua chamando a Edge Function `portal-clear-password-change` somente quando necessario, sem alterar a regra ja validada.
+- Documentada a configuracao externa do Supabase Auth para remetente, Redirect URLs e template de e-mail de recuperacao em portugues com o nome `Senhora Limpeza Estetica Automotiva`.
+- Nenhuma configuracao foi aplicada no painel do Supabase nesta etapa.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `docs/SUPABASE_AUTH_EMAILS.md`.
+- Alterado: `src/portal/PortalAuthGate.tsx`.
+- Alterado: `src/portal/auth/portalAuthProvider.ts`.
+- Alterado: `src/portal/auth/emailPasswordAuthProvider.ts`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration criada ou aplicada.
+- Supabase Auth: nenhuma configuracao remota aplicada; a personalizacao de e-mail exige configuracao manual no painel do Supabase.
+- Edge Functions: nenhuma publicacao executada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 19 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A personalizacao do e-mail so tera efeito apos configurar o painel do Supabase conforme `docs/SUPABASE_AUTH_EMAILS.md`.
+- Nao foi executado teste real de recebimento de e-mail nem validacao contra Supabase remoto.
+- Existem alteracoes locais antigas fora desta tarefa no working tree; elas nao foram modificadas por esta etapa.
+
+### Como desfazer
+
+- Reverter a opcao `clearForcePasswordChange` em `src/portal/auth/portalAuthProvider.ts` e `src/portal/auth/emailPasswordAuthProvider.ts`.
+- Remover `passwordResetFromRecovery` e o redirecionamento para login em `src/portal/PortalAuthGate.tsx`.
+- Remover `docs/SUPABASE_AUTH_EMAILS.md`.
+- Remover os testes `redefinicao por token usa validacao existente e volta ao login` e `personalizacao de e-mail do Supabase Auth fica documentada como configuracao externa`.

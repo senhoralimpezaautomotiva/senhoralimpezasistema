@@ -72,17 +72,28 @@ export default function PortalAuthGate({
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [portalDataLoadError, setPortalDataLoadError] = useState(false);
+  const [passwordResetFromRecovery, setPasswordResetFromRecovery] = useState(false);
 
-  const prepareAuthenticatedPortal = async (activeSession: Session) => {
+  const prepareAuthenticatedPortal = async (activeSession: Session, recoveryToken = false) => {
+    if (recoveryToken) {
+      setSession(activeSession);
+      setPortalData(null);
+      setPortalDataLoadError(false);
+      setPasswordResetFromRecovery(true);
+      setMode('new-password');
+      return;
+    }
     if (mustChangePortalPassword(activeSession)) {
       setSession(activeSession);
       setPortalData(null);
       setPortalDataLoadError(false);
+      setPasswordResetFromRecovery(false);
       setMode('new-password');
       return;
     }
     setSession(activeSession);
     setPortalDataLoadError(false);
+    setPasswordResetFromRecovery(false);
     await claimExistingPortalCustomer();
     const data = await loadPortalData();
     setPortalData(data);
@@ -98,11 +109,18 @@ export default function PortalAuthGate({
       try {
         const { data, error } = await client.auth.getSession();
         if (error) throw error;
+        const isRecoveryCallback =
+          typeof window !== 'undefined' &&
+          new URL(window.location.href).searchParams.get('recovery') === 'true';
         if (!data.session) {
           if (!disposed) {
             setSession(null);
             setPortalData(null);
             setPortalDataLoadError(false);
+            setPasswordResetFromRecovery(false);
+            if (isRecoveryCallback) {
+              setErrorMessage('Link de redefinição inválido ou expirado. Solicite um novo e-mail de recuperação.');
+            }
             const storedNotice =
               typeof window !== 'undefined'
                 ? window.sessionStorage.getItem('sl_portal_auth_notice')
@@ -115,13 +133,12 @@ export default function PortalAuthGate({
           return;
         }
 
-        const isRecoveryCallback =
-          typeof window !== 'undefined' &&
-          new URL(window.location.href).searchParams.get('recovery') === 'true';
         if (isRecoveryCallback || mustChangePortalPassword(data.session)) {
           if (!disposed && currentRequest === requestId) {
             setSession(data.session);
             setPortalData(null);
+            setPortalDataLoadError(false);
+            setPasswordResetFromRecovery(isRecoveryCallback);
             setMode('new-password');
           }
           return;
@@ -133,6 +150,7 @@ export default function PortalAuthGate({
           setSession(data.session);
           setPortalData(restoredData);
           setPortalDataLoadError(false);
+          setPasswordResetFromRecovery(false);
         }
       } catch (error) {
         safeLog('error', 'client_portal.auth.restore', 'error', { error });
@@ -141,6 +159,7 @@ export default function PortalAuthGate({
           const activeSession = (await client.auth.getSession()).data.session;
           setSession(activeSession);
           setPortalDataLoadError(Boolean(activeSession));
+          setPasswordResetFromRecovery(false);
           setErrorMessage(
             activeSession
               ? 'Nao foi possivel carregar os dados do portal agora. Sua sessao continua ativa; tente novamente em instantes.'
@@ -158,6 +177,7 @@ export default function PortalAuthGate({
         setSession(nextSession);
         setPortalData(null);
         setPortalDataLoadError(false);
+        setPasswordResetFromRecovery(true);
         setMode('new-password');
         setInitializing(false);
       }
@@ -166,6 +186,7 @@ export default function PortalAuthGate({
         setSession(null);
         setPortalData(null);
         setPortalDataLoadError(false);
+        setPasswordResetFromRecovery(false);
         setMode('login');
         const storedNotice =
           typeof window !== 'undefined'
@@ -192,6 +213,7 @@ export default function PortalAuthGate({
     setLoading(true);
     setErrorMessage('');
     setSuccessMessage('');
+    setPasswordResetFromRecovery(false);
     let authenticatedSession: Session | null = null;
     try {
       const activeSession = await authProvider.signIn(identifier, password);
@@ -215,6 +237,7 @@ export default function PortalAuthGate({
     event.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
+    setPasswordResetFromRecovery(false);
     if (password !== passwordConfirmation) {
       setErrorMessage('As senhas não coincidem.');
       return;
@@ -247,6 +270,7 @@ export default function PortalAuthGate({
     setLoading(true);
     setErrorMessage('');
     setSuccessMessage('');
+    setPasswordResetFromRecovery(false);
     try {
       await authProvider.requestPasswordRecovery(identifier);
       setMode('recovery-sent');
@@ -268,10 +292,12 @@ export default function PortalAuthGate({
     }
     setLoading(true);
     try {
-      await authProvider.updatePassword(password);
+      await authProvider.updatePassword(password, {
+        clearForcePasswordChange: !passwordResetFromRecovery
+      });
       const client = getPortalSupabaseClient();
       const activeSession = (await client.auth.getSession()).data.session;
-      if (!activeSession) throw new Error('Sessão de recuperação expirada.');
+      if (!activeSession) throw new Error('Sessão de redefinição expirada.');
 
       const { data: refreshedUser } = await client.auth.getUser();
       const refreshedSession = refreshedUser.user
@@ -282,6 +308,18 @@ export default function PortalAuthGate({
         const url = new URL(window.location.href);
         url.searchParams.delete('recovery');
         window.history.replaceState({}, '', url);
+      }
+      setPassword('');
+      setPasswordConfirmation('');
+      if (passwordResetFromRecovery) {
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem(
+            'sl_portal_auth_notice',
+            'Senha redefinida com sucesso. Entre novamente para acessar o Portal do Cliente.'
+          );
+        }
+        await authProvider.signOut();
+        return;
       }
       await prepareAuthenticatedPortal(refreshedSession);
     } catch (error) {
@@ -324,6 +362,7 @@ export default function PortalAuthGate({
   const title =
     mode === 'signup' ? 'Criar conta segura' :
     mode === 'recovery' ? 'Recuperar senha' :
+    mode === 'new-password' && passwordResetFromRecovery ? 'Redefinir senha' :
     mode === 'new-password' ? 'Definir nova senha' :
     mode === 'confirmation-sent' ? 'Confirme seu e-mail' :
     mode === 'recovery-sent' ? 'Verifique seu e-mail' :
@@ -392,8 +431,10 @@ export default function PortalAuthGate({
           <div>
             <img src="/senhora-limpeza-logo.jpeg" alt="Logotipo Senhora Limpeza" className="w-24 h-24 rounded-2xl object-cover border-2 border-sky-500/25 mb-4" />
             <h1 className="text-xl font-black">{title}</h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Acesso protegido pelo Supabase Auth.
+              <p className="text-xs text-slate-400 mt-1">
+              {mode === 'new-password' && passwordResetFromRecovery
+                ? 'Use o link seguro enviado por e-mail para criar sua nova senha.'
+                : 'Acesso protegido pelo Supabase Auth.'}
             </p>
           </div>
           {onBackToAdmin && (
@@ -438,6 +479,7 @@ export default function PortalAuthGate({
                   type="button"
                   onClick={() => {
                     setMode('login');
+                    setPasswordResetFromRecovery(false);
                     setErrorMessage('');
                   }}
                   className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-2xl py-3.5 text-sm"
@@ -523,6 +565,7 @@ export default function PortalAuthGate({
                       mode === 'login' ? 'Entrar' :
                       mode === 'signup' ? 'Criar conta' :
                       mode === 'recovery' ? 'Enviar link' :
+                      passwordResetFromRecovery ? 'Redefinir senha' :
                       'Salvar nova senha'}
                   </button>
                 </form>
@@ -533,6 +576,7 @@ export default function PortalAuthGate({
                       type="button"
                       onClick={() => {
                         setMode('login');
+                        setPasswordResetFromRecovery(false);
                         setErrorMessage('');
                       }}
                       className="text-slate-400 hover:text-white"
@@ -546,6 +590,7 @@ export default function PortalAuthGate({
                         type="button"
                         onClick={() => {
                           setMode('signup');
+                          setPasswordResetFromRecovery(false);
                           setErrorMessage('');
                         }}
                         className="text-sky-400 hover:text-sky-300"
@@ -556,6 +601,7 @@ export default function PortalAuthGate({
                         type="button"
                         onClick={() => {
                           setMode('recovery');
+                          setPasswordResetFromRecovery(false);
                           setErrorMessage('');
                         }}
                         className="text-slate-400 hover:text-white"

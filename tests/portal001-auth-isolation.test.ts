@@ -33,6 +33,35 @@ test('cadastro, login, confirmação e recuperação usam e-mail do Supabase Aut
   assert.match(source, /functions\.invoke\('portal-clear-password-change'\)/);
   assert.doesNotMatch(source, /signInWithOtp|verifyOtp/);
 });
+
+test('redefinicao por token usa validacao existente e volta ao login', () => {
+  const contract = readPortalFile('src', 'portal', 'auth', 'portalAuthProvider.ts');
+  const provider = readPortalFile('src', 'portal', 'auth', 'emailPasswordAuthProvider.ts');
+  const gate = readPortalFile('src', 'portal', 'PortalAuthGate.tsx');
+
+  assert.match(contract, /updatePassword\(password: string, options\?: \{ clearForcePasswordChange\?: boolean \}\): Promise<void>/);
+  assert.match(provider, /validatePortalPassword\(password\)/);
+  assert.match(provider, /if \(options\.clearForcePasswordChange\)[\s\S]*portal-clear-password-change/);
+  assert.match(gate, /passwordResetFromRecovery/);
+  assert.match(gate, /PASSWORD_RECOVERY[\s\S]*setPasswordResetFromRecovery\(true\)/);
+  assert.match(gate, /Redefinir senha/);
+  assert.match(gate, /clearForcePasswordChange: !passwordResetFromRecovery/);
+  assert.match(gate, /Senha redefinida com sucesso\. Entre novamente para acessar o Portal do Cliente\./);
+  assert.match(gate, /await authProvider\.signOut\(\)/);
+  assert.match(gate, /Link de redefinição inválido ou expirado/);
+});
+
+test('personalizacao de e-mail do Supabase Auth fica documentada como configuracao externa', () => {
+  const guide = readPortalFile('docs', 'SUPABASE_AUTH_EMAILS.md');
+
+  assert.match(guide, /Codigo da aplicacao/);
+  assert.match(guide, /Configuracao obrigatoria no Supabase/);
+  assert.match(guide, /Senhora Limpeza Estetica Automotiva/);
+  assert.match(guide, /Authentication > Email Templates > Reset Password/);
+  assert.match(guide, /\{\{ \.ConfirmationURL \}\}/);
+  assert.match(guide, /\?portal=true&recovery=true/);
+});
+
 test('portal permite alterar senha logado com reautenticacao e logout obrigatorio', () => {
   const contract = readPortalFile('src', 'portal', 'auth', 'portalAuthProvider.ts');
   const provider = readPortalFile('src', 'portal', 'auth', 'emailPasswordAuthProvider.ts');
