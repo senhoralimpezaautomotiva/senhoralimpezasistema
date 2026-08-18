@@ -4275,3 +4275,195 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Remover a migration `supabase/migrations/20260817173000_loyalty_service_rewards.sql` antes de aplica-la no banco.
 - Reverter os ajustes de credito em `src/portal/portalSupabase.ts`, `src/components/ClientPortal.tsx`, `src/types.ts` e `src/db/localDb.ts`.
 - Remover os testes adicionados em `tests/referral-loyalty.test.ts` e a inclusao da migration em `tests/db001-baseline.test.ts` e `docs/database/db001-manifest.json`.
+
+---
+
+## 2026-08-18-001 - Revisao segura da migration de fidelidade
+
+**Etapa relacionada:** Auditoria da migration `20260817173000_loyalty_service_rewards.sql` antes de aplicacao em producao.
+
+**Objetivo:** Confirmar se a migration de fidelidade poderia ser aplicada com seguranca sobre o estado atual esperado do banco de producao, sem remover regras existentes da RPC `portal_create_agendamento`, e gerar uma migration corretiva em caso de risco.
+
+### Trabalho realizado
+
+- Revisada a migration `20260817173000_loyalty_service_rewards.sql` com foco em RPCs, RLS, grants, triggers e compatibilidade com as migrations anteriores do Portal.
+- Identificado risco operacional: a migration original reescreve a RPC critica `portal_create_agendamento` e nao explicita a guarda `PASSWORD_CHANGE_REQUIRED` dentro da propria funcao recompilada.
+- Criada a migration corretiva `20260818120000_fix_loyalty_rewards_safe_portal_rpc.sql`, posterior e idempotente, para recompor o estado final seguro sem editar a migration ja versionada.
+- A migration corretiva recompila `portal_available_loyalty_credits` e `portal_create_agendamento` com guarda explicita de troca obrigatoria de senha, grants finais e `notify pgrst, 'reload schema'`.
+- Atualizado o manifesto DB-001 para registrar que `20260817173000` nao deve ser aplicada isoladamente em producao; a recomendacao passa a ser aplicar junto/depois da corretiva `20260818120000`.
+- Atualizados testes para exigir a migration corretiva e suas garantias de seguranca.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260818120000_fix_loyalty_rewards_safe_portal_rpc.sql`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `tests/referral-loyalty.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration remota aplicada; apenas criada migration local corretiva.
+- Supabase Auth e Edge Functions: nenhuma alteracao remota executada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/referral-loyalty.test.ts tests/db001-baseline.test.ts`: 21 testes aprovados.
+- `npm run test:portal001`: 22 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Nao houve verificacao direta no banco remoto, pois esta sessao nao possui credenciais ou conector Supabase ativo.
+- A aplicacao em producao deve considerar a ordem: `20260817173000_loyalty_service_rewards.sql` seguida de `20260818120000_fix_loyalty_rewards_safe_portal_rpc.sql`, ou aplicar ambas no mesmo lote.
+- Apos aplicar, confirmar no painel Supabase que a RPC `portal_available_loyalty_credits` existe e que o schema cache foi recarregado.
+- Existem alteracoes locais antigas fora desta tarefa no working tree; elas nao foram modificadas por esta etapa.
+
+### Como desfazer
+
+- Antes de aplicar em banco remoto, remover `supabase/migrations/20260818120000_fix_loyalty_rewards_safe_portal_rpc.sql` e reverter as referencias a ela em `docs/database/db001-manifest.json`, `tests/db001-baseline.test.ts` e `tests/referral-loyalty.test.ts`.
+- Se ja aplicada remotamente, criar migration de reversao especifica para remover a RPC/tabela de creditos ou restaurar a versao anterior de `portal_create_agendamento`; nao executar rollback manual destrutivo sem backup.
+
+---
+
+## 2026-08-18-002 - Preservacao completa do contrato de portal_create_agendamento
+
+**Etapa relacionada:** Revisao adicional de idempotencia e preservacao integral das regras existentes antes de aplicar migrations de fidelidade em producao.
+
+**Objetivo:** Confirmar se a sequencia `20260817173000` + `20260818120000` preservava 100% das regras existentes da RPC `portal_create_agendamento` e se era segura/idempotente para um banco de producao. Em caso de incompatibilidade, gerar migration corretiva adicional sem alterar migrations existentes e sem aplicar nada remotamente.
+
+### Trabalho realizado
+
+- Comparada a RPC historica `portal_create_agendamento` da migration `20260724213000` com a versao recompilada na corretiva `20260818120000`.
+- Identificada incompatibilidade de preservacao total: a corretiva anterior mantinha validacoes, guarda de senha e credito fidelidade, mas nao restaurava explicitamente a logica legada de `referralDiscountAvailable`/`referralDiscountUsed` dentro da RPC.
+- Criada a migration adicional `20260818130000_preserve_portal_create_agendamento_contract.sql`, posterior as duas anteriores, para recompor o contrato completo da RPC.
+- A nova migration preserva validacoes existentes, guarda `PASSWORD_CHANGE_REQUIRED`, calculo por porte/tabela de precos, limite de servicos, disponibilidade do horario, metadados do agendamento, desconto legado por indicacao se ainda existir no banco, consumo de credito fidelidade e `notify pgrst, 'reload schema'`.
+- A nova migration tambem reforca idempotencia de tabela/colunas/constraint de `loyalty_reward_credits` para cenarios de aplicacao parcial.
+- Atualizados manifesto DB-001 e testes para exigir que `20260818130000` seja a ultima migration do lote de fidelidade.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260818130000_preserve_portal_create_agendamento_contract.sql`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `tests/referral-loyalty.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration remota aplicada; apenas criada migration local corretiva adicional.
+- Supabase Auth e Edge Functions: nenhuma alteracao remota executada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/referral-loyalty.test.ts tests/db001-baseline.test.ts`: 22 testes aprovados.
+- `npm run test:portal001`: 22 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Nao houve verificacao direta contra banco remoto, pois esta sessao nao possui credenciais ou conector Supabase ativo.
+- A sequencia recomendada para producao passa a ser `20260817173000`, `20260818120000` e `20260818130000`, nesta ordem, ou no mesmo lote.
+- A validade final ainda deve ser confirmada em ambiente remoto/homologacao antes de producao, especialmente existencia do servico ativo de Limpeza de manutencao e protecao.
+
+### Como desfazer
+
+- Antes de aplicar em banco remoto, remover `supabase/migrations/20260818130000_preserve_portal_create_agendamento_contract.sql` e reverter as referencias a ela em `docs/database/db001-manifest.json`, `tests/db001-baseline.test.ts`, `tests/referral-loyalty.test.ts` e nesta entrada do historico por nova entrada corretiva.
+- Se ja aplicada remotamente, criar migration de reversao especifica para restaurar a versao anterior de `portal_create_agendamento`; nao executar rollback manual destrutivo sem backup.
+
+---
+
+## 2026-08-18-003 - Auditoria do fluxo de marcacao por servico proprio elegivel
+
+**Etapa relacionada:** Analise solicitada sem alteracao de codigo sobre ausencia de marcacao no cartao fidelidade quando servico elegivel e concluido.
+
+**Objetivo:** Verificar trigger, funcao chamada, condicoes de elegibilidade, atualizacao de status do agendamento, gravacao da marca e diferencas entre desenvolvimento e producao para identificar onde o fluxo para.
+
+### Trabalho realizado
+
+- Revisadas as migrations de fidelidade `20260806150000`, `20260815123000`, `20260817173000`, `20260818120000` e `20260818130000`.
+- Confirmado que a marcacao por servico proprio depende do trigger `trg_award_own_service_loyalty_mark`, criado em `20260817173000` e recriado em `20260818120000`.
+- Confirmado que a funcao `award_own_service_loyalty_mark` so grava a marca se o status novo normalizado for `finalizado`, `entregue` ou `concluido`, se o status antigo ainda nao era final, e se algum servico em `observacoes[meta.serviceIds]` ou em `servico_id` passar em `loyalty_is_eligible_own_service`.
+- Identificado que a migration final `20260818130000_preserve_portal_create_agendamento_contract.sql` preserva apenas o contrato de `portal_create_agendamento` e creditos, mas nao recria a funcao/trigger de marcacao propria; portanto ela so e suficiente quando `20260817173000` ou `20260818120000` ja foram aplicadas antes.
+- Confirmada diferenca de desenvolvimento/producao: no modo local, `awardOwnServiceLoyaltyMark` em TypeScript cria a marca; com Supabase real, essa funcao retorna cedo e a responsabilidade passa integralmente ao trigger do banco.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum codigo, migration, teste, banco, configuracao de ambiente ou comportamento funcional foi alterado.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma consulta remota e nenhuma migration aplicada.
+- Supabase Auth, Edge Functions, hospedagem e deploy: nenhuma alteracao executada.
+
+### Verificacoes e resultados
+
+- Verificacao estatica por leitura e busca textual com `rg`, `Get-Content` e `Select-String`.
+- Nao foram executados testes automatizados, pois a tarefa era auditoria sem alteracao de codigo.
+- Resultado da auditoria: o ponto mais provavel de parada em producao e ausencia do trigger/funcoes de `20260817173000`/`20260818120000`, ou aplicacao incompleta do lote antes de `20260818130000`.
+
+### Riscos, limitacoes e pendencias
+
+- Nao houve acesso direto ao banco de producao; a conclusao depende da comparacao entre migrations locais e comportamento esperado.
+- Ainda falta confirmar no Supabase remoto se existem `trg_award_own_service_loyalty_mark`, `award_own_service_loyalty_mark`, `loyalty_is_eligible_own_service`, o indice parcial de `own_service` e as constraints atualizadas de `loyalty_card_entries`.
+- Tambem deve ser validado se os servicos cadastrados em producao possuem nomes/categorias/observacoes que passam na elegibilidade.
+
+### Como desfazer
+
+- Como nao houve alteracao funcional, basta adicionar nova entrada corretiva ao historico se esta auditoria for substituida por verificacao remota ou por decisao tecnica diferente.
+
+---
+
+## 2026-08-18-004 - Elegibilidade explicita do cartao fidelidade por servico
+
+**Etapa relacionada:** Correcao da elegibilidade do cartao fidelidade para nao depender de nome ou descricao do servico.
+
+**Objetivo:** Adicionar um campo administravel no cadastro de servicos para indicar se o servico conta para o cartao fidelidade e alterar a funcao de elegibilidade para consultar apenas esse campo.
+
+### Trabalho realizado
+
+- Criada migration `20260818143000_loyalty_service_explicit_flag.sql`.
+- A migration adiciona `servicos_disponiveis.conta_cartao_fidelidade boolean not null default false`.
+- Os servicos existentes sao inicializados pela regra anterior, chamando `public.loyalty_is_eligible_own_service(service.id)` antes da recompilacao da funcao.
+- A funcao `public.loyalty_is_eligible_own_service(uuid)` passa a retornar somente `conta_cartao_fidelidade`, sem analisar nome, categoria ou observacao.
+- O cadastro de servicos passou a exibir e salvar o campo "Conta para o cartão fidelidade".
+- O mapeamento local de servicos passou a ler e gravar `conta_cartao_fidelidade`, e a simulacao local de marcacao propria passou a usar apenas esse booleano.
+- Atualizados manifesto DB-001 e testes de contrato para incluir a nova migration e a nova regra de elegibilidade.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260818143000_loyalty_service_explicit_flag.sql`.
+- Alterado: `src/types.ts`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `src/components/ServicosModule.tsx`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `tests/referral-loyalty.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration remota aplicada; apenas criada migration local.
+- Supabase Auth, Edge Functions, hospedagem e deploy: nenhuma alteracao executada.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/referral-loyalty.test.ts tests/db001-baseline.test.ts`: 22 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A migration ainda precisa ser aplicada no banco remoto para a producao usar o campo novo.
+- A inicializacao dos servicos existentes preserva a regra anterior no momento da aplicacao; ajustes manuais posteriores devem ser feitos no cadastro de servicos pelo novo campo.
+- A funcao de recompensa `loyalty_reward_service_id` ainda usa nome do servico para localizar o premio de manutencao e protecao; isso nao foi alterado porque a tarefa pediu apenas a elegibilidade da marcacao.
+
+### Como desfazer
+
+- Antes de aplicar no banco remoto, remover `supabase/migrations/20260818143000_loyalty_service_explicit_flag.sql` e reverter as alteracoes nos arquivos listados nesta entrada.
+- Se ja aplicada remotamente, criar uma migration de reversao especifica para restaurar a versao anterior de `loyalty_is_eligible_own_service` e, somente se seguro para o ambiente, remover ou ignorar a coluna `conta_cartao_fidelidade`.

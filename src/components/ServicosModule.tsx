@@ -54,7 +54,8 @@ export default function ServicosModule({
     isFeatured: false,
     offerText: '',
     displayOrder: 0,
-    portalVisibility: 'lista' as 'lista' | 'sugestao' | 'oculto'
+    portalVisibility: 'lista' as 'lista' | 'sugestao' | 'oculto',
+    countsForLoyaltyCard: false
   });
 
   const filteredServices = services.filter(s => 
@@ -77,7 +78,8 @@ export default function ServicosModule({
       isFeatured: false,
       offerText: '',
       displayOrder: 0,
-      portalVisibility: 'lista'
+      portalVisibility: 'lista',
+      countsForLoyaltyCard: false
     });
     setIsOpenAdd(true);
   };
@@ -98,7 +100,8 @@ export default function ServicosModule({
       isFeatured: s.isFeatured ?? false,
       offerText: s.offerText ?? '',
       displayOrder: s.displayOrder ?? 0,
-      portalVisibility: s.portalVisibility ?? (s.isFeatured ? 'sugestao' : 'lista')
+      portalVisibility: s.portalVisibility ?? (s.isFeatured ? 'sugestao' : 'lista'),
+      countsForLoyaltyCard: s.countsForLoyaltyCard ?? false
     });
     setIsOpenEdit(true);
   };
@@ -500,6 +503,17 @@ export default function ServicosModule({
                 </div>
               </div>
 
+              <label className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  disabled={isSaving}
+                  checked={formData.countsForLoyaltyCard}
+                  onChange={(e) => setFormData({ ...formData, countsForLoyaltyCard: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-sky-500 disabled:opacity-50"
+                />
+                <span className="font-semibold">Conta para o cartão fidelidade</span>
+              </label>
+
               {/* Configurações de Destaque / Upsell */}
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
                 <span className="block text-[10px] font-bold text-sky-400 uppercase tracking-wider">Destaque &amp; Oferta (Upsell no Portal)</span>
@@ -778,6 +792,17 @@ export default function ServicosModule({
                   </button>
                 </div>
               </div>
+
+              <label className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  disabled={isSaving}
+                  checked={formData.countsForLoyaltyCard}
+                  onChange={(e) => setFormData({ ...formData, countsForLoyaltyCard: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-sky-500 disabled:opacity-50"
+                />
+                <span className="font-semibold">Conta para o cartão fidelidade</span>
+              </label>
 
               {/* Configurações de Destaque / Upsell */}
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-3">

@@ -77,6 +77,7 @@ export interface Service {
   offerText?: string;
   displayOrder?: number;
   portalVisibility?: 'lista' | 'sugestao' | 'oculto';
+  countsForLoyaltyCard?: boolean;
 }
 
 export type AppointmentStatus = 'agendado' | 'confirmado' | 'cliente_chegou' | 'em_andamento' | 'aguardando_aprovacao' | 'aguardando_peca' | 'finalizado' | 'entregue' | 'cancelado';

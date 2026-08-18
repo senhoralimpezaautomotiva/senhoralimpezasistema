@@ -816,6 +816,7 @@ export function mapDbServiceToFrontend(row: any): Service {
   let offerText = '';
   let displayOrder = 0;
   let portalVisibility: 'lista' | 'sugestao' | 'oculto' = 'lista';
+  let countsForLoyaltyCard = false;
 
   const metaRegex = /\[meta:([\s\S]*?)\]\s*$/;
   const match = description.match(metaRegex);
@@ -836,6 +837,7 @@ export function mapDbServiceToFrontend(row: any): Service {
       } else if (isFeatured) {
         portalVisibility = 'sugestao';
       }
+      if (meta.countsForLoyaltyCard !== undefined) countsForLoyaltyCard = Boolean(meta.countsForLoyaltyCard);
       description = description.replace(metaRegex, '').trim();
     } catch (e) {
       safeLog('error', 'service.metadata.parse', 'error', {
@@ -858,7 +860,8 @@ export function mapDbServiceToFrontend(row: any): Service {
     isFeatured: isFeatured || portalVisibility === 'sugestao',
     offerText: offerText,
     displayOrder: displayOrder,
-    portalVisibility: portalVisibility
+    portalVisibility: portalVisibility,
+    countsForLoyaltyCard: Boolean(row.conta_cartao_fidelidade ?? countsForLoyaltyCard)
   };
 }
 
@@ -885,6 +888,9 @@ function mapFrontendServiceToDb(s: Partial<Service>): any {
   row.observacao = obs;
   row.ativo = true;
   row.categoria = 'Estética';
+  if (s.countsForLoyaltyCard !== undefined) {
+    row.conta_cartao_fidelidade = s.countsForLoyaltyCard;
+  }
   return row;
 }
 
@@ -2309,34 +2315,9 @@ class LocalDatabase {
     this.save();
   }
 
-  private normalizeLoyaltyServiceName(value: string): string {
-    return value
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
   private isOwnServiceLoyaltyEligible(service: Service | undefined): boolean {
     if (!service) return false;
-    const name = this.normalizeLoyaltyServiceName(`${service.name} ${service.description || ''}`);
-    const blocked = [
-      'polimento',
-      'higienizacao',
-      'motor',
-      'cristalizacao',
-      'vidro',
-      'plastic',
-      'farol',
-      'vitrificacao'
-    ];
-    if (blocked.some(term => name.includes(term))) return false;
-    return (
-      name.includes('manutencao e protecao') ||
-      name.includes('manutencao') ||
-      name.includes('limpeza tecnica')
-    );
+    return Boolean(service.countsForLoyaltyCard);
   }
 
   async awardOwnServiceLoyaltyMark(appointment: Appointment): Promise<void> {

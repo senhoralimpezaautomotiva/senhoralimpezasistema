@@ -31,7 +31,10 @@
     "20260815120000_fix_portal_create_cliente_customer_lookup.sql",
     "20260815123000_fix_referral_loyalty_completed_status.sql",
     "20260816143000_portal_force_password_change_backend_guard.sql",
-    "20260817173000_loyalty_service_rewards.sql"
+    "20260817173000_loyalty_service_rewards.sql",
+    "20260818120000_fix_loyalty_rewards_safe_portal_rpc.sql",
+    "20260818130000_preserve_portal_create_agendamento_contract.sql",
+    "20260818143000_loyalty_service_explicit_flag.sql"
   ],
   "sqlArtifacts": [
     {
@@ -230,7 +233,34 @@
       "rerunnable": "yes",
       "idempotent": "partial",
       "risk": "medium",
-      "recommendation": "Aplicar somente apos validacao em ambiente controlado; nao disponibiliza credito para outros servicos."
+      "recommendation": "Nao aplicar isoladamente em producao; aplicar junto da migration corretiva 20260818120000 para recompilar as RPCs do Portal com guardas explicitas e reload de schema."
+    },
+    {
+      "path": "supabase/migrations/20260818120000_fix_loyalty_rewards_safe_portal_rpc.sql",
+      "category": ["official-migration", "loyalty", "portal", "rpc", "safety-fix"],
+      "purpose": "Corrige o rollout seguro da evolucao do cartao fidelidade, recompilando portal_available_loyalty_credits e portal_create_agendamento com guarda PASSWORD_CHANGE_REQUIRED, grants finais e reload do schema cache do PostgREST.",
+      "rerunnable": "yes",
+      "idempotent": "partial",
+      "risk": "medium",
+      "recommendation": "Nao usar como ultima migration do lote; aplicar em seguida 20260818130000 para preservar tambem o contrato historico completo de portal_create_agendamento."
+    },
+    {
+      "path": "supabase/migrations/20260818130000_preserve_portal_create_agendamento_contract.sql",
+      "category": ["official-migration", "loyalty", "portal", "rpc", "safety-fix"],
+      "purpose": "Recompila portal_create_agendamento preservando o contrato historico, incluindo referralDiscountAvailable legado, validacoes existentes, guarda PASSWORD_CHANGE_REQUIRED, consumo de credito fidelidade e reload do schema cache.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "medium",
+      "recommendation": "Aplicar como ultima migration do lote de fidelidade apos 20260817173000 e 20260818120000; nao aplica nada fora do banco local ate validacao remota."
+    },
+    {
+      "path": "supabase/migrations/20260818143000_loyalty_service_explicit_flag.sql",
+      "category": ["official-migration", "loyalty", "services", "rpc"],
+      "purpose": "Adiciona campo explicito conta_cartao_fidelidade em servicos_disponiveis, inicializa servicos existentes pela regra anterior e recompila loyalty_is_eligible_own_service para consultar apenas esse campo.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "medium",
+      "recommendation": "Aplicar apos o lote de fidelidade para tornar a elegibilidade administravel no cadastro de servicos."
     },
     {
       "path": "configuracoes_empresa.sql",
@@ -542,7 +572,7 @@
       "kind": "table",
       "evidenceStatus": "runtime_contract",
       "purpose": "Catálogo de serviços.",
-      "columnsObserved": ["id", "nome_servico", "observacao", "ativo", "categoria"],
+      "columnsObserved": ["id", "nome_servico", "observacao", "ativo", "categoria", "conta_cartao_fidelidade"],
       "constraintsAndDefaults": "Tipos, PK, nulabilidade, defaults e checks remotos desconhecidos.",
       "relationships": "Referenciada por agendamentos.servico_id e servicos_precos.servico_id segundo o runtime.",
       "rls": "Desconhecido.",

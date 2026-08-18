@@ -6,7 +6,11 @@ import test from 'node:test';
 const read = (...parts: string[]) => readFileSync(path.resolve(...parts), 'utf8');
 const migration = read('supabase', 'migrations', '20260806150000_referral_loyalty_ledger.sql');
 const rewardsMigration = read('supabase', 'migrations', '20260817173000_loyalty_service_rewards.sql');
+const rewardsSafetyMigration = read('supabase', 'migrations', '20260818120000_fix_loyalty_rewards_safe_portal_rpc.sql');
+const portalContractMigration = read('supabase', 'migrations', '20260818130000_preserve_portal_create_agendamento_contract.sql');
+const explicitFlagMigration = read('supabase', 'migrations', '20260818143000_loyalty_service_explicit_flag.sql');
 const runtime = read('src', 'db', 'localDb.ts');
+const servicesModule = read('src', 'components', 'ServicosModule.tsx');
 const portal = read('src', 'components', 'ClientPortal.tsx');
 const portalSupabase = read('src', 'portal', 'portalSupabase.ts');
 const settings = read('src', 'components', 'ConfiguracoesModule.tsx');
@@ -56,11 +60,16 @@ test('cartao fidelidade soma servico proprio elegivel sem alterar regra de indic
   assert.match(runtime, /awardOwnServiceLoyaltyMark/);
 });
 
-test('servicos excluidos nao geram marcacao propria de fidelidade', () => {
-  assert.match(rewardsMigration, /polimento\|higienizacao\|motor\|cristalizacao\|vidro\|plastic\|farol\|vitrificacao/);
-  assert.match(rewardsMigration, /manutencao e protecao/);
-  assert.match(rewardsMigration, /limpeza tecnica/);
-  assert.match(runtime, /'polimento'[\s\S]*'higienizacao'[\s\S]*'motor'[\s\S]*'cristalizacao'[\s\S]*'vidro'[\s\S]*'plastic'[\s\S]*'farol'[\s\S]*'vitrificacao'/);
+test('elegibilidade de servico proprio usa campo explicito do cadastro', () => {
+  assert.match(explicitFlagMigration, /add column if not exists conta_cartao_fidelidade boolean not null default false/);
+  assert.match(explicitFlagMigration, /set conta_cartao_fidelidade = public\.loyalty_is_eligible_own_service\(service\.id\)/);
+  assert.match(explicitFlagMigration, /create or replace function public\.loyalty_is_eligible_own_service\(p_service_id uuid\)[\s\S]*service\.conta_cartao_fidelidade/);
+  assert.doesNotMatch(explicitFlagMigration, /nome_servico \|\|/);
+  assert.doesNotMatch(explicitFlagMigration, /polimento\|higienizacao\|motor\|cristalizacao\|vidro\|plastic\|farol\|vitrificacao/);
+  assert.match(runtime, /countsForLoyaltyCard: Boolean\(row\.conta_cartao_fidelidade/);
+  assert.match(runtime, /row\.conta_cartao_fidelidade = s\.countsForLoyaltyCard/);
+  assert.match(runtime, /return Boolean\(service\.countsForLoyaltyCard\)/);
+  assert.match(servicesModule, /Conta para o cartão fidelidade/);
 });
 
 test('dez marcacoes geram credito apenas para limpeza de manutencao e protecao e reiniciam ciclo', () => {
@@ -77,8 +86,29 @@ test('portal carrega e consome credito de fidelidade com servico permitido zerad
   assert.match(portalSupabase, /client\.rpc\('portal_available_loyalty_credits'\)/);
   assert.match(portal, /loyaltyRewardCredits/);
   assert.match(portal, /availableCreditServiceIds\.has\(s\.id\) \? 0/);
-  assert.match(rewardsMigration, /credit\.service_id = any\(p_service_ids\)/);
-  assert.match(rewardsMigration, /credit_discount_value := price_row\.preco/);
-  assert.match(rewardsMigration, /set status = 'redeemed'/);
-  assert.match(rewardsMigration, /INVALID_LOYALTY_CREDIT_SERVICE/);
+  assert.match(rewardsSafetyMigration, /credit\.service_id = any\(p_service_ids\)/);
+  assert.match(rewardsSafetyMigration, /credit_discount_value := price_row\.preco/);
+  assert.match(rewardsSafetyMigration, /set status = 'redeemed'/);
+  assert.match(rewardsSafetyMigration, /INVALID_LOYALTY_CREDIT_SERVICE/);
+});
+
+test('migration corretiva preserva guardas do portal e recarrega schema cache', () => {
+  assert.match(rewardsSafetyMigration, /create or replace function public\.portal_available_loyalty_credits\(\)[\s\S]*PASSWORD_CHANGE_REQUIRED/);
+  assert.match(rewardsSafetyMigration, /create or replace function public\.portal_create_agendamento\([\s\S]*public\.portal_password_change_required\(\)[\s\S]*PASSWORD_CHANGE_REQUIRED/);
+  assert.match(rewardsSafetyMigration, /revoke all on function public\.portal_create_agendamento\(uuid, uuid\[\], date, time, text\) from public, anon/);
+  assert.match(rewardsSafetyMigration, /grant execute on function public\.portal_create_agendamento\(uuid, uuid\[\], date, time, text\) to authenticated/);
+  assert.match(rewardsSafetyMigration, /notify pgrst, 'reload schema'/);
+});
+
+test('migration final preserva contrato historico completo de portal_create_agendamento', () => {
+  assert.match(portalContractMigration, /customer_meta jsonb := '\{\}'::jsonb/);
+  assert.match(portalContractMigration, /discount_percent numeric := 0/);
+  assert.match(portalContractMigration, /discount_value numeric := 0/);
+  assert.match(portalContractMigration, /customer_meta->>'referralDiscountAvailable'/);
+  assert.match(portalContractMigration, /discount_percent := 10/);
+  assert.match(portalContractMigration, /referralDiscountAvailable', false/);
+  assert.match(portalContractMigration, /referralDiscountUsed', true/);
+  assert.match(portalContractMigration, /PASSWORD_CHANGE_REQUIRED/);
+  assert.match(portalContractMigration, /loyaltyCreditId/);
+  assert.match(portalContractMigration, /notify pgrst, 'reload schema'/);
 });
