@@ -144,8 +144,7 @@ test('tela de sugestao usa card visual e mantem resumo dinamico', () => {
   const portal = readPortalFile('src', 'components', 'ClientPortal.tsx');
 
   assert.match(portal, /primarySuggestion/);
-  assert.match(portal, /Dirija com mais segurança/);
-  assert.match(portal, /em dias de chuva/);
+  assert.match(portal, /\{primarySuggestion\.offerText \|\| primarySuggestion\.name\}/);
   assert.match(portal, /🛡️ Sim, quero essa proteção/);
   assert.match(portal, /Apenas mais \{formatDuration\(primarySuggestion\.estimatedTime\)\}/);
   assert.match(portal, /\{formatBRL\(primarySuggestion\.basePrice\)\}/);

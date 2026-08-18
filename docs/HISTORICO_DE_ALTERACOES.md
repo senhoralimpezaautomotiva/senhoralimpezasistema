@@ -4517,3 +4517,42 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 - Reverter as alteracoes nos arquivos listados nesta entrada.
 - Imagens ja enviadas ao Supabase Storage por uso futuro da interface devem ser removidas manualmente do bucket `service-offers` se nao forem mais desejadas.
+
+---
+
+## 2026-08-18-006 - Ajuste de teste para oferta upsell dinamica
+
+**Etapa relacionada:** Correcao de falha de deploy causada por teste que ainda esperava texto fixo na tela de sugestoes exclusivas.
+
+**Objetivo:** Atualizar apenas o contrato de teste para validar que a chamada da sugestao usa dinamicamente `primarySuggestion.offerText || primarySuggestion.name`.
+
+### Trabalho realizado
+
+- Ajustado `tests/portal001-auth-isolation.test.ts` para remover a expectativa dos textos fixos "Dirija com mais segurança" e "em dias de chuva".
+- O teste agora valida o comportamento dinamico implementado para a oferta upsell.
+- Nenhuma funcionalidade, banco, Storage, policy ou migration foi alterada.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Supabase Storage e policies: nenhuma alteracao.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 22 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Nenhuma pendencia funcional identificada; trata-se apenas de alinhamento de teste ao comportamento dinamico ja implementado.
+
+### Como desfazer
+
+- Reverter a alteracao em `tests/portal001-auth-isolation.test.ts` e esta entrada do historico caso o comportamento volte a exigir texto fixo.
