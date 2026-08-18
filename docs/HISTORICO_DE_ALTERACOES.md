@@ -4556,3 +4556,42 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter a alteracao em `tests/portal001-auth-isolation.test.ts` e esta entrada do historico caso o comportamento volte a exigir texto fixo.
+
+---
+
+## 2026-08-18-007 - Remocao de arte fixa sobre imagem de oferta
+
+**Etapa relacionada:** Ajuste visual da tela de sugestoes exclusivas quando a oferta upsell possui imagem cadastrada.
+
+**Objetivo:** Remover a arte fixa do card de sugestao sempre que houver `offerImageUrl`, preservando o fallback visual existente para servicos sem imagem.
+
+### Trabalho realizado
+
+- Ajustada a tela de sugestoes exclusivas do Portal do Cliente para renderizar os elementos decorativos fixos apenas quando nao existir imagem cadastrada na oferta.
+- Quando `offerImageUrl` existe, a area visual passa a exibir somente a imagem cadastrada.
+- Nenhuma outra logica do sistema foi alterada.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Supabase Storage e policies: nenhuma alteracao.
+- Migrations: nenhuma migration criada ou alterada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Nao foram executados testes visuais em navegador; a validacao foi feita por revisao do diff e build.
+
+### Como desfazer
+
+- Reverter a alteracao em `src/components/ClientPortal.tsx` e esta entrada do historico.

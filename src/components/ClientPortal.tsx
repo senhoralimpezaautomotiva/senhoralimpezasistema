@@ -1675,14 +1675,17 @@ function AuthenticatedClientPortal({
                               className="absolute inset-0 h-full w-full object-cover"
                             />
                           )}
-                          {primarySuggestion.offerImageUrl && <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />}
-                          <div className="absolute inset-0 opacity-60 bg-[radial-gradient(circle_at_12%_18%,rgba(255,255,255,0.8)_0_1px,transparent_2px),radial-gradient(circle_at_18%_31%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_27%_14%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_35%_38%,rgba(255,255,255,0.7)_0_1px,transparent_2px),radial-gradient(circle_at_58%_17%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_68%_36%,rgba(255,255,255,0.75)_0_1px,transparent_2px),radial-gradient(circle_at_78%_18%,rgba(255,255,255,0.7)_0_1px,transparent_2px),radial-gradient(circle_at_88%_30%,rgba(255,255,255,0.75)_0_1px,transparent_2px)]" />
-                          <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/75 to-transparent" />
-                          <div className="absolute inset-x-0 bottom-0 h-8 bg-slate-950/80 rounded-t-[60%]" />
-                          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.8)]" />
-                          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 rounded-full border border-amber-400/40 bg-slate-950/55 flex items-center justify-center text-amber-300 shadow-xl shadow-amber-500/20">
-                            <ShieldAlert size={28} strokeWidth={2.2} />
-                          </div>
+                          {!primarySuggestion.offerImageUrl && (
+                            <>
+                              <div className="absolute inset-0 opacity-60 bg-[radial-gradient(circle_at_12%_18%,rgba(255,255,255,0.8)_0_1px,transparent_2px),radial-gradient(circle_at_18%_31%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_27%_14%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_35%_38%,rgba(255,255,255,0.7)_0_1px,transparent_2px),radial-gradient(circle_at_58%_17%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_68%_36%,rgba(255,255,255,0.75)_0_1px,transparent_2px),radial-gradient(circle_at_78%_18%,rgba(255,255,255,0.7)_0_1px,transparent_2px),radial-gradient(circle_at_88%_30%,rgba(255,255,255,0.75)_0_1px,transparent_2px)]" />
+                              <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/75 to-transparent" />
+                              <div className="absolute inset-x-0 bottom-0 h-8 bg-slate-950/80 rounded-t-[60%]" />
+                              <div className="absolute top-0 bottom-0 left-1/2 w-px bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.8)]" />
+                              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 rounded-full border border-amber-400/40 bg-slate-950/55 flex items-center justify-center text-amber-300 shadow-xl shadow-amber-500/20">
+                                <ShieldAlert size={28} strokeWidth={2.2} />
+                              </div>
+                            </>
+                          )}
                         </div>
 
                         <div className="px-6 py-5 text-center bg-gradient-to-b from-[#08112a] to-[#050a18]">
