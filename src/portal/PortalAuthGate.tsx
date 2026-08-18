@@ -56,6 +56,19 @@ const mustChangePortalPassword = (activeSession: Session | null): boolean =>
   activeSession?.user.app_metadata?.[PORTAL_FORCE_PASSWORD_CHANGE_FLAG] === true ||
   activeSession?.user.user_metadata?.[PORTAL_FORCE_PASSWORD_CHANGE_FLAG] === true;
 
+const getRecoveryUrlState = (): { isRecoveryCallback: boolean; code: string } => {
+  if (typeof window === 'undefined') return { isRecoveryCallback: false, code: '' };
+  const url = new URL(window.location.href);
+  const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
+  return {
+    isRecoveryCallback:
+      url.searchParams.get('recovery') === 'true' ||
+      hashParams.get('recovery') === 'true' ||
+      hashParams.get('type') === 'recovery',
+    code: url.searchParams.get('code') || hashParams.get('code') || ''
+  };
+};
+
 export default function PortalAuthGate({
   onBackToAdmin,
   children
@@ -107,20 +120,33 @@ export default function PortalAuthGate({
     const restore = async () => {
       const currentRequest = ++requestId;
       try {
+        const { isRecoveryCallback, code } = getRecoveryUrlState();
+        let exchangedRecoverySession: Session | null = null;
+        if (isRecoveryCallback && code) {
+          const { data: exchangeData, error: exchangeError } =
+            await client.auth.exchangeCodeForSession(code);
+          if (exchangeError) {
+            if (!disposed) {
+              setSession(null);
+              setPortalData(null);
+              setPortalDataLoadError(false);
+              setPasswordResetFromRecovery(false);
+              setErrorMessage('Link de redefinição inválido ou expirado. Solicite um novo e-mail de recuperação.');
+            }
+            return;
+          }
+          exchangedRecoverySession = exchangeData.session;
+        }
+
         const { data, error } = await client.auth.getSession();
         if (error) throw error;
-        const isRecoveryCallback =
-          typeof window !== 'undefined' &&
-          new URL(window.location.href).searchParams.get('recovery') === 'true';
-        if (!data.session) {
+        const activeRecoverySession = exchangedRecoverySession || data.session;
+        if (!activeRecoverySession) {
           if (!disposed) {
             setSession(null);
             setPortalData(null);
             setPortalDataLoadError(false);
             setPasswordResetFromRecovery(false);
-            if (isRecoveryCallback) {
-              setErrorMessage('Link de redefinição inválido ou expirado. Solicite um novo e-mail de recuperação.');
-            }
             const storedNotice =
               typeof window !== 'undefined'
                 ? window.sessionStorage.getItem('sl_portal_auth_notice')
@@ -133,9 +159,9 @@ export default function PortalAuthGate({
           return;
         }
 
-        if (isRecoveryCallback || mustChangePortalPassword(data.session)) {
+        if (isRecoveryCallback || mustChangePortalPassword(activeRecoverySession)) {
           if (!disposed && currentRequest === requestId) {
-            setSession(data.session);
+            setSession(activeRecoverySession);
             setPortalData(null);
             setPortalDataLoadError(false);
             setPasswordResetFromRecovery(isRecoveryCallback);
@@ -147,7 +173,7 @@ export default function PortalAuthGate({
         await claimExistingPortalCustomer();
         const restoredData = await loadPortalData();
         if (!disposed && currentRequest === requestId) {
-          setSession(data.session);
+          setSession(activeRecoverySession);
           setPortalData(restoredData);
           setPortalDataLoadError(false);
           setPasswordResetFromRecovery(false);

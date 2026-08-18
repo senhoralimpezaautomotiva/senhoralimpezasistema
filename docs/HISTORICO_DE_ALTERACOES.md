@@ -4078,3 +4078,51 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Remover `passwordResetFromRecovery` e o redirecionamento para login em `src/portal/PortalAuthGate.tsx`.
 - Remover `docs/SUPABASE_AUTH_EMAILS.md`.
 - Remover os testes `redefinicao por token usa validacao existente e volta ao login` e `personalizacao de e-mail do Supabase Auth fica documentada como configuracao externa`.
+
+---
+
+## 2026-08-17-003 - Correcao do exchange do codigo de recuperacao do Portal
+
+**Etapa relacionada:** Ajuste do fluxo de redefinicao de senha por link do Supabase.
+
+**Objetivo:** Corrigir o caso em que o link de recuperacao do Supabase chega correto, mas a tela do Portal exibe link invalido por consultar a sessao antes de trocar o codigo de recuperacao.
+
+### Trabalho realizado
+
+- O Portal passou a detectar `?portal=true&recovery=true` e ler o `code` enviado pelo Supabase antes de chamar `auth.getSession`.
+- Quando ha `code` de recuperacao, o Portal chama `auth.exchangeCodeForSession(code)` e usa a sessao retornada para abrir a tela de redefinicao.
+- A mensagem de link invalido ou expirado passa a ser exibida somente quando `exchangeCodeForSession` retorna erro real.
+- O cliente Supabase administrativo deixou de processar parametros de sessao na URL quando a rota atual e callback de recuperacao do Portal, evitando interferencia entre os clientes.
+- Atualizados testes para garantir a ordem `exchangeCodeForSession` antes de `getSession` e a separacao do processamento de URL entre Portal e administrativo.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/portal/PortalAuthGate.tsx`.
+- Alterado: `src/db/supabaseClient.ts`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration criada ou aplicada.
+- Supabase Auth: nenhuma configuracao remota aplicada.
+- Edge Functions: nenhuma publicacao executada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 20 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Nao foi executado teste real contra link de e-mail em ambiente remoto.
+- O tratamento cobre `code` em query string e hash; tokens em formatos adicionais do Supabase deverao ser avaliados caso a configuracao remota use outro padrao.
+- Existem alteracoes locais antigas fora desta tarefa no working tree; elas nao foram modificadas por esta etapa.
+
+### Como desfazer
+
+- Em `src/portal/PortalAuthGate.tsx`, remover `getRecoveryUrlState` e a chamada a `auth.exchangeCodeForSession(code)`.
+- Em `src/db/supabaseClient.ts`, restaurar `detectSessionInUrl: isBrowser`.
+- Em `tests/portal001-auth-isolation.test.ts`, remover o teste `portal troca codigo de recuperacao antes de restaurar sessao` e as expectativas de `isPortalRecoveryCallback`.

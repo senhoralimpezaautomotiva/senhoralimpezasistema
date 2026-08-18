@@ -51,6 +51,19 @@ test('redefinicao por token usa validacao existente e volta ao login', () => {
   assert.match(gate, /Link de redefinição inválido ou expirado/);
 });
 
+test('portal troca codigo de recuperacao antes de restaurar sessao', () => {
+  const gate = readPortalFile('src', 'portal', 'PortalAuthGate.tsx');
+  const exchangeIndex = gate.indexOf('exchangeCodeForSession(code)');
+  const getSessionIndex = gate.indexOf('client.auth.getSession()');
+
+  assert.ok(exchangeIndex > -1);
+  assert.ok(getSessionIndex > -1);
+  assert.ok(exchangeIndex < getSessionIndex);
+  assert.match(gate, /getRecoveryUrlState/);
+  assert.match(gate, /const activeRecoverySession = exchangedRecoverySession \|\| data\.session/);
+  assert.match(gate, /if \(exchangeError\)[\s\S]*Link de redefini/);
+});
+
 test('personalizacao de e-mail do Supabase Auth fica documentada como configuracao externa', () => {
   const guide = readPortalFile('docs', 'SUPABASE_AUTH_EMAILS.md');
 
@@ -106,6 +119,8 @@ test('sessão do portal é persistente e separada da sessão administrativa', ()
   assert.match(portalClient, /autoRefreshToken:\s*true/);
   assert.match(portalClient, /detectSessionInUrl:\s*true/);
   assert.match(adminClient, /persistSession:\s*isBrowser/);
+  assert.match(adminClient, /isPortalRecoveryCallback/);
+  assert.match(adminClient, /detectSessionInUrl:\s*isBrowser && !isPortalRecoveryCallback/);
   assert.doesNotMatch(adminClient, /sl_portal_auth_session/);
 });
 
@@ -257,7 +272,7 @@ test('cadastro administrativo de cliente provisiona Auth temporario e portal blo
   assert.match(clearFunctionSource, /app_metadata:\s*nextAppMetadata/);
   assert.match(gate, /mustChangePortalPassword\(activeSession\)/);
   assert.match(gate, /setMode\('new-password'\)/);
-  assert.match(gate, /isRecoveryCallback \|\| mustChangePortalPassword\(data\.session\)/);
+  assert.match(gate, /isRecoveryCallback \|\| mustChangePortalPassword\(activeRecoverySession\)/);
 });
 
 test('force_password_change tambem bloqueia acesso direto ao backend do portal', () => {

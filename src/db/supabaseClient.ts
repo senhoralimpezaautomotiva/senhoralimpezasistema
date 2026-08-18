@@ -16,12 +16,16 @@ export function getSharedSupabaseClient(url: string, anonKey: string): SupabaseC
 
   if (!sharedClient || sharedUrl !== url || sharedAnonKey !== anonKey) {
     const isBrowser = typeof window !== 'undefined';
+    const isPortalRecoveryCallback =
+      isBrowser &&
+      new URL(window.location.href).searchParams.get('portal') === 'true' &&
+      new URL(window.location.href).searchParams.get('recovery') === 'true';
 
     sharedClient = createClient(url, anonKey, {
       auth: {
         persistSession: isBrowser,
         autoRefreshToken: isBrowser,
-        detectSessionInUrl: isBrowser,
+        detectSessionInUrl: isBrowser && !isPortalRecoveryCallback,
       },
     });
     sharedUrl = url;
