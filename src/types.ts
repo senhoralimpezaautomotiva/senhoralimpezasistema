@@ -75,6 +75,7 @@ export interface Service {
   priceG?: number;
   isFeatured?: boolean;
   offerText?: string;
+  offerImageUrl?: string;
   displayOrder?: number;
   portalVisibility?: 'lista' | 'sugestao' | 'oculto';
   countsForLoyaltyCard?: boolean;

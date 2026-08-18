@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { 
   Wrench, 
   Search, 
@@ -11,10 +11,14 @@ import {
   Edit, 
   X, 
   Clock, 
-  DollarSign 
+  DollarSign,
+  Image as ImageIcon,
+  Star
 } from 'lucide-react';
 import { Service } from '../types';
 import { hasModulePermission } from '../db/localDb';
+import { getSharedSupabaseClient } from '../db/supabaseClient';
+import { getPublicSupabaseEnvironment } from '../config/publicEnvironment';
 import { safeLog } from '../security/safeOutput';
 
 interface ServicosModuleProps {
@@ -39,7 +43,10 @@ export default function ServicosModule({
   const [isOpenAdd, setIsOpenAdd] = useState(false);
   const [isOpenEdit, setIsOpenEdit] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingOfferImage, setIsUploadingOfferImage] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const addOfferImageInputRef = useRef<HTMLInputElement | null>(null);
+  const editOfferImageInputRef = useRef<HTMLInputElement | null>(null);
   
   const [editId, setEditId] = useState('');
   const [formData, setFormData] = useState({
@@ -53,6 +60,7 @@ export default function ServicosModule({
     priceG: 0,
     isFeatured: false,
     offerText: '',
+    offerImageUrl: '',
     displayOrder: 0,
     portalVisibility: 'lista' as 'lista' | 'sugestao' | 'oculto',
     countsForLoyaltyCard: false
@@ -77,6 +85,7 @@ export default function ServicosModule({
       priceG: 180,
       isFeatured: false,
       offerText: '',
+      offerImageUrl: '',
       displayOrder: 0,
       portalVisibility: 'lista',
       countsForLoyaltyCard: false
@@ -99,6 +108,7 @@ export default function ServicosModule({
       priceG: s.priceG || s.basePrice,
       isFeatured: s.isFeatured ?? false,
       offerText: s.offerText ?? '',
+      offerImageUrl: s.offerImageUrl ?? '',
       displayOrder: s.displayOrder ?? 0,
       portalVisibility: s.portalVisibility ?? (s.isFeatured ? 'sugestao' : 'lista'),
       countsForLoyaltyCard: s.countsForLoyaltyCard ?? false
@@ -148,6 +158,36 @@ export default function ServicosModule({
       setErrorMessage('Erro ao atualizar dados do serviço.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleOfferImageUpload = async (file: File | undefined | null) => {
+    if (!file) return;
+    setErrorMessage(null);
+    setIsUploadingOfferImage(true);
+    try {
+      const config = getPublicSupabaseEnvironment();
+      if (!config.isConfigured) {
+        throw new Error('SUPABASE_STORAGE_REQUIRED');
+      }
+      const client = getSharedSupabaseClient(config.supabaseUrl, config.supabaseAnonKey);
+      const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const path = `offers/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+      const { error } = await client.storage
+        .from('service-offers')
+        .upload(path, file, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: file.type || undefined
+        });
+      if (error) throw error;
+      const { data } = client.storage.from('service-offers').getPublicUrl(path);
+      setFormData(current => ({ ...current, offerImageUrl: data.publicUrl }));
+    } catch (error) {
+      safeLog('error', 'services.offer_image.upload', 'error', { error });
+      setErrorMessage('Erro ao enviar imagem da oferta.');
+    } finally {
+      setIsUploadingOfferImage(false);
     }
   };
 
@@ -239,6 +279,12 @@ export default function ServicosModule({
                         👁️ Oculto no Portal
                       </span>
                     )}
+                    {s.countsForLoyaltyCard && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[9px] font-bold uppercase tracking-wider">
+                        <Star size={10} />
+                        Fidelidade
+                      </span>
+                    )}
                     {s.displayOrder !== undefined && s.displayOrder > 0 && (
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[9px] font-mono font-bold">
                         Ordem: {s.displayOrder}
@@ -310,15 +356,15 @@ export default function ServicosModule({
       {/* MODAL: ADICIONAR SERVIÇO */}
       {isOpenAdd && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-scaleUp">
-            <div className="px-5 py-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl max-h-[92vh] rounded-2xl overflow-hidden shadow-2xl animate-scaleUp flex flex-col">
+            <div className="px-4 py-3 bg-slate-950 border-b border-slate-800 flex justify-between items-center shrink-0">
               <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Novo Serviço Comercial</h3>
               <button onClick={() => setIsOpenAdd(false)} className="text-slate-400 hover:text-white transition-colors">
                 <X size={18} />
               </button>
             </div>
             
-            <form onSubmit={handleAddSubmit} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleAddSubmit} className="flex-1 overflow-y-auto p-4 space-y-3 text-xs">
               {errorMessage && (
                 <div className="bg-red-500/10 text-red-400 border border-red-500/20 px-4 py-2.5 rounded-xl text-xs font-mono">
                   {errorMessage}
@@ -564,7 +610,8 @@ export default function ServicosModule({
                 </div>
 
                 {formData.isFeatured && (
-                  <div>
+                  <div className="grid sm:grid-cols-[1fr_auto] gap-3 items-end">
+                    <div>
                     <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Texto da Oferta (Upsell)</label>
                     <input 
                       type="text" 
@@ -574,11 +621,31 @@ export default function ServicosModule({
                       className="w-full bg-slate-900 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 rounded-lg px-2 py-1.5 text-white text-xs disabled:opacity-50"
                       placeholder="Ex: Garante visibilidade máxima sob chuvas fortes."
                     />
+                    </div>
+                    <div>
+                      <input
+                        ref={addOfferImageInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(event) => void handleOfferImageUpload(event.target.files?.[0])}
+                      />
+                      <button
+                        type="button"
+                        disabled={isSaving || isUploadingOfferImage}
+                        onClick={() => addOfferImageInputRef.current?.click()}
+                        className="w-full sm:w-auto px-3 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-200 font-bold text-[10px] flex items-center justify-center gap-1.5 disabled:opacity-50"
+                      >
+                        <ImageIcon size={12} />
+                        {isUploadingOfferImage ? 'Enviando...' : 'Imagem da oferta'}
+                      </button>
+                      {formData.offerImageUrl && <p className="mt-1 text-[9px] text-emerald-300 truncate max-w-[170px]">Imagem adicionada</p>}
+                    </div>
                   </div>
                 )}
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
+              <div className="sticky bottom-0 -mx-4 -mb-4 px-4 py-3 bg-slate-900/95 backdrop-blur border-t border-slate-800 flex justify-end gap-3 text-xs">
                 <button 
                   type="button" 
                   disabled={isSaving}
@@ -603,15 +670,15 @@ export default function ServicosModule({
       {/* MODAL: EDITAR SERVIÇO */}
       {isOpenEdit && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-scaleUp">
-            <div className="px-5 py-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl max-h-[92vh] rounded-2xl overflow-hidden shadow-2xl animate-scaleUp flex flex-col">
+            <div className="px-4 py-3 bg-slate-950 border-b border-slate-800 flex justify-between items-center shrink-0">
               <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Editar Serviço Comercial</h3>
               <button onClick={() => setIsOpenEdit(false)} className="text-slate-400 hover:text-white transition-colors">
                 <X size={18} />
               </button>
             </div>
             
-            <form onSubmit={handleEditSubmit} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleEditSubmit} className="flex-1 overflow-y-auto p-4 space-y-3 text-xs">
               {errorMessage && (
                 <div className="bg-red-500/10 text-red-400 border border-red-500/20 px-4 py-2.5 rounded-xl text-xs font-mono">
                   {errorMessage}
@@ -854,7 +921,8 @@ export default function ServicosModule({
                 </div>
 
                 {formData.isFeatured && (
-                  <div>
+                  <div className="grid sm:grid-cols-[1fr_auto] gap-3 items-end">
+                    <div>
                     <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Texto da Oferta (Upsell)</label>
                     <input 
                       type="text" 
@@ -864,11 +932,31 @@ export default function ServicosModule({
                       className="w-full bg-slate-900 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 rounded-lg px-2 py-1.5 text-white text-xs disabled:opacity-50"
                       placeholder="Ex: Garante visibilidade máxima sob chuvas fortes."
                     />
+                    </div>
+                    <div>
+                      <input
+                        ref={editOfferImageInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(event) => void handleOfferImageUpload(event.target.files?.[0])}
+                      />
+                      <button
+                        type="button"
+                        disabled={isSaving || isUploadingOfferImage}
+                        onClick={() => editOfferImageInputRef.current?.click()}
+                        className="w-full sm:w-auto px-3 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-200 font-bold text-[10px] flex items-center justify-center gap-1.5 disabled:opacity-50"
+                      >
+                        <ImageIcon size={12} />
+                        {isUploadingOfferImage ? 'Enviando...' : 'Imagem da oferta'}
+                      </button>
+                      {formData.offerImageUrl && <p className="mt-1 text-[9px] text-emerald-300 truncate max-w-[170px]">Imagem adicionada</p>}
+                    </div>
                   </div>
                 )}
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
+              <div className="sticky bottom-0 -mx-4 -mb-4 px-4 py-3 bg-slate-900/95 backdrop-blur border-t border-slate-800 flex justify-end gap-3 text-xs">
                 <button 
                   type="button" 
                   disabled={isSaving}

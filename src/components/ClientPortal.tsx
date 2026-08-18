@@ -7,7 +7,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Phone, User, Mail, Car, Calendar, Clock, ChevronRight, ChevronLeft, 
   Plus, Check, ShieldAlert, AlertCircle, LogOut,
-  Clock3, CheckCircle2, X, FileSignature,
+  Clock3, CheckCircle2, X, FileSignature, Star,
   Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1606,6 +1606,12 @@ function AuthenticatedClientPortal({
                                   <Clock3 size={10} className="text-amber-300" />
                                   {formatDuration(s.estimatedTime)}
                                 </span>
+                                {s.countsForLoyaltyCard && (
+                                  <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-400/20 rounded-lg text-[9px] text-emerald-300 font-bold flex items-center gap-1 shrink-0">
+                                    <Star size={10} />
+                                    Fidelidade
+                                  </span>
+                                )}
                               </div>
                               <p className="text-[10px] text-slate-400 line-clamp-1 leading-relaxed">
                                 {s.description || 'Nenhuma observação comercial descrita.'}
@@ -1656,12 +1662,20 @@ function AuthenticatedClientPortal({
 
                       <div className="rounded-2xl border border-amber-400/70 bg-[#050b1c] overflow-hidden shadow-2xl shadow-amber-500/10">
                         <div
-                          className="relative h-[190px] overflow-hidden border-b border-amber-400/30"
-                          style={{
+                          className="relative h-[190px] overflow-hidden border-b border-amber-400/30 bg-slate-950"
+                          style={!primarySuggestion.offerImageUrl ? {
                             backgroundImage:
                               'linear-gradient(90deg, rgba(4,8,16,0.92) 0%, rgba(28,19,10,0.78) 48%, rgba(8,28,42,0.55) 52%, rgba(5,16,28,0.82) 100%), radial-gradient(circle at 30% 34%, rgba(245,166,35,0.95) 0 4px, transparent 8px), radial-gradient(circle at 42% 43%, rgba(245,166,35,0.75) 0 5px, transparent 10px), radial-gradient(circle at 64% 19%, rgba(255,255,255,0.95) 0 4px, transparent 9px), radial-gradient(circle at 74% 27%, rgba(255,255,255,0.7) 0 3px, transparent 8px), linear-gradient(160deg, #1f2937 0%, #0f172a 45%, #1e3a5f 54%, #08111e 100%)'
-                          }}
+                          } : undefined}
                         >
+                          {primarySuggestion.offerImageUrl && (
+                            <img
+                              src={primarySuggestion.offerImageUrl}
+                              alt={primarySuggestion.name}
+                              className="absolute inset-0 h-full w-full object-cover"
+                            />
+                          )}
+                          {primarySuggestion.offerImageUrl && <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />}
                           <div className="absolute inset-0 opacity-60 bg-[radial-gradient(circle_at_12%_18%,rgba(255,255,255,0.8)_0_1px,transparent_2px),radial-gradient(circle_at_18%_31%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_27%_14%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_35%_38%,rgba(255,255,255,0.7)_0_1px,transparent_2px),radial-gradient(circle_at_58%_17%,rgba(255,255,255,0.65)_0_1px,transparent_2px),radial-gradient(circle_at_68%_36%,rgba(255,255,255,0.75)_0_1px,transparent_2px),radial-gradient(circle_at_78%_18%,rgba(255,255,255,0.7)_0_1px,transparent_2px),radial-gradient(circle_at_88%_30%,rgba(255,255,255,0.75)_0_1px,transparent_2px)]" />
                           <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/75 to-transparent" />
                           <div className="absolute inset-x-0 bottom-0 h-8 bg-slate-950/80 rounded-t-[60%]" />
@@ -1673,8 +1687,7 @@ function AuthenticatedClientPortal({
 
                         <div className="px-6 py-5 text-center bg-gradient-to-b from-[#08112a] to-[#050a18]">
                           <h2 className="text-[26px] sm:text-[32px] leading-tight font-black text-white font-serif tracking-normal">
-                            Dirija com mais segurança
-                            <span className="block text-amber-300">em dias de chuva.</span>
+                            {primarySuggestion.offerText || primarySuggestion.name}
                           </h2>
                           <p className="mt-2 text-sm text-slate-200">{primarySuggestion.name}</p>
 

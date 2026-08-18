@@ -40,7 +40,7 @@ export const buildContentSecurityPolicy = (
     "default-src 'self'",
     `script-src ${scriptSources.join(' ')}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: https://images.unsplash.com",
+    "img-src 'self' data: blob: https://images.unsplash.com https://*.supabase.co",
     "font-src 'self' data:",
     `connect-src ${Array.from(connectSources).join(' ')}`,
     "object-src 'none'",

@@ -4467,3 +4467,53 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 - Antes de aplicar no banco remoto, remover `supabase/migrations/20260818143000_loyalty_service_explicit_flag.sql` e reverter as alteracoes nos arquivos listados nesta entrada.
 - Se ja aplicada remotamente, criar uma migration de reversao especifica para restaurar a versao anterior de `loyalty_is_eligible_own_service` e, somente se seguro para o ambiente, remover ou ignorar a coluna `conta_cartao_fidelidade`.
+
+---
+
+## 2026-08-18-005 - Imagem de oferta e layout compacto no cadastro de servicos
+
+**Etapa relacionada:** Melhorias visuais do cadastro de servicos, sugestoes exclusivas do portal e sinalizacao de fidelidade.
+
+**Objetivo:** Reaproveitar o texto atual de oferta upsell nas sugestoes exclusivas, adicionar imagem de oferta via Supabase Storage, sinalizar servicos que contam para o cartao fidelidade e reduzir a altura do cadastro de servicos.
+
+### Trabalho realizado
+
+- Adicionado suporte ao metadado `offerImageUrl` em servicos, preservando o campo existente `offerText` para o texto da oferta upsell.
+- O cadastro de servicos ganhou upload de imagem da oferta para o bucket `service-offers` do Supabase Storage, salvando a URL publica no metadado do servico.
+- A tela de sugestoes exclusivas do Portal do Cliente passou a usar diretamente `offerText` como chamada principal e a exibir `offerImageUrl` quando existir.
+- Os cards de servicos no modulo administrativo e no Portal do Cliente passaram a mostrar badge visual quando `countsForLoyaltyCard` estiver ativo.
+- Os modais de cadastro/edicao de servico foram reorganizados com altura maxima, conteudo rolavel e rodape de acoes fixo para manter botoes acessiveis, especialmente no mobile.
+- Atualizada a politica CSP de imagens para permitir URLs publicas de Supabase Storage.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/types.ts`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `src/components/ServicosModule.tsx`.
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `src/server/securityHeaders.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhuma migration foi criada nesta etapa.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma migration remota aplicada.
+- Supabase Storage: nenhum bucket criado e nenhum arquivo enviado por esta sessao; o codigo passa a usar o bucket publico `service-offers` quando o usuario fizer upload pela interface.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/referral-loyalty.test.ts tests/db001-baseline.test.ts`: 22 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- O bucket `service-offers` precisa existir no Supabase Storage com politica compativel para upload por usuarios autorizados e leitura publica das imagens.
+- Se o bucket ou a politica de Storage nao estiverem configurados, o upload exibira erro e nao alterara o servico.
+- O build recriou a pasta local `dist/`; ela permanece artefato local de verificacao.
+
+### Como desfazer
+
+- Reverter as alteracoes nos arquivos listados nesta entrada.
+- Imagens ja enviadas ao Supabase Storage por uso futuro da interface devem ser removidas manualmente do bucket `service-offers` se nao forem mais desejadas.

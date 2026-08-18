@@ -814,6 +814,7 @@ export function mapDbServiceToFrontend(row: any): Service {
   let priceG: number | undefined;
   let isFeatured = false;
   let offerText = '';
+  let offerImageUrl = '';
   let displayOrder = 0;
   let portalVisibility: 'lista' | 'sugestao' | 'oculto' = 'lista';
   let countsForLoyaltyCard = false;
@@ -831,6 +832,7 @@ export function mapDbServiceToFrontend(row: any): Service {
       if (meta.priceG !== undefined) priceG = Number(meta.priceG);
       if (meta.isFeatured !== undefined) isFeatured = Boolean(meta.isFeatured);
       if (meta.offerText !== undefined) offerText = String(meta.offerText);
+      if (meta.offerImageUrl !== undefined) offerImageUrl = String(meta.offerImageUrl);
       if (meta.displayOrder !== undefined) displayOrder = Number(meta.displayOrder);
       if (meta.portalVisibility !== undefined) {
         portalVisibility = meta.portalVisibility;
@@ -859,6 +861,7 @@ export function mapDbServiceToFrontend(row: any): Service {
     priceG: priceG ?? basePrice,
     isFeatured: isFeatured || portalVisibility === 'sugestao',
     offerText: offerText,
+    offerImageUrl: offerImageUrl,
     displayOrder: displayOrder,
     portalVisibility: portalVisibility,
     countsForLoyaltyCard: Boolean(row.conta_cartao_fidelidade ?? countsForLoyaltyCard)
@@ -881,6 +884,7 @@ function mapFrontendServiceToDb(s: Partial<Service>): any {
     priceG: s.priceG ?? s.basePrice ?? 150.00,
     isFeatured: s.isFeatured ?? (portalVisibility === 'sugestao'),
     offerText: s.offerText ?? '',
+    offerImageUrl: s.offerImageUrl ?? '',
     displayOrder: s.displayOrder ?? 0,
     portalVisibility: portalVisibility
   };
