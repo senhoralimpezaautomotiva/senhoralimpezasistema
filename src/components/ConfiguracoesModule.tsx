@@ -34,7 +34,7 @@ import { useManagedTimeout } from '../hooks/useManagedTimeout';
 
 interface ConfiguracoesModuleProps {
   config: SystemConfig;
-  onUpdateConfig: (updated: Partial<SystemConfig>) => void;
+  onUpdateConfig: (updated: Partial<SystemConfig>) => void | Promise<void>;
   currentUser?: { name: string; email: string; role: string; authProvider?: 'supabase' | 'local' } | null;
   onUpdateCurrentUser?: (user: { name: string; email: string; role: string; authProvider?: 'supabase' | 'local' }) => void;
 }
@@ -105,6 +105,10 @@ export default function ConfiguracoesModule({
   const [agendaSuccess, setAgendaSuccess] = useState(false);
 
   // Sync agenda state with external configuration changes
+  useEffect(() => {
+    setFormData({ ...config });
+  }, [config]);
+
   useEffect(() => {
     if (config.agenda) {
       setAgendaData(config.agenda);
@@ -195,9 +199,9 @@ export default function ConfiguracoesModule({
   }, [currentUser]);
 
   // Handle General Settings Form Submit
-  const handleGeneralSubmit = (e: React.FormEvent) => {
+  const handleGeneralSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateConfig(formData);
+    await onUpdateConfig(formData);
     setShowSuccess(true);
     scheduleTimeout(() => {
       setShowSuccess(false);

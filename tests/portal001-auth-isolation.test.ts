@@ -264,6 +264,7 @@ test('nova navegacao preserva o fluxo de agendamento e oferece telas somente lei
 });
 
 test('portal exibe atalhos sociais e de rota configuraveis', () => {
+  const app = readPortalFile('src', 'App.tsx');
   const portalData = readPortalFile('src', 'portal', 'portalSupabase.ts');
   const home = readPortalFile('src', 'components', 'ClientPortalHome.tsx');
   const settings = readPortalFile('src', 'components', 'ConfiguracoesModule.tsx');
@@ -282,6 +283,10 @@ test('portal exibe atalhos sociais e de rota configuraveis', () => {
   assert.match(settings, /instagramUrl/);
   assert.match(settings, /googleMapsUrl/);
   assert.match(settings, /address/);
+  assert.match(settings, /useEffect\(\(\) => \{\s*setFormData\(\{ \.\.\.config \}\);/);
+  assert.match(settings, /await onUpdateConfig\(formData\)/);
+  assert.match(app, /const handleUpdateConfig = async/);
+  assert.match(app, /await dbInstance\.updateConfig\(updated\)/);
   assert.match(home, /InstagramGlyph/);
   assert.match(home, /Como chegar/);
   assert.match(home, /buildDirectionsUrl/);

@@ -4519,6 +4519,52 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 ---
 
+## 2026-08-19-013 - Persistencia dos links sociais nas configuracoes
+
+**Etapa relacionada:** Correcao dos campos Instagram e Google Maps na tela de Configuracoes.
+
+**Objetivo:** Garantir que `instagram_url` e `google_maps_url` carreguem, sejam enviados ao salvar e permanecam visiveis apos atualizar a pagina.
+
+### Trabalho realizado
+
+- Confirmado que a query de carregamento ja selecionava `instagram_url` e `google_maps_url`.
+- Confirmado que `saveConfigToSupabase` ja enviava `instagram_url` e `google_maps_url` para `public.configuracoes_empresa`.
+- Identificada a causa: o formulario de Configuracoes copiava `config` para `formData` apenas no mount. Quando a configuracao remota chegava depois, os campos continuavam com o estado anterior e podiam aparentar nao ter sido salvos ou sobrescrever o remoto com vazio.
+- Sincronizado `formData` sempre que `config` muda, preservando os valores carregados ao atualizar a pagina.
+- Ajustado o submit para aguardar `onUpdateConfig` e o handler do App para aguardar `dbInstance.updateConfig`, evitando mostrar sucesso antes da persistencia remota terminar.
+- Atualizado o teste Portal-001 para cobrir a leitura dos campos, o envio aguardado e a sincronizacao do formulario.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/ConfiguracoesModule.tsx`.
+- Alterado: `src/App.tsx`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Supabase Storage e policies: nenhuma alteracao.
+- Migrations: nenhuma migration criada ou alterada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 24 testes aprovados.
+- `npm run test:db001`: 11 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Nao foi executado teste manual em navegador conectado ao Supabase; a validacao foi feita por contrato de codigo, testes automatizados, lint e build.
+
+### Como desfazer
+
+- Reverter as alteracoes nos arquivos listados nesta entrada.
+
+---
+
 ## 2026-08-18-011 - Atalhos sociais e rota no Portal do Cliente
 
 **Etapa relacionada:** Melhorias visuais e configuraveis na tela principal do Portal do Cliente.

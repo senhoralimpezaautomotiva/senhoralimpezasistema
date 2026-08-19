@@ -553,8 +553,8 @@ export default function App() {
   };
 
   // Config handler
-  const handleUpdateConfig = (updated: Partial<SystemConfig>) => {
-    dbInstance.updateConfig(updated);
+  const handleUpdateConfig = async (updated: Partial<SystemConfig>) => {
+    await dbInstance.updateConfig(updated);
     syncWithDatabase();
   };
 
