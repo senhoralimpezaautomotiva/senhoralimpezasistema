@@ -4678,3 +4678,45 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter as alteracoes nos arquivos listados nesta entrada.
+
+---
+
+## 2026-08-18-010 - Correcao do card de recompensa Protect
+
+**Etapa relacionada:** Investigacao do card de recompensa da Limpeza Protect no Portal do Cliente.
+
+**Objetivo:** Identificar por que o card nao aparecia mesmo com recompensa ativa e corrigir apenas a condicao que bloqueava a exibicao.
+
+### Trabalho realizado
+
+- Diagnosticado que `loyaltyRewardCredits` era carregado, mas o card dependia de o nome do servico conter literalmente `protect`.
+- A recompensa gerada pelo banco aponta para o servico "Limpeza de manutencao e protecao", que nao passava no filtro por `protect`.
+- Ajustada apenas a condicao de identificacao do servico da recompensa para normalizar acentos e aceitar `protect` ou `protecao`.
+- Atualizado o teste do Portal do Cliente para cobrir a condicao correta.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Supabase Storage e policies: nenhuma alteracao.
+- Migrations: nenhuma migration criada ou alterada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 23 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A exibicao continua dependendo de existir credito `available` e do servico referenciado estar presente no catalogo ativo carregado pelo portal.
+
+### Como desfazer
+
+- Reverter as alteracoes nos arquivos listados nesta entrada.

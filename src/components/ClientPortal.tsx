@@ -891,7 +891,11 @@ function AuthenticatedClientPortal({
     loyaltyRewardCredits.find(credit => {
       if (credit.status !== 'available') return false;
       const rewardService = services.find(service => service.id === credit.serviceId);
-      return Boolean(rewardService?.name.toLowerCase().includes('protect'));
+      const normalizedServiceName = rewardService?.name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase() || '';
+      return normalizedServiceName.includes('protect') || normalizedServiceName.includes('protecao');
     }) || null
   ), [loyaltyRewardCredits, services]);
 

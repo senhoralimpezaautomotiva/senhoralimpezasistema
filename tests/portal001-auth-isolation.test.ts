@@ -350,7 +350,8 @@ test('portal destaca recompensa Protect disponivel e inicia agendamento com valo
 
   assert.match(portal, /availableProtectRewardCredit/);
   assert.match(portal, /credit\.status !== 'available'/);
-  assert.match(portal, /rewardService\?\.name\.toLowerCase\(\)\.includes\('protect'\)/);
+  assert.match(portal, /normalize\('NFD'\)/);
+  assert.match(portal, /normalizedServiceName\.includes\('protect'\) \|\| normalizedServiceName\.includes\('protecao'\)/);
   assert.match(portal, /setSelectedServiceIds\(\[availableProtectRewardService\.id\]\)/);
   assert.match(portal, /setShowSuggestionsScreen\(true\)/);
   assert.match(home, /protectRewardCredit && protectRewardService/);
