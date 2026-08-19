@@ -343,3 +343,17 @@ test('fidelidade usa agregado seguro e catalogo possui fonte administravel', () 
   assert.match(settings, /whatsappCatalogUrl/);
   assert.match(settings, /loyaltyReferralTarget/);
 });
+
+test('portal destaca recompensa Protect disponivel e inicia agendamento com valor zero', () => {
+  const portal = readPortalFile('src', 'components', 'ClientPortal.tsx');
+  const home = readPortalFile('src', 'components', 'ClientPortalHome.tsx');
+
+  assert.match(portal, /availableProtectRewardCredit/);
+  assert.match(portal, /credit\.status !== 'available'/);
+  assert.match(portal, /rewardService\?\.name\.toLowerCase\(\)\.includes\('protect'\)/);
+  assert.match(portal, /setSelectedServiceIds\(\[availableProtectRewardService\.id\]\)/);
+  assert.match(portal, /setShowSuggestionsScreen\(true\)/);
+  assert.match(home, /protectRewardCredit && protectRewardService/);
+  assert.match(home, /Parabens! Voce ganhou uma limpeza Protect gratuita\./);
+  assert.match(home, /Agendar minha Limpeza Protect/);
+});

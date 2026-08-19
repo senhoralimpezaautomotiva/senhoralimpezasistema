@@ -16,7 +16,7 @@ import {
   ShieldCheck,
   UserRound
 } from 'lucide-react';
-import type { AgendaConfig, Appointment, Customer, Service, SystemConfig, Vehicle } from '../types';
+import type { AgendaConfig, Appointment, Customer, LoyaltyRewardCredit, Service, SystemConfig, Vehicle } from '../types';
 import { loadPortalData } from '../portal/portalSupabase';
 
 export type ClientPortalSection =
@@ -44,6 +44,9 @@ interface ClientPortalHomeProps {
     loyaltyTarget: number;
     agenda?: AgendaConfig;
   };
+  protectRewardCredit?: LoyaltyRewardCredit | null;
+  protectRewardService?: Service | null;
+  onScheduleProtectReward?: () => void;
   onChangePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
@@ -99,6 +102,9 @@ export default function ClientPortalHome({
   config,
   referralProgress,
   portalSettings,
+  protectRewardCredit,
+  protectRewardService,
+  onScheduleProtectReward,
   onChangePassword
 }: ClientPortalHomeProps) {
   const loyaltyTarget = Math.max(1, portalSettings.loyaltyTarget || config?.loyaltyReferralTarget || 10);
@@ -197,6 +203,31 @@ export default function ClientPortalHome({
             <span className="text-[10px] text-slate-400">{lastAppointment ? dateLabel(lastAppointment.dateTime) : 'Seu histórico aparecerá aqui'}</span>
           </div>
         </div>
+
+        {protectRewardCredit && protectRewardService && (
+          <div className="rounded-3xl border-2 border-emerald-400/40 bg-gradient-to-br from-emerald-500/15 via-slate-950 to-sky-500/10 p-5 shadow-xl shadow-emerald-500/5">
+            <div className="flex items-start gap-4">
+              <span className="w-12 h-12 rounded-2xl bg-emerald-400/15 border border-emerald-300/30 text-emerald-300 flex items-center justify-center shrink-0">
+                <Gift size={23} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-300 font-black">Beneficio disponivel</p>
+                <h3 className="text-lg font-black text-white mt-1">Parabens! Voce ganhou uma limpeza Protect gratuita.</h3>
+                <p className="text-slate-300 mt-1 leading-relaxed">
+                  Seu beneficio esta disponivel. Agende quando desejar.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onScheduleProtectReward}
+              className="mt-4 w-full rounded-2xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black py-3.5 transition-colors flex items-center justify-center gap-2"
+            >
+              <CalendarPlus size={17} />
+              <span>Agendar minha Limpeza Protect</span>
+            </button>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3 auto-rows-[142px]">
           <button type="button" onClick={() => onNavigate('booking')} className="rounded-2xl border-2 border-sky-500/35 bg-sky-500/[0.06] hover:bg-sky-500/10 flex flex-col items-center justify-center text-center gap-3 p-4 transition-colors">

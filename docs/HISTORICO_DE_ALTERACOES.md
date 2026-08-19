@@ -4634,3 +4634,47 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter a alteracao em `src/components/ClientPortal.tsx` e esta entrada do historico.
+
+---
+
+## 2026-08-18-009 - Destaque de recompensa Protect no portal
+
+**Etapa relacionada:** Melhoria visual e de fluxo na tela principal do Portal do Cliente para recompensa de limpeza Protect gratuita.
+
+**Objetivo:** Exibir um card de destaque quando houver recompensa Protect disponivel e permitir iniciar o agendamento ja com a limpeza Protect aplicada com valor zero.
+
+### Trabalho realizado
+
+- A tela principal do Portal do Cliente passa a exibir um card de beneficio quando existir credito de fidelidade `available` para um servico Protect.
+- O botao "Agendar minha Limpeza Protect" seleciona o servico da recompensa, abre o fluxo de agendamento diretamente na tela de sugestoes exclusivas e preserva o preco zero ja calculado pelos creditos disponiveis.
+- O card deixa de aparecer automaticamente quando o credito deixa de estar `available`, pois usa a lista atual de `loyaltyRewardCredits`.
+- Adicionada verificacao de teste para o contrato visual e de fluxo da recompensa Protect.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `src/components/ClientPortalHome.tsx`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Supabase Storage e policies: nenhuma alteracao.
+- Migrations: nenhuma migration criada ou alterada.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 23 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- O card depende de a recompensa disponivel estar associada a um servico cujo nome contenha "Protect".
+- Nao foram executados testes visuais em navegador nesta etapa.
+
+### Como desfazer
+
+- Reverter as alteracoes nos arquivos listados nesta entrada.

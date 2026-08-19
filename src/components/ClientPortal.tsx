@@ -887,6 +887,37 @@ function AuthenticatedClientPortal({
 
   const primarySuggestion = suggestionServices[0];
 
+  const availableProtectRewardCredit = useMemo(() => (
+    loyaltyRewardCredits.find(credit => {
+      if (credit.status !== 'available') return false;
+      const rewardService = services.find(service => service.id === credit.serviceId);
+      return Boolean(rewardService?.name.toLowerCase().includes('protect'));
+    }) || null
+  ), [loyaltyRewardCredits, services]);
+
+  const availableProtectRewardService = availableProtectRewardCredit
+    ? adjustedServices.find(service => service.id === availableProtectRewardCredit.serviceId) || null
+    : null;
+
+  const handleScheduleProtectReward = () => {
+    if (!availableProtectRewardService) return;
+
+    setErrorMessage(null);
+    setSelectedServiceIds([availableProtectRewardService.id]);
+    setSelectedMainServiceId(availableProtectRewardService.id);
+    setSelectedDate('');
+    setSelectedTime('');
+    setAppointmentNotes('');
+    setShowSuggestionsScreen(true);
+    setPortalSection('booking');
+
+    if (!selectedVehicleId && vehicles[0]) {
+      setSelectedVehicleId(vehicles[0].id);
+    }
+
+    setStep(vehicles.length > 0 ? 4 : 3);
+  };
+
   const toggleSuggestedService = (serviceId: string) => {
     setSelectedServiceIds(prev => {
       if (prev.includes(serviceId)) {
@@ -966,6 +997,9 @@ function AuthenticatedClientPortal({
             config={config}
             referralProgress={referralProgress}
             portalSettings={portalSettings}
+            protectRewardCredit={availableProtectRewardCredit}
+            protectRewardService={availableProtectRewardService}
+            onScheduleProtectReward={handleScheduleProtectReward}
             onChangePassword={handlePortalPasswordChange}
           />
         ) : (
