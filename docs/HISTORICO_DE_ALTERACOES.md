@@ -4567,7 +4567,6 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter os arquivos listados nesta entrada e nao aplicar a migration local.
-- Imagens ja enviadas ao Supabase Storage por uso futuro da interface devem ser removidas manualmente do bucket `service-offers` se nao forem mais desejadas.
 
 ---
 
@@ -4725,6 +4724,52 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 - O card depende de a recompensa disponivel estar associada a um servico cujo nome contenha "Protect".
 - Nao foram executados testes visuais em navegador nesta etapa.
+
+### Como desfazer
+
+- Reverter as alteracoes nos arquivos listados nesta entrada.
+
+---
+
+## 2026-08-19-012 - Correcao de registro duplicado da migration de links do portal
+
+**Etapa relacionada:** Investigacao da falha da migration `20260818193000_portal_social_location_links.sql`.
+
+**Objetivo:** Identificar por que a migration falhava com `duplicate key value violates unique constraint "schema_migrations_pkey"` e corrigir sem aplicar novas alteracoes no banco remoto.
+
+### Trabalho realizado
+
+- Verificado localmente que a migration inseria manualmente a propria versao em `supabase_migrations.schema_migrations`.
+- Consultado o Supabase remoto via CLI somente leitura: a versao `20260818193000` ja consta como aplicada e as colunas `instagram_url` e `google_maps_url` existem em `public.configuracoes_empresa`.
+- Removido da migration local o `insert into supabase_migrations.schema_migrations`, pois o Supabase CLI registra a versao automaticamente.
+- Atualizado teste do Portal para impedir que essa migration volte a registrar manualmente `schema_migrations`.
+- Atualizado o manifesto DB-001 para incluir a migration oficial ja existente no catalogo auditado.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `supabase/migrations/20260818193000_portal_social_location_links.sql`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao aplicada por esta sessao.
+- Supabase remoto: apenas consultas de leitura (`migration list` e `information_schema.columns`).
+- Migrations: nenhuma nova migration criada; ajustado apenas o registro manual indevido da migration local.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 24 testes aprovados.
+- `npm run test:db001`: 11 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A migration `20260818193000` ja aparece como aplicada no remoto; a correcao evita o conflito de duplo registro em execucoes futuras do arquivo.
 
 ### Como desfazer
 

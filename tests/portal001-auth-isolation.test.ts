@@ -275,6 +275,7 @@ test('portal exibe atalhos sociais e de rota configuraveis', () => {
 
   assert.match(migration, /instagram_url text not null default ''/);
   assert.match(migration, /google_maps_url text not null default ''/);
+  assert.doesNotMatch(migration, /supabase_migrations\.schema_migrations/);
   assert.match(portalData, /instagram_url,address,google_maps_url/);
   assert.match(portalData, /instagramUrl: String\(settingsResult\.data\?\.instagram_url/);
   assert.match(portalData, /googleMapsUrl: String\(settingsResult\.data\?\.google_maps_url/);
