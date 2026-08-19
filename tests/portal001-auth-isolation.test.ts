@@ -263,6 +263,30 @@ test('nova navegacao preserva o fluxo de agendamento e oferece telas somente lei
   assert.doesNotMatch(home, /createPortalAppointment|cancelPortalAppointment/);
 });
 
+test('portal exibe atalhos sociais e de rota configuraveis', () => {
+  const portalData = readPortalFile('src', 'portal', 'portalSupabase.ts');
+  const home = readPortalFile('src', 'components', 'ClientPortalHome.tsx');
+  const settings = readPortalFile('src', 'components', 'ConfiguracoesModule.tsx');
+  const migration = readPortalFile(
+    'supabase',
+    'migrations',
+    '20260818193000_portal_social_location_links.sql'
+  );
+
+  assert.match(migration, /instagram_url text not null default ''/);
+  assert.match(migration, /google_maps_url text not null default ''/);
+  assert.match(portalData, /instagram_url,address,google_maps_url/);
+  assert.match(portalData, /instagramUrl: String\(settingsResult\.data\?\.instagram_url/);
+  assert.match(portalData, /googleMapsUrl: String\(settingsResult\.data\?\.google_maps_url/);
+  assert.match(settings, /instagramUrl/);
+  assert.match(settings, /googleMapsUrl/);
+  assert.match(settings, /address/);
+  assert.match(home, /InstagramGlyph/);
+  assert.match(home, /Como chegar/);
+  assert.match(home, /buildDirectionsUrl/);
+  assert.doesNotMatch(home, /col-span-2 h-16/);
+});
+
 test('cadastro administrativo de cliente provisiona Auth temporario e portal bloqueia ate trocar senha', () => {
   const localDb = readPortalFile('src', 'db', 'localDb.ts');
   const gate = readPortalFile('src', 'portal', 'PortalAuthGate.tsx');

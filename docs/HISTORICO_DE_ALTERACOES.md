@@ -4516,6 +4516,57 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter as alteracoes nos arquivos listados nesta entrada.
+
+---
+
+## 2026-08-18-011 - Atalhos sociais e rota no Portal do Cliente
+
+**Etapa relacionada:** Melhorias visuais e configuraveis na tela principal do Portal do Cliente.
+
+**Objetivo:** Padronizar o espacamento dos cards finais da home, adicionar atalhos sutis para Instagram e rota da loja, e tornar editaveis os links/dados usados pelo portal.
+
+### Trabalho realizado
+
+- Ajustado o grid da home para que os cards "Perfil" e "Consultar agenda" sigam o mesmo padrao de tamanho e espacamento dos demais cards.
+- Adicionados atalhos discretos abaixo da saudacao do portal para Instagram e "Como chegar".
+- O atalho "Como chegar" usa o link configurado de navegacao quando existir; caso contrario, abre uma busca no Google Maps com o endereco da loja.
+- A tela de configuracoes da empresa passou a editar Instagram, endereco da loja e link de navegacao para Google Maps ou Waze.
+- O carregamento do Portal do Cliente passou a buscar esses campos nas configuracoes publicas.
+- Criada migration local para adicionar `instagram_url` e `google_maps_url` em `configuracoes_empresa`.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260818193000_portal_social_location_links.sql`.
+- Alterado: `src/components/ClientPortalHome.tsx`.
+- Alterado: `src/components/ConfiguracoesModule.tsx`.
+- Alterado: `src/portal/portalSupabase.ts`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `src/security/publicConfig.ts`.
+- Alterado: `src/types.ts`.
+- Alterado: `tests/portal001-auth-isolation.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao aplicada por esta sessao.
+- Migrations: criada migration local, ainda nao aplicada remotamente por esta sessao.
+- Supabase Storage e policies: nenhuma alteracao.
+- Hospedagem e deploy: nenhuma publicacao executada.
+
+### Verificacoes e resultados
+
+- `npm run test:portal001`: 24 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Os atalhos so aparecem quando houver Instagram, link de navegacao ou endereco configurado.
+- O link de navegacao aceita URLs HTTPS e pode apontar para Google Maps ou Waze.
+
+### Como desfazer
+
+- Reverter os arquivos listados nesta entrada e nao aplicar a migration local.
 - Imagens ja enviadas ao Supabase Storage por uso futuro da interface devem ser removidas manualmente do bucket `service-offers` se nao forem mais desejadas.
 
 ---

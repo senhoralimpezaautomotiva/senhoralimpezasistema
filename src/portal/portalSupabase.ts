@@ -30,6 +30,9 @@ export interface PortalData {
   portalSettings: {
     catalogSource: 'system' | 'whatsapp';
     whatsappCatalogUrl: string;
+    instagramUrl: string;
+    address: string;
+    googleMapsUrl: string;
     loyaltyTarget: number;
     agenda?: AgendaConfig;
   };
@@ -128,7 +131,7 @@ export async function loadPortalData(date?: string): Promise<PortalData> {
       : Promise.resolve({ data: [], error: null }),
     client
       .from('configuracoes_empresa')
-      .select('portal_catalog_source,whatsapp_catalog_url,loyalty_referral_target,agenda')
+      .select('portal_catalog_source,whatsapp_catalog_url,instagram_url,address,google_maps_url,loyalty_referral_target,agenda')
       .eq('id', 'c0000000-0000-0000-0000-000000000000')
       .maybeSingle(),
     client.rpc('portal_referral_progress'),
@@ -190,6 +193,9 @@ export async function loadPortalData(date?: string): Promise<PortalData> {
     portalSettings: {
       catalogSource: settingsResult.data?.portal_catalog_source === 'whatsapp' ? 'whatsapp' : 'system',
       whatsappCatalogUrl: String(settingsResult.data?.whatsapp_catalog_url || ''),
+      instagramUrl: String(settingsResult.data?.instagram_url || ''),
+      address: String(settingsResult.data?.address || ''),
+      googleMapsUrl: String(settingsResult.data?.google_maps_url || ''),
       loyaltyTarget: Math.max(1, Number(settingsResult.data?.loyalty_referral_target) || 10),
       agenda: settingsResult.data?.agenda
         ? (typeof settingsResult.data.agenda === 'string' ? JSON.parse(settingsResult.data.agenda) : settingsResult.data.agenda)

@@ -11,6 +11,7 @@ import {
   Gift,
   History,
   KeyRound,
+  MapPin,
   MessageCircle,
   Search,
   ShieldCheck,
@@ -41,6 +42,9 @@ interface ClientPortalHomeProps {
   portalSettings: {
     catalogSource: 'system' | 'whatsapp';
     whatsappCatalogUrl: string;
+    instagramUrl: string;
+    address: string;
+    googleMapsUrl: string;
     loyaltyTarget: number;
     agenda?: AgendaConfig;
   };
@@ -79,6 +83,20 @@ const dateLabel = (value: string): string =>
 
 const money = (value: number): string =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+
+const buildDirectionsUrl = (address: string, googleMapsUrl: string): string => {
+  if (googleMapsUrl) return googleMapsUrl;
+  if (!address) return '';
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+};
+
+const InstagramGlyph = () => (
+  <span className="w-4 h-4 rounded-[5px] bg-gradient-to-tr from-yellow-300 via-rose-500 to-indigo-500 flex items-center justify-center shadow-sm shadow-rose-500/20">
+    <span className="w-2.5 h-2.5 rounded-full border-[1.5px] border-white relative">
+      <span className="absolute -right-0.5 -top-0.5 w-1 h-1 rounded-full bg-white" />
+    </span>
+  </span>
+);
 
 const PortalBack = ({ onClick, title }: { onClick: () => void; title: string }) => (
   <div className="flex items-center justify-between gap-3 mb-6">
@@ -129,6 +147,7 @@ export default function ClientPortalHome({
   const lastService = lastAppointment
     ? services.find(item => item.id === lastAppointment.serviceId)?.name || 'Serviço realizado'
     : 'Nenhum serviço concluído';
+  const directionsUrl = buildDirectionsUrl(portalSettings.address, portalSettings.googleMapsUrl);
   const handleCopyReferralCode = async () => {
     if (!customer.referralCode) return;
     await navigator.clipboard.writeText(customer.referralCode);
@@ -189,6 +208,32 @@ export default function ClientPortalHome({
             </div>
           )}
           <p className="text-slate-400 mt-1">Como podemos cuidar do seu carro hoje?</p>
+          {(portalSettings.instagramUrl || directionsUrl) && (
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              {portalSettings.instagramUrl && (
+                <a
+                  href={portalSettings.instagramUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-700/70 bg-slate-950/50 px-3 py-1.5 text-[10px] font-bold text-slate-300 hover:border-rose-400/40 hover:text-white transition-colors"
+                >
+                  <InstagramGlyph />
+                  <span>Instagram</span>
+                </a>
+              )}
+              {directionsUrl && (
+                <a
+                  href={directionsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-700/70 bg-slate-950/50 px-3 py-1.5 text-[10px] font-bold text-slate-300 hover:border-sky-400/40 hover:text-white transition-colors"
+                >
+                  <MapPin size={14} className="text-sky-400" />
+                  <span>Como chegar</span>
+                </a>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -246,10 +291,10 @@ export default function ClientPortalHome({
             <History size={25} className="text-indigo-400" />
             <span><strong className="block text-white">Histórico</strong><small className="text-[10px] text-slate-400">Consulte serviços realizados</small></span>
           </button>
-          <button type="button" onClick={() => onNavigate('profile')} className="col-span-2 h-16 rounded-2xl border-2 border-indigo-500/35 bg-indigo-500/[0.06] hover:bg-indigo-500/10 flex items-center justify-center gap-3 font-black text-white transition-colors">
+          <button type="button" onClick={() => onNavigate('profile')} className="rounded-2xl border-2 border-indigo-500/35 bg-indigo-500/[0.06] hover:bg-indigo-500/10 flex flex-col items-center justify-center text-center gap-3 p-4 font-black text-white transition-colors">
             <UserRound size={18} className="text-indigo-400" /> Perfil <ChevronRight size={17} />
           </button>
-          <button type="button" onClick={() => onNavigate('availability')} className="col-span-2 h-16 rounded-2xl border-2 border-sky-500/35 bg-sky-500/[0.07] hover:bg-sky-500/12 flex items-center justify-center gap-3 font-black text-white transition-colors">
+          <button type="button" onClick={() => onNavigate('availability')} className="rounded-2xl border-2 border-sky-500/35 bg-sky-500/[0.07] hover:bg-sky-500/12 flex flex-col items-center justify-center text-center gap-3 p-4 font-black text-white transition-colors">
             <Search size={18} className="text-sky-400" /> Consultar agenda <ChevronRight size={17} />
           </button>
         </div>

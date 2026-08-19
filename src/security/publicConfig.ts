@@ -21,6 +21,8 @@ export const PUBLIC_SYSTEM_CONFIG_KEYS = [
   'automationStartHour',
   'automationEndHour',
   'automation24Hours',
+  'instagramUrl',
+  'googleMapsUrl',
   'agenda',
   'theme'
 ] as const satisfies readonly (keyof PublicSystemConfig)[];
@@ -132,6 +134,8 @@ export const toPublicSystemConfig = (value: unknown): Partial<PublicSystemConfig
     'accentColor',
     'supabaseUrl',
     'supabaseAnonKey',
+    'instagramUrl',
+    'googleMapsUrl',
     'automationStartHour',
     'automationEndHour'
   ] as const;

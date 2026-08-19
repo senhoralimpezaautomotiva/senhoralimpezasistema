@@ -531,6 +531,40 @@ export default function ConfiguracoesModule({
                 <p className="text-[10px] text-slate-500 mt-1.5">Informe somente um endereço HTTPS público do catálogo.</p>
               </div>
             )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Instagram da empresa</label>
+                <input
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://www.instagram.com/suaempresa"
+                  value={formData.instagramUrl || ''}
+                  onChange={(event) => setFormData({ ...formData, instagramUrl: event.target.value.trim() })}
+                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Link de navegacao (Google Maps ou Waze)</label>
+                <input
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://maps.app.goo.gl/... ou https://waze.com/ul/..."
+                  value={formData.googleMapsUrl || ''}
+                  onChange={(event) => setFormData({ ...formData, googleMapsUrl: event.target.value.trim() })}
+                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Endereco da loja</label>
+              <input
+                type="text"
+                value={formData.address || ''}
+                onChange={(event) => setFormData({ ...formData, address: event.target.value })}
+                className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2.5 text-white"
+              />
+              <p className="text-[10px] text-slate-500 mt-1.5">Se o link do Google Maps nao for informado, o Portal usa este endereco para abrir a busca no Maps.</p>
+            </div>
           </div>
 
           {/* SECTION 2: SERVER-MANAGED INTEGRATIONS */}

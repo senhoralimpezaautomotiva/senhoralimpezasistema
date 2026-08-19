@@ -199,6 +199,8 @@ export interface PublicSystemConfig {
   loyaltyReferralTarget?: number;
   portalCatalogSource?: 'system' | 'whatsapp';
   whatsappCatalogUrl?: string;
+  instagramUrl?: string;
+  googleMapsUrl?: string;
 
   // Automation Operational Window
   automationStartHour?: string; // e.g., "08:00"
