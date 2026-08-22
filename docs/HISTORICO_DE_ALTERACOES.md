@@ -5247,3 +5247,59 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 - Reverter o commit desta funcionalidade.
 - Caso a migration venha a ser aplicada no futuro, planejar rollback controlado apos backup; nesta etapa nao houve alteracao externa de banco.
+
+---
+
+## 2026-08-22-009 - Aplicacao da migration do Orcamento Vivo em producao
+
+**Etapa relacionada:** Aplicacao controlada da migration do Orcamento Vivo antes do deploy.
+
+**Objetivo:** Aplicar em producao somente a migration `20260822203000_orcamento_vivo_itens_agendamentos.sql` e validar o schema real do Supabase antes da publicacao do codigo.
+
+### Trabalho realizado
+
+- Conferido antes da aplicacao que a migration `20260822203000` ainda nao constava no ledger remoto.
+- Conferido antes da aplicacao que as colunas, indices, constraints e RPC alvo ainda nao existiam no banco real.
+- Confirmado que havia exatamente uma migration local pendente em relacao ao remoto.
+- Aplicada em producao somente a migration `20260822203000_orcamento_vivo_itens_agendamentos.sql` com `supabase db push --linked`.
+- Validados no catalogo real as colunas, defaults, nulabilidade, foreign keys, check constraint, indices, assinatura, seguranca, `search_path`, privilegios e corpo da RPC.
+- Executados testes controlados de autorizacao da RPC sem persistencia de dados.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo de codigo, migration, configuracao ou teste foi alterado nesta etapa.
+
+### Banco, hospedagem e servicos externos
+
+- Produção Supabase: migration `20260822203000_orcamento_vivo_itens_agendamentos` aplicada.
+- Nenhuma outra migration foi aplicada.
+- Nenhuma alteracao manual de dados foi feita fora do SQL da migration.
+- Nenhuma alteracao foi feita em Auth, RLS existente, credenciais, hospedagem ou configuracoes externas.
+- Nenhum deploy foi executado.
+- Nenhum commit ou push foi executado.
+
+### Verificacoes e resultados
+
+- Ledger remoto apos aplicacao: `20260822203000` presente como `orcamento_vivo_itens_agendamentos`.
+- Contagens antes e depois permaneceram iguais: `orcamentos=2`, `orcamento_itens=4`, `agendamentos=68`, `clientes=4`, `veiculos=2`.
+- `orcamento_itens`: colunas `status`, `agendamento_id`, `converted_at` e `concluded_at` presentes com tipos/defaults esperados.
+- `agendamentos`: colunas `orcamento_id` e `orcamento_item_ids` presentes com tipos/defaults esperados.
+- Indices criados: `idx_orcamento_itens_agendamento`, `idx_orcamento_itens_status`, `idx_agendamentos_orcamento`.
+- Constraint criada: `orcamento_itens_status_check`.
+- Foreign keys criadas: `orcamento_itens.agendamento_id -> agendamentos.id` e `agendamentos.orcamento_id -> orcamentos.id`, ambas `ON DELETE SET NULL`.
+- RPC `public.fn_converter_itens_orcamento_em_agendamento(uuid, uuid[], uuid, uuid, date, time, numeric, integer, text)` presente.
+- RPC confirmada com `SECURITY DEFINER`, `search_path=""`, sem SQL dinamico, status inicial `Agendado` e sem parametro `p_status`.
+- Privilegios reais: `public=false`, `anon=false`, `authenticated=true`, `service_role=true`.
+- Autorizacao interna confirmada por corpo SQL e chamadas controladas: sem `auth.uid()` rejeita; `auth.uid()` inexistente em `public.usuarios` rejeita.
+- Registros antigos validos: itens antigos com `status=pendente`; agendamentos antigos com `orcamento_id` nulo e `orcamento_item_ids='{}'`.
+
+### Riscos, limitacoes e pendencias
+
+- Nao foi criado agendamento real de teste em producao; a validacao autorizada foi feita por inspecao do modelo efetivo de usuarios e do corpo da RPC.
+- O deploy do codigo continua pendente e deve ocorrer somente apos revisao desta validacao.
+
+### Como desfazer
+
+- Nao executar rollback destrutivo sem backup e janela controlada.
+- Para reversao futura, planejar migration de rollback especifica removendo RPC, indices, constraints e colunas aditivas somente apos confirmar que nao ha dados reais usando os vinculos do Orcamento Vivo.
