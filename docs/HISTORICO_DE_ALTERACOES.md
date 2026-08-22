@@ -4519,45 +4519,6 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 ---
 
-## 2026-08-22-002 - Dashboard com cards cronologicos da agenda
-
-**Etapa relacionada:** Ajuste visual da agenda no dashboard administrativo.
-
-**Objetivo:** Exibir os agendamentos do dia como cards dinamicos em ordem cronologica, sem cards gerados por horarios fixos.
-
-### Trabalho realizado
-
-- Alterada apenas a apresentacao da agenda no dashboard.
-- A grade visual deixou de gerar cards a partir dos horarios base.
-- Cada agendamento do dia agora renderiza um card na sequencia cronologica real.
-- Mantido um card final para iniciar novo agendamento de cliente.
-- Mantidos os mesmos dados, handlers, drawer de edicao e fluxo de criacao existentes.
-
-### Arquivos criados, alterados ou removidos
-
-- Alterado: `src/components/DashboardModule.tsx`.
-- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
-
-### Banco, hospedagem e servicos externos
-
-- Banco de dados: nenhuma alteracao.
-- RLS, Auth, migrations, hospedagem e deploy: nenhuma alteracao.
-
-### Verificacoes e resultados
-
-- `npm run lint`: aprovado.
-- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
-
-### Riscos, limitacoes e pendencias
-
-- O card final usa o fluxo atual de novo agendamento; nenhuma regra de disponibilidade foi modificada.
-
-### Como desfazer
-
-- Reverter as alteracoes nos arquivos listados nesta entrada.
-
----
-
 ## 2026-08-19-013 - Persistencia dos links sociais nas configuracoes
 
 **Etapa relacionada:** Correcao dos campos Instagram e Google Maps na tela de Configuracoes.
@@ -4951,6 +4912,45 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 ---
 
+## 2026-08-22-002 - Dashboard com cards cronologicos da agenda
+
+**Etapa relacionada:** Ajuste visual da agenda no dashboard administrativo.
+
+**Objetivo:** Exibir os agendamentos do dia como cards dinamicos em ordem cronologica, sem cards gerados por horarios fixos.
+
+### Trabalho realizado
+
+- Alterada apenas a apresentacao da agenda no dashboard.
+- A grade visual deixou de gerar cards a partir dos horarios base.
+- Cada agendamento do dia agora renderiza um card na sequencia cronologica real.
+- Mantido um card final para iniciar novo agendamento de cliente.
+- Mantidos os mesmos dados, handlers, drawer de edicao e fluxo de criacao existentes.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/DashboardModule.tsx`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- RLS, Auth, migrations, hospedagem e deploy: nenhuma alteracao.
+
+### Verificacoes e resultados
+
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- O card final usa o fluxo atual de novo agendamento; nenhuma regra de disponibilidade foi modificada.
+
+### Como desfazer
+
+- Reverter as alteracoes nos arquivos listados nesta entrada.
+
+---
+
 ## 2026-08-22-003 - Agenda com cards dinamicos e horario inicial inteligente
 
 **Etapa relacionada:** Ajuste visual da tela Agenda administrativa.
@@ -4984,6 +4984,49 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Riscos, limitacoes e pendencias
 
 - O horario sugerido usa a duracao do primeiro servico padrao do formulario; se o usuario selecionar outro servico, a validacao final existente continua impedindo horarios invalidos.
+
+### Como desfazer
+
+- Reverter as alteracoes nos arquivos listados nesta entrada.
+
+---
+
+## 2026-08-22-004 - Linha do tempo vertical na agenda administrativa
+
+**Etapa relacionada:** Redesenho visual da agenda no sistema administrativo.
+
+**Objetivo:** Substituir a visualizacao por cards soltos no Dashboard e na Agenda por uma linha do tempo vertical compartilhada, com horarios de referencia e agendamentos posicionados por inicio e duracao reais.
+
+### Trabalho realizado
+
+- Criado o componente reutilizavel `DailyTimeline` para uso no Dashboard e na tela Agenda.
+- A coluna de horarios passa a ser derivada das configuracoes atuais da agenda, usando expediente do dia e intervalo calculado a partir dos `timeSlots`.
+- Os agendamentos reais sao posicionados verticalmente pelo horario de inicio e recebem altura proporcional a duracao real (`durationTotal` ou tempo estimado do servico).
+- Os espacos livres permanecem vazios e clicaveis; ao clicar, o formulario existente de novo agendamento abre com o horario da posicao clicada.
+- O Dashboard passou a usar a linha do tempo em "Agenda de Hoje" preservando o drawer lateral atual.
+- A tela Agenda passou a usar a mesma linha do tempo no modo de dia selecionado, preservando o formulario/modal atual.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `src/components/DailyTimeline.tsx`.
+- Alterado: `src/components/DashboardModule.tsx`.
+- Alterado: `src/components/AgendaModule.tsx`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Portal do Cliente, RLS, Auth, migrations, hospedagem, deploy e servicos externos: nenhuma alteracao.
+
+### Verificacoes e resultados
+
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- Agendamentos simultaneos sao distribuidos em colunas para evitar sobreposicao visual.
+- A linha do tempo e um atalho visual; as validacoes existentes de conflito/disponibilidade continuam sendo aplicadas no salvamento.
 
 ### Como desfazer
 

@@ -22,7 +22,7 @@ import { Appointment, Customer, Vehicle, Service, AppointmentStatus, SystemConfi
 import { getServicePrice, hasModulePermission } from '../db/localDb';
 import { getCurrentDate } from '../utils/dateUtils';
 import { safeLog } from '../security/safeOutput';
-import { AppointmentGridCard } from './AppointmentGridCard';
+import DailyTimeline from './DailyTimeline';
 import { createAppointmentFormDraft } from '../utils/servicePricing';
 import { getAvailableAgendaStartTimes, isAgendaStartTimeAvailable } from '../utils/agendaAvailability';
 
@@ -802,28 +802,26 @@ export default function AgendaModule({
           </div>
         </div>
 
-        {/* Cards cronologicos */}
+        {/* Linha do tempo diaria */}
         <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4">
           <div className="flex justify-between items-center border-b border-slate-800 pb-3">
             <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Agendamentos do Dia</h2>
             <span className="text-[10px] text-slate-400 font-mono">Ordenados Cronologicamente</span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {chronologicalSelectedDayAppointments.map((appt) => (
-              <AppointmentGridCard
-                key={appt.id}
-                appt={appt}
-                customers={customers}
-                vehicles={vehicles}
-                services={services}
-                onEditClick={handleEditClick}
-                onDuplicateClick={handleDuplicateAppointment}
-                onUpdateStatus={handleUpdateStatus}
-                canCreate={canCreate}
-                canEdit={canEdit}
-              />
-            ))}
-          </div>
+          <DailyTimeline
+            date={selectedDayStr}
+            agenda={agenda}
+            appointments={selectedDayAppointments}
+            customers={customers}
+            vehicles={vehicles}
+            services={services}
+            onCreateAppointment={openNewAppointment}
+            onEditAppointment={handleEditClick}
+            onDuplicateAppointment={handleDuplicateAppointment}
+            onUpdateStatus={handleUpdateStatus}
+            canCreate={canCreate}
+            canEdit={canEdit}
+          />
         </div>
 
         {addModalElement}

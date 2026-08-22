@@ -37,7 +37,7 @@ import {
 import { dbInstance, renderTemplateText, getServicePrice, hasModulePermission } from '../db/localDb';
 import { getCurrentDate, getCurrentDateStr, getCurrentMonthPrefix } from '../utils/dateUtils';
 import { safeLog, setSafeText } from '../security/safeOutput';
-import { AppointmentGridCard } from './AppointmentGridCard';
+import DailyTimeline from './DailyTimeline';
 import {
   createAppointmentFormDraft,
   getServicesDuration,
@@ -1001,10 +1001,6 @@ export default function DashboardModule({
 
   // Today's appointments list
   const appointmentsToday = appointments.filter(a => a.dateTime.startsWith(todayStr));
-  const chronologicalAppointmentsToday = useMemo(
-    () => [...appointmentsToday].sort((a, b) => a.dateTime.localeCompare(b.dateTime)),
-    [appointmentsToday]
-  );
 
   // Determine standard operational hours from dynamic agenda config
   const baseHours = useMemo(() => {
@@ -1151,45 +1147,24 @@ export default function DashboardModule({
             </div>
 
             {/* Cards cronologicos */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" id="agenda-grid-3x3">
-              {chronologicalAppointmentsToday.map((appt) => (
-                <AppointmentGridCard
-                  key={appt.id}
-                  appt={appt}
-                  customers={customers}
-                  vehicles={vehicles}
-                  services={services}
-                  nextApptId={nextApptId}
-                  onEditClick={(id) => {
-                    setSelectedApptId(id);
-                    setIsDrawerOpen(true);
-                  }}
-                  onDuplicateClick={handleDuplicateAppointment}
-                  onUpdateStatus={onUpdateStatus}
-                  canCreate={canCreateAppointment}
-                  canEdit={canEditAppointment}
-                />
-              ))}
-
-              <button
-                type="button"
-                onClick={() => openQuickAppointment(baseHours[0] || '08:00')}
-                disabled={!canCreateAppointment}
-                className="group rounded-xl p-4 bg-slate-950/40 border border-dashed border-slate-800 hover:border-sky-500/50 hover:bg-slate-950/80 disabled:opacity-45 disabled:cursor-not-allowed transition-all flex flex-col justify-center items-center gap-3 h-[165px] text-center"
-              >
-                <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 group-hover:border-sky-500/40 flex items-center justify-center text-sky-400 transition-colors">
-                  <Plus size={18} className="stroke-[3]" />
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-300 block">
-                    Agendar Cliente
-                  </span>
-                  <p className="text-[9px] text-slate-500 mt-1">
-                    Criar um novo atendimento
-                  </p>
-                </div>
-              </button>
-            </div>
+            <DailyTimeline
+              date={todayStr}
+              agenda={config.agenda || dbInstance.config.agenda}
+              appointments={appointmentsToday}
+              customers={customers}
+              vehicles={vehicles}
+              services={services}
+              nextAppointmentId={nextApptId}
+              onCreateAppointment={openQuickAppointment}
+              onEditAppointment={(id) => {
+                setSelectedApptId(id);
+                setIsDrawerOpen(true);
+              }}
+              onDuplicateAppointment={handleDuplicateAppointment}
+              onUpdateStatus={onUpdateStatus}
+              canCreate={canCreateAppointment}
+              canEdit={canEditAppointment}
+            />
           </div>
         </div>
 
