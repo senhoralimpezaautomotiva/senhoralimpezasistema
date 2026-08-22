@@ -4862,3 +4862,50 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter as alteracoes nos arquivos listados nesta entrada.
+
+---
+
+## 2026-08-22-001 - Agenda inteligente com intervalos dinamicos
+
+**Etapa relacionada:** Melhoria da disponibilidade no Portal do Cliente e no painel administrativo.
+
+**Objetivo:** Usar os horarios base apenas como referencia e exibir, no portal e no administrativo, somente inicios reais em que o servico selecionado caiba integralmente no intervalo livre.
+
+### Trabalho realizado
+
+- Mapeada a arquitetura atual da agenda antes das alteracoes: o administrativo calculava ocupacao em `AgendaModule.tsx`, enquanto o portal calculava slots ocupados separadamente em `ClientPortal.tsx`.
+- Criada uma funcao compartilhada de disponibilidade em `src/utils/agendaAvailability.ts`.
+- A nova regra considera expediente, almoco, antecedencia minima, capacidade por referencia de slot, agendamentos nao cancelados e duracao real do servico.
+- Os terminos de servicos existentes passam a entrar como possiveis novos inicios, por exemplo `08:40` ou `11:30`, desde que o servico escolhido caiba integralmente no intervalo livre.
+- O Portal do Cliente agora renderiza apenas os horarios validos retornados pela funcao compartilhada e revalida a disponibilidade antes da confirmacao.
+- O painel administrativo agora usa a mesma funcao para preencher o seletor de horario e bloquear salvamento de horario invalido.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `src/utils/agendaAvailability.ts`.
+- Criado: `tests/agenda-availability.test.ts`.
+- Alterado: `src/components/AgendaModule.tsx`.
+- Alterado: `src/components/ClientPortal.tsx`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- Migrations: nenhuma migration criada ou alterada.
+- Hospedagem, deploy e servicos externos: nenhuma publicacao ou chamada externa executada.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/agenda-availability.test.ts`: aprovado, cobrindo servicos de 40 minutos, 1h30, 2h e 3h.
+- `npm run test:portal001`: 24 testes aprovados.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A validacao final de conflito no banco remoto nao foi alterada nesta etapa.
+- Nenhuma pendencia de validacao local identificada apos liberar espaco em disco.
+
+### Como desfazer
+
+- Reverter as alteracoes nos arquivos listados nesta entrada.

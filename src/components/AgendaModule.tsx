@@ -24,6 +24,7 @@ import { getCurrentDate } from '../utils/dateUtils';
 import { safeLog } from '../security/safeOutput';
 import { AppointmentGridCard, EmptySlotCard } from './AppointmentGridCard';
 import { createAppointmentFormDraft } from '../utils/servicePricing';
+import { getAvailableAgendaStartTimes, isAgendaStartTimeAvailable } from '../utils/agendaAvailability';
 
 interface AgendaModuleProps {
   appointments: Appointment[];
@@ -327,6 +328,20 @@ export default function AgendaModule({
     const selectedService = services.find(s => s.id === formData.serviceId);
     const serviceDuration = selectedService?.estimatedTime || 60; // in minutes
     
+    if (!isAgendaStartTimeAvailable({
+      agenda,
+      appointments,
+      services,
+      date: selectedDayStr,
+      serviceDuration,
+      excludeAppointmentId: editingApptId || undefined,
+      time: apptTime
+    })) {
+      setErrorMessage(`Horário indisponível para o serviço "${selectedService?.name}" (${serviceDuration} min). Escolha um horário livre em que o serviço caiba integralmente.`);
+      setIsSaving(false);
+      return;
+    }
+
     const proposedStartMins = timeToMinutes(apptTime);
     const proposedEndMins = proposedStartMins + serviceDuration;
 
@@ -501,16 +516,20 @@ export default function AgendaModule({
   const bookingVehicles = vehicles.filter(v => v.customerId === formData.customerId);
 
   // Render time slots dropdown options
-  const activeSlotsOptions = agenda.timeSlots.map((slot: any) => {
-    const occupancy = getSlotOccupancyCount(selectedDayStr, slot.time);
-    const isFull = occupancy >= slot.maxCapacity;
-    return {
-      time: slot.time,
-      capacity: slot.maxCapacity,
-      occupancy,
-      isFull
-    };
-  });
+  const selectedFormService = services.find(s => s.id === formData.serviceId);
+  const activeSlotsOptions = getAvailableAgendaStartTimes({
+    agenda,
+    appointments,
+    services,
+    date: selectedDayStr,
+    serviceDuration: selectedFormService?.estimatedTime || 60,
+    excludeAppointmentId: editingApptId || undefined
+  }).map(option => ({
+    time: option.time,
+    capacity: option.capacity,
+    occupancy: option.occupancy,
+    isFull: false
+  }));
 
   const addModalElement = isAddOpen && (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -592,31 +611,20 @@ export default function AgendaModule({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Horário *</label>
-              {activeSlotsOptions.length > 0 ? (
-                <select 
-                  required
-                  disabled={isSaving}
-                  value={formData.time}
-                  onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white font-mono disabled:opacity-50"
-                >
-                  <option value="" disabled>Selecione um horário...</option>
-                  {activeSlotsOptions.map(opt => (
-                    <option key={opt.time} value={opt.time} disabled={opt.isFull && !editingApptId}>
-                      {opt.time} {opt.isFull ? '• Lotado' : `• (${opt.occupancy}/${opt.capacity} vagas)`}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input 
-                  type="time" 
-                  required
-                  disabled={isSaving}
-                  value={formData.time}
-                  onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white font-mono disabled:opacity-50"
-                />
-              )}
+              <select
+                required
+                disabled={isSaving || activeSlotsOptions.length === 0}
+                value={activeSlotsOptions.some(opt => opt.time === formData.time) ? formData.time : ''}
+                onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white font-mono disabled:opacity-50"
+              >
+                <option value="" disabled>{activeSlotsOptions.length === 0 ? 'Nenhum horário disponível' : 'Selecione um horário...'}</option>
+                {activeSlotsOptions.map(opt => (
+                  <option key={opt.time} value={opt.time} disabled={opt.isFull && !editingApptId}>
+                    {opt.time} {opt.isFull ? '• Lotado' : `• (${opt.occupancy}/${opt.capacity} vagas)`}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Preço Final (R$) *</label>

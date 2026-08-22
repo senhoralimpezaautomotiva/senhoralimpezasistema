@@ -28,6 +28,7 @@ import {
 } from '../portal/portalSupabase';
 import { activePortalAuthProvider } from '../portal/auth/emailPasswordAuthProvider';
 import ClientPortalHome, { PortalAvailabilityPanel, type ClientPortalSection } from './ClientPortalHome';
+import { getAvailableAgendaStartTimes, isAgendaStartTimeAvailable } from '../utils/agendaAvailability';
 
 const BrandLogo = ({ brand }: { brand: string }) => {
   const name = brand.trim().toLowerCase();
@@ -620,95 +621,41 @@ function AuthenticatedClientPortal({
     return list;
   }, [agenda]);
 
-  // Standard time slots generated for the selected date
-  const timeSlots = useMemo(() => {
-    return agenda.timeSlots.map((s: any) => s.time);
-  }, [agenda]);
-
-  // Map of taken slots on the selected date to prevent conflicts
-  const takenSlots = useMemo(() => {
+  const availableTimeSlots = useMemo(() => {
     if (!selectedDate) return [];
-    
-    const timeToMinutes = (timeStr: string) => {
-      const [h, m] = timeStr.split(':').map(Number);
-      return h * 60 + (m || 0);
-    };
+    return getAvailableAgendaStartTimes({
+      agenda,
+      appointments,
+      services: adjustedServices,
+      date: selectedDate,
+      serviceDuration: totalTime || 60
+    }).map(option => option.time);
+  }, [selectedDate, appointments, agenda, adjustedServices, totalTime]);
 
-    const list: string[] = [];
-
-    // Find the day of week configuration
-    const dateOfBooking = new Date(selectedDate + 'T00:00:00');
-    const dayOfWeekIdx = dateOfBooking.getDay();
-    const dayConfig = agenda.days.find((d: any) => d.dayOfWeek === dayOfWeekIdx);
-
-    // Filter active bookings on the chosen date
-    const dayBookings = appointments.filter(a => {
-      return a.dateTime.startsWith(selectedDate) && a.status !== 'cancelado';
-    });
-
-    // Antecedence Check: If selectedDate is today, check minAdvanceHours
-    const today = new Date();
-    const isToday = selectedDate === `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const currentMins = today.getHours() * 60 + today.getMinutes();
-    const minAdvanceMins = (agenda.minAdvanceHours || 2) * 60;
-
-    for (const slot of agenda.timeSlots) {
-      const slotTimeStr = slot.time;
-      const slotMins = timeToMinutes(slotTimeStr);
-
-      // Check operating hours for this day
-      if (dayConfig) {
-        if (slotTimeStr < dayConfig.openTime || slotTimeStr >= dayConfig.closeTime) {
-          list.push(slotTimeStr);
-          continue;
-        }
-        if (dayConfig.hasLunchBreak && slotTimeStr >= dayConfig.lunchStart && slotTimeStr < dayConfig.lunchEnd) {
-          list.push(slotTimeStr);
-          continue;
-        }
-      }
-
-      // Check min advance hours
-      if (isToday) {
-        if (slotMins - currentMins < minAdvanceMins) {
-          list.push(slotTimeStr);
-          continue;
-        }
-      }
-
-      // Calculate occupancy count
-      let count = 0;
-      for (const appt of dayBookings) {
-        const apptTimeStr = appt.dateTime.split('T')[1];
-        const apptService = services.find(s => s.id === appt.serviceId);
-        const duration = apptService?.estimatedTime || 60;
-        
-        const startMins = timeToMinutes(apptTimeStr);
-        const endMins = startMins + duration;
-        
-        if (agenda.autoBlockDuration) {
-          if (slotMins >= startMins && slotMins < endMins) {
-            count++;
-          }
-        } else {
-          if (apptTimeStr === slotTimeStr) {
-            count++;
-          }
-        }
-      }
-
-      if (count >= slot.maxCapacity) {
-        list.push(slotTimeStr);
-      }
+  useEffect(() => {
+    if (selectedTime && !availableTimeSlots.includes(selectedTime)) {
+      setSelectedTime('');
     }
-
-    return list;
-  }, [selectedDate, appointments, agenda, services]);
+  }, [availableTimeSlots, selectedTime]);
 
   // Final confirmation submit
   const handleConfirmBooking = async () => {
     if (!customer || !selectedVehicleId || selectedServiceIds.length === 0 || !selectedDate || !selectedTime) {
       setErrorMessage('Dados incompletos. Por favor revise todos os passos.');
+      return;
+    }
+
+    if (!isAgendaStartTimeAvailable({
+      agenda,
+      appointments,
+      services: adjustedServices,
+      date: selectedDate,
+      serviceDuration: totalTime || 60,
+      time: selectedTime
+    })) {
+      setErrorMessage('Este horário não está mais disponível para o serviço selecionado. Escolha outro horário livre.');
+      setSelectedTime('');
+      setStep(5);
       return;
     }
 
@@ -1914,14 +1861,11 @@ function AuthenticatedClientPortal({
                 }}
                 minDate={availableDaysList[0]?.dateStr}
                 maxDate={availableDaysList[availableDaysList.length - 1]?.dateStr}
-                slots={timeSlots.map(time => {
-                  const dateAvailable = availableDaysList.some(day => day.dateStr === selectedDate);
-                  return {
-                    time,
-                    occupied: !dateAvailable || takenSlots.includes(time),
-                    selected: selectedTime === time
-                  };
-                })}
+                slots={availableTimeSlots.map(time => ({
+                  time,
+                  occupied: false,
+                  selected: selectedTime === time
+                }))}
                 onSlotSelect={setSelectedTime}
                 emptyMessage="Escolha uma data para consultar horários livres."
               />
