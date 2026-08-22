@@ -22,7 +22,7 @@ import { Appointment, Customer, Vehicle, Service, AppointmentStatus, SystemConfi
 import { getServicePrice, hasModulePermission } from '../db/localDb';
 import { getCurrentDate } from '../utils/dateUtils';
 import { safeLog } from '../security/safeOutput';
-import { AppointmentGridCard, EmptySlotCard } from './AppointmentGridCard';
+import { AppointmentGridCard } from './AppointmentGridCard';
 import { createAppointmentFormDraft } from '../utils/servicePricing';
 import { getAvailableAgendaStartTimes, isAgendaStartTimeAvailable } from '../utils/agendaAvailability';
 
@@ -166,6 +166,10 @@ export default function AgendaModule({
 
   const selectedDayStr = `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}-${selectedDay.toString().padStart(2, '0')}`;
   const selectedDayAppointments = appointments.filter(a => a.dateTime.startsWith(selectedDayStr));
+  const chronologicalSelectedDayAppointments = useMemo(
+    () => [...selectedDayAppointments].sort((a, b) => a.dateTime.localeCompare(b.dateTime)),
+    [selectedDayAppointments]
+  );
 
   // Determine standard operational hours from dynamic agenda config
   const baseHours = useMemo(() => {
@@ -174,6 +178,41 @@ export default function AgendaModule({
     }
     return ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
   }, [config]);
+
+  const defaultNewAppointmentTime = useMemo(() => {
+    const defaultServiceDuration = services[0]?.estimatedTime || 60;
+    const availableTimes = getAvailableAgendaStartTimes({
+      agenda,
+      appointments,
+      services,
+      date: selectedDayStr,
+      serviceDuration: defaultServiceDuration
+    }).map(option => option.time);
+
+    if (availableTimes.length === 0) {
+      return baseHours[0] || '08:00';
+    }
+
+    const lastAppointmentEndMinutes = selectedDayAppointments
+      .filter(appt => appt.status !== 'cancelado')
+      .reduce((latestEnd, appt) => {
+        const appointmentTime = appt.dateTime.split('T')[1]?.slice(0, 5);
+        if (!appointmentTime) return latestEnd;
+        const appointmentService = services.find(service => service.id === appt.serviceId);
+        const duration = appt.durationTotal || appointmentService?.estimatedTime || 60;
+        return Math.max(latestEnd, timeToMinutes(appointmentTime) + duration);
+      }, -1);
+
+    if (lastAppointmentEndMinutes < 0) {
+      return availableTimes[0];
+    }
+
+    const firstAfterLastAppointment = availableTimes.find(time => (
+      timeToMinutes(time) >= lastAppointmentEndMinutes
+    ));
+
+    return firstAfterLastAppointment || availableTimes[0];
+  }, [agenda, appointments, services, selectedDayAppointments, selectedDayStr, baseHours]);
 
   // Handle Duplicating an Appointment on the same day slot
   const handleDuplicateAppointment = async (apptId: string) => {
@@ -515,22 +554,6 @@ export default function AgendaModule({
   // Filter vehicles for currently chosen customer in booking form
   const bookingVehicles = vehicles.filter(v => v.customerId === formData.customerId);
 
-  // Render time slots dropdown options
-  const selectedFormService = services.find(s => s.id === formData.serviceId);
-  const activeSlotsOptions = getAvailableAgendaStartTimes({
-    agenda,
-    appointments,
-    services,
-    date: selectedDayStr,
-    serviceDuration: selectedFormService?.estimatedTime || 60,
-    excludeAppointmentId: editingApptId || undefined
-  }).map(option => ({
-    time: option.time,
-    capacity: option.capacity,
-    occupancy: option.occupancy,
-    isFull: false
-  }));
-
   const addModalElement = isAddOpen && (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-scaleUp">
@@ -610,26 +633,20 @@ export default function AgendaModule({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Horário *</label>
-              <select
+              <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Horario *</label>
+              <input
+                type="time"
                 required
-                disabled={isSaving || activeSlotsOptions.length === 0}
-                value={activeSlotsOptions.some(opt => opt.time === formData.time) ? formData.time : ''}
+                disabled={isSaving}
+                value={formData.time}
                 onChange={(e) => setFormData({ ...formData, time: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white font-mono disabled:opacity-50"
-              >
-                <option value="" disabled>{activeSlotsOptions.length === 0 ? 'Nenhum horário disponível' : 'Selecione um horário...'}</option>
-                {activeSlotsOptions.map(opt => (
-                  <option key={opt.time} value={opt.time} disabled={opt.isFull && !editingApptId}>
-                    {opt.time} {opt.isFull ? '• Lotado' : `• (${opt.occupancy}/${opt.capacity} vagas)`}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Preço Final (R$) *</label>
-              <input 
-                type="number" 
+              <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Preco Final (R$) *</label>
+              <input
+                type="number"
                 required
                 min="0"
                 step="0.01"
@@ -712,7 +729,7 @@ export default function AgendaModule({
               Agenda Diária • {String(selectedDay).padStart(2, '0')}/{String(currentMonthIdx + 1).padStart(2, '0')}/{currentYear}
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Visualização operacional completa com quadro de horários em tempo real.
+              Visualização operacional completa com Agendamentos do Dia em tempo real.
             </p>
           </div>
           <div className="flex items-center gap-3 w-full md:w-auto">
@@ -724,7 +741,7 @@ export default function AgendaModule({
             </button>
             {canCreate && (
               <button 
-                onClick={() => openNewAppointment(baseHours[0] || '08:00')}
+                onClick={() => openNewAppointment(defaultNewAppointmentTime)}
                 className="px-5 py-2.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl shadow-[0_0_15px_rgba(14,165,233,0.35)] transition-all cursor-pointer"
               >
                 + Novo Agendamento
@@ -785,45 +802,27 @@ export default function AgendaModule({
           </div>
         </div>
 
-        {/* 3x3 chronological grid */}
+        {/* Cards cronologicos */}
         <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4">
           <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Quadro de Horários</h2>
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Agendamentos do Dia</h2>
             <span className="text-[10px] text-slate-400 font-mono">Ordenados Cronologicamente</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {baseHours.map((hour) => {
-              const appt = selectedDayAppointments.find(a => {
-                const timePart = a.dateTime.split('T')[1];
-                return timePart && timePart.startsWith(hour);
-              });
-
-              if (appt) {
-                return (
-                  <AppointmentGridCard
-                    key={appt.id}
-                    appt={appt}
-                    customers={customers}
-                    vehicles={vehicles}
-                    services={services}
-                    onEditClick={handleEditClick}
-                    onDuplicateClick={handleDuplicateAppointment}
-                    onUpdateStatus={handleUpdateStatus}
-                    canCreate={canCreate}
-                    canEdit={canEdit}
-                  />
-                );
-              } else {
-                return (
-                  <EmptySlotCard
-                    key={hour}
-                    hour={hour}
-                    onBookClick={openNewAppointment}
-                    canCreate={canCreate}
-                  />
-                );
-              }
-            })}
+            {chronologicalSelectedDayAppointments.map((appt) => (
+              <AppointmentGridCard
+                key={appt.id}
+                appt={appt}
+                customers={customers}
+                vehicles={vehicles}
+                services={services}
+                onEditClick={handleEditClick}
+                onDuplicateClick={handleDuplicateAppointment}
+                onUpdateStatus={handleUpdateStatus}
+                canCreate={canCreate}
+                canEdit={canEdit}
+              />
+            ))}
           </div>
         </div>
 
@@ -879,7 +878,7 @@ export default function AgendaModule({
               </h3>
             </div>
             <button 
-              onClick={() => openNewAppointment(agenda.timeSlots[0]?.time || '08:00')}
+              onClick={() => openNewAppointment(defaultNewAppointmentTime)}
               className="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 font-bold text-[11px] text-white rounded-xl shadow-md flex items-center gap-1.5 transition-colors cursor-pointer"
               id="btn-new-appointment"
             >
@@ -895,7 +894,7 @@ export default function AgendaModule({
             </div>
           ) : (
             <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1">
-              {selectedDayAppointments.map((appt) => {
+              {chronologicalSelectedDayAppointments.map((appt) => {
                 const client = customers.find(c => c.id === appt.customerId);
                 const vehicle = vehicles.find(v => v.id === appt.vehicleId);
                 const service = services.find(s => s.id === appt.serviceId);

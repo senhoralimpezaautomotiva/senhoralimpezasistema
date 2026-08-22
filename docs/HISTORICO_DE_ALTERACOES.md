@@ -4948,3 +4948,43 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter as alteracoes nos arquivos listados nesta entrada.
+
+---
+
+## 2026-08-22-003 - Agenda com cards dinamicos e horario inicial inteligente
+
+**Etapa relacionada:** Ajuste visual da tela Agenda administrativa.
+
+**Objetivo:** Usar na tela Agenda o mesmo padrao de cards dinamicos do Dashboard, sem cards de horarios fixos, e iniciar o formulario no primeiro horario livre apos o ultimo agendamento do dia.
+
+### Trabalho realizado
+
+- A visualizacao diaria da Agenda deixou de renderizar cards vazios baseados em horarios fixos.
+- Os agendamentos reais do dia selecionado agora sao exibidos em ordem cronologica.
+- A fila lateral do modo mensal tambem passou a usar a mesma ordenacao cronologica.
+- O formulario de novo agendamento passa a ser pre-preenchido com o primeiro horario livre apos o fim do ultimo agendamento ativo do dia, com fallback para o primeiro horario valido disponivel.
+- O campo de horario do formulario foi mantido totalmente editavel por meio de input de hora.
+- A validacao existente de disponibilidade no envio do formulario foi preservada.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/AgendaModule.tsx`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- RLS, Auth, migrations, hospedagem, deploy e servicos externos: nenhuma alteracao.
+
+### Verificacoes e resultados
+
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- O horario sugerido usa a duracao do primeiro servico padrao do formulario; se o usuario selecionar outro servico, a validacao final existente continua impedindo horarios invalidos.
+
+### Como desfazer
+
+- Reverter as alteracoes nos arquivos listados nesta entrada.
