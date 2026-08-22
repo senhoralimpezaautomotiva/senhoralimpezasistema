@@ -4519,6 +4519,45 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 ---
 
+## 2026-08-22-002 - Dashboard com cards cronologicos da agenda
+
+**Etapa relacionada:** Ajuste visual da agenda no dashboard administrativo.
+
+**Objetivo:** Exibir os agendamentos do dia como cards dinamicos em ordem cronologica, sem cards gerados por horarios fixos.
+
+### Trabalho realizado
+
+- Alterada apenas a apresentacao da agenda no dashboard.
+- A grade visual deixou de gerar cards a partir dos horarios base.
+- Cada agendamento do dia agora renderiza um card na sequencia cronologica real.
+- Mantido um card final para iniciar novo agendamento de cliente.
+- Mantidos os mesmos dados, handlers, drawer de edicao e fluxo de criacao existentes.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/DashboardModule.tsx`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Banco de dados: nenhuma alteracao.
+- RLS, Auth, migrations, hospedagem e deploy: nenhuma alteracao.
+
+### Verificacoes e resultados
+
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- O card final usa o fluxo atual de novo agendamento; nenhuma regra de disponibilidade foi modificada.
+
+### Como desfazer
+
+- Reverter as alteracoes nos arquivos listados nesta entrada.
+
+---
+
 ## 2026-08-19-013 - Persistencia dos links sociais nas configuracoes
 
 **Etapa relacionada:** Correcao dos campos Instagram e Google Maps na tela de Configuracoes.
