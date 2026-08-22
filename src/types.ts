@@ -102,6 +102,8 @@ export interface Appointment {
   startedAt?: string;
   concludedAt?: string;
   reminderSent?: boolean;
+  budgetId?: string;
+  budgetItemIds?: string[];
   changelog?: Array<{
     date: string;
     user: string;
@@ -149,6 +151,7 @@ export interface AutomationTrigger {
 }
 
 export type BudgetStatus = 'rascunho' | 'enviado' | 'aceito' | 'recusado' | 'cancelado' | 'vencido' | 'convertido';
+export type BudgetItemStatus = 'pendente' | 'agendado' | 'concluido' | 'cancelado';
 
 export interface BudgetItem {
   id: string;
@@ -158,6 +161,10 @@ export interface BudgetItem {
   quantity: number;
   unitPrice: number;
   total: number;
+  status?: BudgetItemStatus;
+  appointmentId?: string;
+  convertedAt?: string;
+  concludedAt?: string;
 }
 
 export interface Budget {

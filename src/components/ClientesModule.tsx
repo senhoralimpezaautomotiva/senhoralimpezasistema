@@ -26,16 +26,19 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { Customer, Vehicle, HistoryRecord, LoyaltyCardEntry } from '../types';
+import { Appointment, Budget, Customer, Vehicle, HistoryRecord, LoyaltyCardEntry } from '../types';
 import { hasModulePermission } from '../db/localDb';
 import { safeLog } from '../security/safeOutput';
 import { useVehicleCatalog } from '../hooks/useVehicleCatalog';
 import { resolveVehiclePorte } from '../utils/vehicleCatalog';
+import { getBudgetItemStatus, getBudgetProgress } from '../utils/budgetLifecycle';
 
 interface ClientesModuleProps {
   customers: Customer[];
   vehicles: Vehicle[];
   history: HistoryRecord[];
+  budgets: Budget[];
+  appointments: Appointment[];
   currentUser?: any;
   onAddCustomer: (customer: Omit<Customer, 'id' | 'clientSince' | 'lastServiceDate'>) => Promise<any>;
   onUpdateCustomer: (id: string, customer: Partial<Customer>) => Promise<any>;
@@ -52,6 +55,8 @@ export default function ClientesModule({
   customers, 
   vehicles, 
   history, 
+  budgets,
+  appointments,
   currentUser,
   onAddCustomer, 
   onUpdateCustomer, 
@@ -445,6 +450,12 @@ export default function ClientesModule({
 
   const customerVehicles = selectedCustomer ? vehicles.filter(v => v.customerId === selectedCustomer.id) : [];
   const customerHistory = selectedCustomer ? history.filter(h => h.customerId === selectedCustomer.id) : [];
+  const customerBudgets = selectedCustomer
+    ? budgets.filter(budget => budget.customerId === selectedCustomer.id)
+    : [];
+  const pendingBudgetItemsCount = customerBudgets.reduce((sum, budget) => (
+    sum + getBudgetProgress(budget, appointments).pendingItems
+  ), 0);
   const customerLoyaltyEntries = selectedCustomer ? loyaltyEntries.filter(entry => entry.customerId === selectedCustomer.id) : [];
   const customerLoyaltyBalance = Math.max(0, customerLoyaltyEntries.reduce((sum, entry) => sum + entry.delta, 0));
 
@@ -721,6 +732,69 @@ export default function ClientesModule({
                   </div>
                 )}
               </div>
+
+              {customerBudgets.length > 0 && (
+                <section className="space-y-3 bg-slate-950/60 border border-slate-800 p-4 rounded-xl">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase flex items-center gap-1.5">
+                        <FileText size={13} className="text-sky-400" />
+                        Orcamentos
+                      </h4>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        {pendingBudgetItemsCount > 0
+                          ? `${pendingBudgetItemsCount} servico(s) orcado(s) pendente(s)`
+                          : 'Sem itens pendentes'}
+                      </p>
+                    </div>
+                    {pendingBudgetItemsCount > 0 && (
+                      <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase text-amber-300">
+                        Orcamento pendente
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-2 max-h-56 overflow-y-auto">
+                    {customerBudgets.map(budget => {
+                      const progress = getBudgetProgress(budget, appointments);
+                      return (
+                        <div key={budget.id} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-xs font-bold text-white">
+                                Orcamento #{budget.number || budget.id.slice(0, 8)}
+                              </div>
+                              <div className="text-[10px] text-slate-500">
+                                {new Date(budget.createdAt).toLocaleDateString('pt-BR')} - R$ {budget.total.toFixed(2)}
+                              </div>
+                            </div>
+                            <span className="text-[9px] uppercase text-slate-300">{progress.label}</span>
+                          </div>
+                          <div className="mt-2 text-[10px] text-slate-400">
+                            {progress.completedItems} de {progress.totalItems} servico(s) concluido(s)
+                          </div>
+                          <div className="mt-2 space-y-1">
+                            {budget.items.map(item => {
+                              const itemStatus = getBudgetItemStatus(item, appointments);
+                              return (
+                                <div key={item.id} className="flex items-center justify-between gap-2 text-[10px]">
+                                  <span className="truncate text-slate-300">{item.description}</span>
+                                  <span className={`shrink-0 font-mono ${
+                                    itemStatus === 'concluido' ? 'text-emerald-400' :
+                                      itemStatus === 'agendado' ? 'text-sky-400' :
+                                        itemStatus === 'cancelado' ? 'text-rose-400' : 'text-amber-300'
+                                  }`}>
+                                    {itemStatus}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
 
               <section className="space-y-3 bg-slate-950/60 border border-slate-800 p-4 rounded-xl" id="customer-loyalty-card">
                 <div className="flex justify-between items-center">

@@ -5031,3 +5031,219 @@ As alterações funcionais e migrations estão relacionadas na entrada
 ### Como desfazer
 
 - Reverter as alteracoes nos arquivos listados nesta entrada.
+
+---
+
+## 2026-08-22-005 - Orcamento vivo com itens rastreaveis
+
+**Etapa relacionada:** Evolucao do modulo de Orcamentos para acompanhar conversao parcial e execucao por item.
+
+**Objetivo:** Manter o orcamento vinculado ao cliente apos o envio, com acompanhamento individual dos itens orcados, convertidos, agendados, concluidos, cancelados ou pendentes.
+
+### Trabalho realizado
+
+- Mapeada a arquitetura existente: `OrcamentosModule`, tabelas `orcamentos` e `orcamento_itens`, criacao/finalizacao de agendamentos em `localDb`, templates de WhatsApp e automacoes `orcamento_enviado`, `orcamento_followup_7d` e `orcamento_followup_14d`.
+- Criado helper de ciclo de vida para calcular status geral e pendencias a partir dos itens, preservando compatibilidade com orcamentos antigos.
+- O item de orcamento passou a suportar status proprio e vinculo por ID com agendamento.
+- A conversao parcial foi adicionada ao modulo de Orcamentos, permitindo selecionar somente itens pendentes, escolher data/hora e criar agendamento pelo fluxo central existente.
+- A criacao/finalizacao/cancelamento de agendamento vinculado atualiza os itens do orcamento e recalcula o status geral.
+- A policy de follow-up de orcamento agora considera itens pendentes; orcamentos totalmente resolvidos nao seguem no acompanhamento comercial.
+- A ficha do cliente passou a exibir sinalizacao discreta dos orcamentos e itens pendentes.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `src/utils/budgetLifecycle.ts`.
+- Criado: `tests/budget-lifecycle.test.ts`.
+- Criado: `supabase/migrations/20260822203000_orcamento_vivo_itens_agendamentos.sql`.
+- Alterado: `src/types.ts`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `src/db/budgetPolicy.ts`.
+- Alterado: `src/App.tsx`.
+- Alterado: `src/components/OrcamentosModule.tsx`.
+- Alterado: `src/components/ClientesModule.tsx`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Criada migration local aditiva, ainda nao aplicada em producao.
+- A migration adiciona colunas opcionais/compativeis em `orcamento_itens` e `agendamentos`; nao remove dados nem altera RLS.
+- Portal do Cliente, Auth, RLS, disponibilidade dinamica da agenda, Dashboard e `DailyTimeline`: nenhuma alteracao intencional.
+- Deploy, push e commit: nao executados nesta etapa.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/budget-lifecycle.test.ts`: aprovado, cobrindo conversao parcial, conclusao total, follow-up com item pendente e orcamento antigo.
+- `npx tsx --test tests/automation-behavior.test.ts`: aprovado, preservando automacoes existentes de orcamento em 7 e 14 dias.
+- `npm run test:db001`: aprovado apos classificar a nova migration no manifesto.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A migration precisa ser aplicada no ambiente alvo antes de usar a conversao em producao.
+- Itens manuais sem `servico_id` continuam exibidos e rastreados, mas nao sao convertidos automaticamente em agendamento porque a agenda exige um servico cadastrado.
+- A conversao usa o fluxo central de criacao de agendamento e a validacao compartilhada de disponibilidade; nao substitui validacoes finais existentes.
+- A interface de ficha do cliente exibe acompanhamento e pendencias, mas nao cria um relatorio comercial novo nesta etapa.
+
+### Como desfazer
+
+- Reverter os arquivos listados nesta entrada.
+- Caso a migration ja tenha sido aplicada em algum banco, deixar as colunas aditivas sem uso ou planejar rollback controlado apos backup; nao ha exclusao automatica de dados nesta entrega.
+
+---
+
+## 2026-08-22-006 - Correcoes de bloqueadores do Orcamento Vivo
+
+**Etapa relacionada:** Revisao tecnica final da implementacao de Orcamento Vivo.
+
+**Objetivo:** Corrigir cancelamento/reagendamento, atomicidade, duplicidade concorrente e tratamento de itens manuais antes de commit, push ou aplicacao em producao.
+
+### Trabalho realizado
+
+- Ajustada a migration local do Orcamento Vivo para incluir uma RPC transacional `fn_converter_itens_orcamento_em_agendamento`.
+- A RPC valida usuario administrativo ativo, orcamento, cliente, veiculo, itens pertencentes ao orcamento, status pendente e existencia de `servico_id`.
+- Os itens selecionados sao bloqueados com `FOR UPDATE` antes da conversao, reduzindo risco de conversao concorrente duplicada.
+- A criacao do agendamento, o vinculo `orcamento_id`/`orcamento_item_ids`, a atualizacao dos itens e o recalculo do orcamento passam a ocorrer na mesma transacao da RPC no Supabase.
+- No runtime local, a conversao passou por metodo dedicado `convertBudgetItemsToAppointment`, com as mesmas validacoes de itens pendentes e itens manuais.
+- Ao cancelar um agendamento vinculado antes da conclusao, o item do orcamento volta para `pendente`, limpa o agendamento ativo do item e fica disponivel para reagendamento; o agendamento cancelado preserva o vinculo historico.
+- Itens manuais sem `servico_id` continuam visiveis no orcamento, mas ficam desabilitados na conversao automatica e recebem mensagem explicativa.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `supabase/migrations/20260822203000_orcamento_vivo_itens_agendamentos.sql`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `src/App.tsx`.
+- Alterado: `src/components/OrcamentosModule.tsx`.
+- Alterado: `tests/budget-lifecycle.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Nenhuma migration foi aplicada em producao.
+- Nenhuma alteracao de RLS, Auth, service role, credenciais, deploy, push ou commit.
+- A migration segue local e aditiva, aguardando revisao/aplicacao manual futura.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/budget-lifecycle.test.ts`: aprovado com cenarios de cancelamento/reagendamento, segunda conversao, duplicidade, itens manuais e evidencia da RPC transacional.
+- `npx tsx --test tests/automation-behavior.test.ts`: aprovado, preservando automacoes existentes e follow-ups de orcamento.
+- `npm run test:db001`: aprovado.
+- `npm run lint`: aprovado.
+- `npm run build`: pendente nesta entrada ate a validacao final.
+
+### Riscos, limitacoes e pendencias
+
+- A validacao local de concorrencia e uma aproximacao; a protecao persistente real esta na RPC por lock de linhas no banco.
+- A RPC ainda depende das validacoes existentes de disponibilidade de agenda feitas no aplicativo antes da chamada.
+- Itens manuais precisam ser vinculados a um servico cadastrado antes de conversao automatica.
+
+### Como desfazer
+
+- Reverter os arquivos listados nesta entrada.
+- Como nenhuma migration foi aplicada em ambiente externo, nao ha rollback de banco nesta etapa.
+
+---
+
+## 2026-08-22-007 - Endurecimento de seguranca da RPC do Orcamento Vivo
+
+**Etapa relacionada:** Correcao dos bloqueadores de seguranca identificados na RPC transacional de conversao.
+
+**Objetivo:** Impedir que usuarios autenticados sem permissao adequada chamem diretamente a RPC de conversao e impedir controle arbitrario do status inicial do agendamento.
+
+### Trabalho realizado
+
+- Revisado o modelo atual de permissoes: `permissions` por modulo/acao, com fallback por `perfil` conforme defaults do sistema.
+- A RPC `fn_converter_itens_orcamento_em_agendamento` passou a validar explicitamente `auth.uid()`.
+- A RPC consulta `public.usuarios` e exige usuario com `auth_user_id = auth.uid()`, `status = 'ativo'`, permissao efetiva para `orcamentos.create` ou `orcamentos.edit`, e permissao efetiva para `agenda.create`.
+- Mantido `SECURITY DEFINER` com `SET search_path = ''`, objetos qualificados com schema `public` e sem SQL dinamico.
+- Removido `p_status` da assinatura da RPC; o agendamento criado por conversao nasce sempre com status persistido `Agendado`.
+- Atualizada a chamada da RPC no runtime para a nova assinatura.
+- Adicionados testes estaticos de seguranca para autorizacao interna, menor privilegio de `EXECUTE` e neutralizacao de status arbitrario.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `supabase/migrations/20260822203000_orcamento_vivo_itens_agendamentos.sql`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `tests/budget-lifecycle.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Nenhuma migration foi aplicada em producao.
+- Nenhuma policy RLS, Auth, credencial, service role, deploy, push ou commit foi alterado/executado.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/budget-lifecycle.test.ts`: aprovado, incluindo testes de seguranca da RPC.
+- `npx tsx --test tests/automation-behavior.test.ts`: aprovado.
+- `npm run test:db001`: aprovado.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A validacao de seguranca da RPC ainda nao foi executada contra um banco real nesta etapa; a migration permanece local e nao aplicada.
+- A permissao efetiva replica o modelo do frontend com fallback por perfil e overrides em `permissions`.
+
+### Como desfazer
+
+- Reverter os arquivos listados nesta entrada.
+- Como nada foi aplicado em ambiente externo, nao ha rollback de banco nesta etapa.
+
+---
+
+## 2026-08-22-008 - Finalizacao local do Orcamento Vivo para commit e push
+
+**Etapa relacionada:** Finalizacao da implementacao aprovada do Orcamento Vivo.
+
+**Objetivo:** Consolidar a funcionalidade em um commit unico, apos validar ciclo de vida, conversao parcial, cancelamento, atomicidade, concorrencia, seguranca da RPC e preservacao das areas fora do escopo.
+
+### Trabalho realizado
+
+- Reexecutadas as validacoes finais solicitadas antes do commit.
+- Revisado o status e o diff do worktree para separar somente os arquivos pertencentes ao Orcamento Vivo.
+- Confirmado que `ClientPortal`, `agendaAvailability`, `DailyTimeline`, `DashboardModule` e `AgendaModule` nao possuem alteracoes nesta etapa.
+- Mantida a migration local sem aplicacao em producao.
+- Mantido deploy manual pendente para etapa posterior.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `src/utils/budgetLifecycle.ts`.
+- Criado: `tests/budget-lifecycle.test.ts`.
+- Criado: `supabase/migrations/20260822203000_orcamento_vivo_itens_agendamentos.sql`.
+- Alterado: `src/types.ts`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `src/db/budgetPolicy.ts`.
+- Alterado: `src/App.tsx`.
+- Alterado: `src/components/OrcamentosModule.tsx`.
+- Alterado: `src/components/ClientesModule.tsx`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Nenhuma migration foi aplicada em producao.
+- Nenhuma alteracao foi feita em RLS existente, Auth, service role, credenciais ou configuracoes externas.
+- Nenhum deploy foi executado nesta etapa.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/budget-lifecycle.test.ts`: aprovado, 12 testes.
+- `npx tsx --test tests/automation-behavior.test.ts`: aprovado, 41 testes.
+- `npm run test:db001`: aprovado, 11 testes.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A migration ainda precisa ser aplicada e validada no banco de producao antes do deploy do codigo.
+- A RPC foi validada por testes locais/estaticos nesta etapa; a validacao contra o banco real fica pendente para a etapa controlada de migration.
+- Alteracoes antigas e nao relacionadas permanecem no worktree fora do commit.
+
+### Como desfazer
+
+- Reverter o commit desta funcionalidade.
+- Caso a migration venha a ser aplicada no futuro, planejar rollback controlado apos backup; nesta etapa nao houve alteracao externa de banco.

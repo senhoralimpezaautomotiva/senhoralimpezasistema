@@ -525,6 +525,18 @@ export default function App() {
     syncWithDatabase();
   };
 
+  const handleConvertBudgetItemsToAppointment = async (
+    budgetId: string,
+    itemIds: string[],
+    appointment: Omit<Appointment, 'id' | 'budgetId' | 'budgetItemIds'>
+  ) => {
+    if (itemIds.length === 0) {
+      throw new Error('Selecione ao menos um item pendente do orçamento.');
+    }
+    await dbInstance.convertBudgetItemsToAppointment(budgetId, itemIds, appointment);
+    syncWithDatabase();
+  };
+
   // Finances handlers
   const handleAddTransaction = async (t: Omit<CashTransaction, 'id'>) => {
     try {
@@ -705,6 +717,7 @@ export default function App() {
             customers={customers}
             vehicles={vehicles}
             history={history}
+            budgets={budgets}
             currentUser={user}
             onAddCustomer={handleAddCustomer}
             onUpdateCustomer={handleUpdateCustomer}
@@ -742,6 +755,9 @@ export default function App() {
             onSend={handleSendBudget}
             onUpdateStatus={handleUpdateBudgetStatus}
             onAddCustomer={handleAddCustomer}
+            appointments={appointments}
+            config={config}
+            onConvertItemsToAppointment={handleConvertBudgetItemsToAppointment}
           />
         );
       case 'agenda':

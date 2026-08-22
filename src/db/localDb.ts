@@ -30,6 +30,7 @@ import {
   BudgetStatus,
   LoyaltyCardEntry
 } from '../types';
+import { getBudgetItemStatus, getBudgetProgress } from '../utils/budgetLifecycle';
 import { PREFILLED_VEHICLE_MODELS } from '../data/prefilledModels';
 import { getCurrentDateStr } from '../utils/dateUtils';
 import { sanitizeLegacyConfigStorage, toPublicSystemConfig } from '../security/publicConfig';
@@ -941,6 +942,8 @@ export function mapDbAppointmentToFrontend(row: any): Appointment {
   let startedAt: string | undefined = undefined;
   let concludedAt: string | undefined = undefined;
   let reminderSent = false;
+  let budgetId: string | undefined = undefined;
+  let budgetItemIds: string[] | undefined = undefined;
 
   const metaRegex = /\[meta:([\s\S]*?)\]\s*$/;
   const match = notes.match(metaRegex);
@@ -954,6 +957,8 @@ export function mapDbAppointmentToFrontend(row: any): Appointment {
       if (meta.startedAt) startedAt = meta.startedAt;
       if (meta.concludedAt) concludedAt = meta.concludedAt;
       if (meta.reminderSent !== undefined) reminderSent = !!meta.reminderSent;
+      if (meta.budgetId) budgetId = meta.budgetId;
+      if (Array.isArray(meta.budgetItemIds)) budgetItemIds = meta.budgetItemIds;
       notes = notes.replace(metaRegex, '').trim();
     } catch (e) {
       safeLog('error', 'appointment.metadata.parse', 'error', {
@@ -981,7 +986,9 @@ export function mapDbAppointmentToFrontend(row: any): Appointment {
     updatedAt: row.updated_at,
     startedAt,
     concludedAt,
-    reminderSent
+    reminderSent,
+    budgetId: row.orcamento_id || budgetId,
+    budgetItemIds: Array.isArray(row.orcamento_item_ids) ? row.orcamento_item_ids : budgetItemIds
   };
 }
 
@@ -1020,9 +1027,11 @@ export function mapFrontendAppointmentToDb(a: Partial<Appointment>): any {
   
   if (a.value !== undefined) row.valor_servico = a.value;
   if (a.durationTotal !== undefined) row.tempo_real = a.durationTotal;
+  if (a.budgetId !== undefined) row.orcamento_id = a.budgetId || null;
+  if (a.budgetItemIds !== undefined) row.orcamento_item_ids = a.budgetItemIds;
   
   let notes = a.notes || '';
-  const hasExtra = a.employeeId || a.discount !== undefined || a.addition !== undefined || a.serviceIds || a.startedAt || a.concludedAt || a.reminderSent !== undefined;
+  const hasExtra = a.employeeId || a.discount !== undefined || a.addition !== undefined || a.serviceIds || a.startedAt || a.concludedAt || a.reminderSent !== undefined || a.budgetId || a.budgetItemIds;
   if (hasExtra) {
     const meta: any = {};
     if (a.employeeId) meta.employeeId = a.employeeId;
@@ -1032,6 +1041,8 @@ export function mapFrontendAppointmentToDb(a: Partial<Appointment>): any {
     if (a.startedAt) meta.startedAt = a.startedAt;
     if (a.concludedAt) meta.concludedAt = a.concludedAt;
     if (a.reminderSent !== undefined) meta.reminderSent = a.reminderSent;
+    if (a.budgetId) meta.budgetId = a.budgetId;
+    if (a.budgetItemIds) meta.budgetItemIds = a.budgetItemIds;
     notes = `${notes} [meta:${JSON.stringify(meta)}]`.trim();
   }
   row.observacoes = notes;
@@ -1047,7 +1058,11 @@ export function mapDbBudgetItemToFrontend(row: any): BudgetItem {
     description: row.descricao || '',
     quantity: Number(row.quantidade) || 0,
     unitPrice: Number(row.valor_unitario) || 0,
-    total: Number(row.total) || 0
+    total: Number(row.total) || 0,
+    status: row.status || undefined,
+    appointmentId: row.agendamento_id || undefined,
+    convertedAt: row.converted_at || undefined,
+    concludedAt: row.concluded_at || undefined
   };
 }
 
@@ -2037,6 +2052,8 @@ class LocalDatabase {
     }
     
     this.appointments.push(newAppointment);
+    this.markBudgetItemsScheduled(newAppointment);
+    await this.syncBudgetItemsForAppointment(newAppointment);
     this.save();
 
     // Trigger Automation
@@ -2049,6 +2066,129 @@ class LocalDatabase {
     }
 
     return newAppointment;
+  }
+
+  private markBudgetItemsScheduled(appointment: Appointment): void {
+    if (!appointment.budgetId || !appointment.budgetItemIds?.length) return;
+    const budget = this.budgets.find(item => item.id === appointment.budgetId);
+    if (!budget) return;
+    const now = new Date().toISOString();
+    const itemIds = new Set(appointment.budgetItemIds);
+    budget.items = budget.items.map(item => {
+      if (!itemIds.has(item.id)) return item;
+      if (getBudgetItemStatus(item, this.appointments) !== 'pendente') return item;
+      return {
+        ...item,
+        status: 'agendado',
+        appointmentId: appointment.id,
+        convertedAt: now
+      };
+    });
+    budget.status = getBudgetProgress(budget, this.appointments).status;
+    budget.updatedAt = now;
+  }
+
+  private async syncBudgetItemsForAppointment(appointment: Appointment): Promise<void> {
+    if (!appointment.budgetId || !appointment.budgetItemIds?.length) return;
+    const budget = this.budgets.find(item => item.id === appointment.budgetId);
+    if (!budget) return;
+    const now = new Date().toISOString();
+    const itemIds = new Set(appointment.budgetItemIds);
+    const nextStatus = appointment.status === 'finalizado' || appointment.status === 'entregue'
+      ? 'concluido'
+      : appointment.status === 'cancelado'
+        ? 'pendente'
+        : 'agendado';
+
+    budget.items = budget.items.map(item => itemIds.has(item.id)
+      ? {
+        ...item,
+        status: nextStatus,
+        appointmentId: nextStatus === 'pendente' ? undefined : appointment.id,
+        convertedAt: nextStatus === 'pendente' ? undefined : (item.convertedAt || now),
+        concludedAt: nextStatus === 'concluido' ? (appointment.concludedAt || now) : item.concludedAt
+      }
+      : item
+    );
+    budget.status = getBudgetProgress(budget, this.appointments).status;
+    budget.updatedAt = now;
+
+    if (this.config.useRealSupabase) {
+      const supabase = this.getSupabaseClient();
+      const results = await Promise.all(budget.items
+        .filter(item => itemIds.has(item.id))
+        .map(item => supabase
+          .from('orcamento_itens')
+          .update({
+            status: item.status,
+            agendamento_id: item.appointmentId || null,
+            converted_at: item.convertedAt || null,
+            concluded_at: item.concludedAt || null
+          })
+          .eq('id', item.id)
+        ));
+      const failed = results.find(result => result.error);
+      if (failed?.error) {
+        safeLog('error', 'budget.item.sync', 'error', { entityId: appointment.budgetId, error: failed.error });
+        throw failed.error;
+      }
+      const { error } = await supabase.from('orcamentos').update({ status: budget.status }).eq('id', budget.id);
+      if (error) {
+        safeLog('error', 'budget.status.sync', 'error', { entityId: budget.id, error });
+        throw error;
+      }
+    }
+  }
+
+  async convertBudgetItemsToAppointment(
+    budgetId: string,
+    itemIds: string[],
+    appointment: Omit<Appointment, 'id' | 'budgetId' | 'budgetItemIds'>
+  ): Promise<Appointment> {
+    const budget = this.budgets.find(item => item.id === budgetId);
+    if (!budget || itemIds.length === 0) {
+      throw new Error('Selecione ao menos um item pendente do orçamento.');
+    }
+    const selectedItems = budget.items.filter(item => itemIds.includes(item.id));
+    if (selectedItems.length !== itemIds.length) {
+      throw new Error('Um ou mais itens selecionados não pertencem ao orçamento.');
+    }
+    if (selectedItems.some(item => getBudgetItemStatus(item, this.appointments) !== 'pendente')) {
+      throw new Error('Um ou mais itens já foram convertidos ou concluídos.');
+    }
+    if (selectedItems.some(item => !item.serviceId)) {
+      throw new Error('Itens manuais sem serviço cadastrado não podem ser convertidos automaticamente.');
+    }
+
+    if (this.config.useRealSupabase) {
+      const supabase = this.getSupabaseClient();
+      const [date, time = '09:00'] = appointment.dateTime.split('T');
+      const { data, error } = await supabase.rpc('fn_converter_itens_orcamento_em_agendamento', {
+        p_orcamento_id: budgetId,
+        p_item_ids: itemIds,
+        p_cliente_id: appointment.customerId,
+        p_veiculo_id: appointment.vehicleId,
+        p_data_agendamento: date,
+        p_hora_agendamento: `${time.slice(0, 5)}:00`,
+        p_valor_servico: appointment.value,
+        p_tempo_real: appointment.durationTotal || 60,
+        p_observacoes: mapFrontendAppointmentToDb(appointment).observacoes || ''
+      });
+      if (error || !data) {
+        safeLog('error', 'budget.convert', 'error', { entityId: budgetId, error });
+        throw error || new Error('Não foi possível converter o orçamento em agendamento.');
+      }
+      await this.syncWithSupabase();
+      const persisted = this.appointments.find(item => item.id === String(data));
+      if (!persisted) throw new Error('Agendamento criado, mas não recarregado.');
+      return persisted;
+    }
+
+    return this.addAppointment({
+      ...appointment,
+      budgetId,
+      budgetItemIds: itemIds
+    });
   }
 
   async updateAppointmentStatus(id: string, status: AppointmentStatus, notes?: string): Promise<void> {
@@ -2068,6 +2208,8 @@ class LocalDatabase {
       }
     }
 
+    this.save();
+    await this.syncBudgetItemsForAppointment(appointment);
     this.save();
 
     // Trigger appointment confirmed automation
@@ -2129,6 +2271,8 @@ class LocalDatabase {
       }
     }
 
+    this.save();
+    await this.syncBudgetItemsForAppointment(appointment);
     this.save();
 
     if (appointment.status === 'confirmado' && oldStatus !== 'confirmado') {

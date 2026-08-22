@@ -35,7 +35,8 @@
     "20260818120000_fix_loyalty_rewards_safe_portal_rpc.sql",
     "20260818130000_preserve_portal_create_agendamento_contract.sql",
     "20260818143000_loyalty_service_explicit_flag.sql",
-    "20260818193000_portal_social_location_links.sql"
+    "20260818193000_portal_social_location_links.sql",
+    "20260822203000_orcamento_vivo_itens_agendamentos.sql"
   ],
   "sqlArtifacts": [
     {
@@ -271,6 +272,15 @@
       "idempotent": "yes",
       "risk": "low",
       "recommendation": "Aplicar pelo Supabase CLI sem inserir manualmente em supabase_migrations.schema_migrations; o CLI registra a versao automaticamente."
+    },
+    {
+      "path": "supabase/migrations/20260822203000_orcamento_vivo_itens_agendamentos.sql",
+      "category": ["official-migration", "budgets", "appointments", "schema"],
+      "purpose": "Adiciona status por item de orcamento e vinculo rastreavel entre orcamento, item e agendamento para conversao parcial.",
+      "rerunnable": "yes",
+      "idempotent": "yes",
+      "risk": "medium",
+      "recommendation": "Aplicar apos backup e validacao local; migration aditiva, sem remocao de dados e sem alteracao de RLS."
     },
     {
       "path": "configuracoes_empresa.sql",

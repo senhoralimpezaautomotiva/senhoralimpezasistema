@@ -1,4 +1,5 @@
 import { Appointment, AutomationExecution, Budget } from '../types';
+import { budgetHasPendingItems } from '../utils/budgetLifecycle';
 
 export type BudgetAutomationEvent =
   | 'orcamento_enviado'
@@ -71,7 +72,10 @@ export const evaluateBudgetAutomation = (
       ? { action: 'cancel', reason: 'send_timestamp_missing' }
       : { action: 'wait', reason: 'initial_send_not_accepted' };
   }
-  if (hasLaterAppointment(input.budget, input.appointments, sentAnchor)) {
+  if (!budgetHasPendingItems(input.budget, input.appointments)) {
+    return { action: 'cancel', reason: 'budget_without_pending_items' };
+  }
+  if (!input.budget.items.some(item => item.status || item.appointmentId) && hasLaterAppointment(input.budget, input.appointments, sentAnchor)) {
     return { action: 'cancel', reason: 'appointment_after_budget_send' };
   }
 

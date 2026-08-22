@@ -1,27 +1,39 @@
 import React, { useMemo, useState } from 'react';
-import { Calculator, Check, Edit3, FileText, Plus, Save, Send, Trash2, UserPlus, X } from 'lucide-react';
+import { Calendar, Calculator, Check, Edit3, FileText, Plus, Save, Send, Trash2, UserPlus, X } from 'lucide-react';
 import {
+  Appointment,
   Budget,
   BudgetDraft,
   BudgetItem,
   BudgetStatus,
   Customer,
+  SystemConfig,
   Service,
   User,
   Vehicle
 } from '../types';
 import { getServicePrice, hasModulePermission } from '../db/localDb';
+import { getCurrentDateStr } from '../utils/dateUtils';
+import { getAvailableAgendaStartTimes, isAgendaStartTimeAvailable } from '../utils/agendaAvailability';
+import { getBudgetItemStatus, getBudgetProgress, getPendingBudgetItems } from '../utils/budgetLifecycle';
 
 interface OrcamentosModuleProps {
   budgets: Budget[];
   customers: Customer[];
   vehicles: Vehicle[];
   services: Service[];
+  appointments: Appointment[];
+  config: SystemConfig;
   currentUser: User;
   onSave: (draft: BudgetDraft) => Promise<Budget>;
   onSend: (id: string) => Promise<void>;
   onUpdateStatus: (id: string, status: Exclude<BudgetStatus, 'rascunho' | 'enviado'>) => Promise<void>;
   onAddCustomer: (customer: Omit<Customer, 'id' | 'clientSince' | 'lastServiceDate'>) => Promise<Customer>;
+  onConvertItemsToAppointment: (
+    budgetId: string,
+    itemIds: string[],
+    appointment: Omit<Appointment, 'id' | 'budgetId' | 'budgetItemIds'>
+  ) => Promise<void>;
 }
 
 const addDays = (days: number) => {
@@ -49,16 +61,24 @@ const statusLabel: Record<BudgetStatus, string> = {
   convertido: 'Convertido em agendamento'
 };
 
+const sumDuration = (items: BudgetItem[], services: Service[]): number => items.reduce((sum, item) => {
+  const service = item.serviceId ? services.find(candidate => candidate.id === item.serviceId) : undefined;
+  return sum + (service?.estimatedTime || 60) * item.quantity;
+}, 0);
+
 export default function OrcamentosModule({
   budgets,
   customers,
   vehicles,
   services,
+  appointments,
+  config,
   currentUser,
   onSave,
   onSend,
   onUpdateStatus,
-  onAddCustomer
+  onAddCustomer,
+  onConvertItemsToAppointment
 }: OrcamentosModuleProps) {
   const canCreate = hasModulePermission(currentUser, 'orcamentos', 'create');
   const canEdit = hasModulePermission(currentUser, 'orcamentos', 'edit');
@@ -76,6 +96,10 @@ export default function OrcamentosModule({
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [conversionBudget, setConversionBudget] = useState<Budget | null>(null);
+  const [conversionItemIds, setConversionItemIds] = useState<string[]>([]);
+  const [conversionDate, setConversionDate] = useState(getCurrentDateStr());
+  const [conversionTime, setConversionTime] = useState('09:00');
 
   const filteredCustomers = useMemo(() => {
     const term = customerSearch.trim().toLowerCase();
@@ -87,6 +111,7 @@ export default function OrcamentosModule({
   const customerVehicles = vehicles.filter(vehicle => vehicle.customerId === customerId);
   const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const total = Math.max(0, subtotal - discount);
+  const agenda = config.agenda;
 
   const resetForm = () => {
     setEditing(null);
@@ -208,6 +233,82 @@ export default function OrcamentosModule({
     }
   };
 
+  const openConversion = (budget: Budget) => {
+    const pendingItems = getPendingBudgetItems(budget, appointments);
+    if (pendingItems.length === 0) {
+      setError('Este orcamento nao possui itens pendentes para converter.');
+      return;
+    }
+    const defaultDate = getCurrentDateStr();
+    const duration = sumDuration(pendingItems, services);
+    const available = agenda ? getAvailableAgendaStartTimes({
+      agenda,
+      appointments,
+      services,
+      date: defaultDate,
+      serviceDuration: duration
+    }) : [];
+    setConversionBudget(budget);
+    setConversionItemIds(pendingItems.filter(item => item.serviceId).map(item => item.id));
+    setConversionDate(defaultDate);
+    setConversionTime(available[0]?.time || '09:00');
+    setError('');
+  };
+
+  const selectedConversionItems = conversionBudget
+    ? conversionBudget.items.filter(item => conversionItemIds.includes(item.id))
+    : [];
+  const conversionDuration = sumDuration(selectedConversionItems, services);
+  const conversionAvailableTimes = conversionBudget && agenda ? getAvailableAgendaStartTimes({
+    agenda,
+    appointments,
+    services,
+    date: conversionDate,
+    serviceDuration: Math.max(conversionDuration, 60)
+  }).map(option => option.time) : [];
+
+  const convertBudget = async () => {
+    if (!conversionBudget || conversionItemIds.length === 0) {
+      setError('Selecione ao menos um item pendente para converter.');
+      return;
+    }
+    if (!agenda || !isAgendaStartTimeAvailable({
+      agenda,
+      appointments,
+      services,
+      date: conversionDate,
+      serviceDuration: Math.max(conversionDuration, 60),
+      time: conversionTime
+    })) {
+      setError('Horario indisponivel para os itens selecionados.');
+      return;
+    }
+    const customerVehicles = vehicles.filter(vehicle => vehicle.customerId === conversionBudget.customerId);
+    const vehicleId = conversionBudget.vehicleId || customerVehicles[0]?.id || '';
+    const firstItem = selectedConversionItems[0];
+    if (!vehicleId || !firstItem?.serviceId || selectedConversionItems.some(item => !item.serviceId)) {
+      setError('Para converter em agendamento, selecione itens vinculados a servicos e um veiculo do cliente.');
+      return;
+    }
+    await runAction(async () => {
+      await onConvertItemsToAppointment(conversionBudget.id, conversionItemIds, {
+        customerId: conversionBudget.customerId,
+        vehicleId,
+        serviceId: firstItem.serviceId || '',
+        serviceIds: selectedConversionItems.map(item => item.serviceId).filter(Boolean) as string[],
+        dateTime: `${conversionDate}T${conversionTime}`,
+        status: 'agendado',
+        value: selectedConversionItems.reduce((sum, item) => sum + item.total, 0),
+        durationTotal: Math.max(conversionDuration, 60),
+        employeeId: 'Gabriel',
+        notes: `Convertido do orcamento #${conversionBudget.number || conversionBudget.id.slice(0, 8)}.`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      setConversionBudget(null);
+    });
+  };
+
   return (
     <div className="p-6 overflow-y-auto h-full space-y-5">
       <div className="flex items-center justify-between gap-4">
@@ -230,15 +331,35 @@ export default function OrcamentosModule({
         )}
         {budgets.map(budget => {
           const customer = customers.find(item => item.id === budget.customerId);
+          const progress = getBudgetProgress(budget, appointments);
+          const pendingItems = getPendingBudgetItems(budget, appointments);
           return (
-            <div key={budget.id} className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4 flex flex-wrap items-center gap-4">
-              <div className="min-w-[220px] flex-1">
+            <div key={budget.id} className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4 flex flex-wrap items-start gap-4">
+              <div className="min-w-[260px] flex-1">
                 <div className="text-white font-semibold">Orçamento #{budget.number || budget.id.slice(0, 8)}</div>
                 <div className="text-sm text-slate-400">{customer?.name || 'Cliente não encontrado'} · validade {new Date(`${budget.validUntil}T12:00:00`).toLocaleDateString('pt-BR')}</div>
+                <div className="mt-3 grid gap-1.5">
+                  {budget.items.map(item => {
+                    const itemStatus = getBudgetItemStatus(item, appointments);
+                    return (
+                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-950/50 border border-slate-800 px-3 py-2 text-xs">
+                        <span className="truncate text-slate-300">{item.description}</span>
+                        <span className={`shrink-0 font-mono text-[10px] uppercase ${
+                          itemStatus === 'concluido' ? 'text-emerald-400' :
+                            itemStatus === 'agendado' ? 'text-sky-400' :
+                              itemStatus === 'cancelado' ? 'text-rose-400' : 'text-amber-300'
+                        }`}>
+                          {itemStatus}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
               <div className="text-right">
                 <div className="text-lg font-bold text-emerald-400">R$ {budget.total.toFixed(2)}</div>
-                <span className="text-[10px] uppercase tracking-wide text-slate-300">{statusLabel[budget.status]}</span>
+                <span className="text-[10px] uppercase tracking-wide text-slate-300">{progress.label || statusLabel[budget.status]}</span>
+                <div className="text-[10px] text-slate-500 mt-1">{progress.completedItems} de {progress.totalItems} concluido(s)</div>
               </div>
               <div className="flex flex-wrap gap-2">
                 {budget.status === 'rascunho' && canEdit && (
@@ -258,11 +379,92 @@ export default function OrcamentosModule({
                     <button disabled={busy} onClick={() => runAction(() => onUpdateStatus(budget.id, 'cancelado'))} className="p-2 rounded-lg border border-red-500/30 text-red-300" title="Cancelar"><Trash2 size={15} /></button>
                   </>
                 )}
+                {canCreate && pendingItems.length > 0 && budget.status !== 'rascunho' && budget.status !== 'recusado' && budget.status !== 'cancelado' && budget.status !== 'vencido' && (
+                  <button disabled={busy} onClick={() => openConversion(budget)} className="px-3 py-2 rounded-lg border border-sky-500/40 text-sky-300 text-xs flex items-center gap-1">
+                    <Calendar size={14} /> Converter
+                  </button>
+                )}
               </div>
             </div>
           );
         })}
       </div>
+
+      {conversionBudget && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-900 p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Calendar className="text-sky-400" /> Converter em agendamento
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">Orcamento #{conversionBudget.number || conversionBudget.id.slice(0, 8)}</p>
+              </div>
+              <button onClick={() => setConversionBudget(null)} className="text-slate-400 hover:text-white"><X /></button>
+            </div>
+
+            <div className="space-y-2">
+              {conversionBudget.items.filter(item => getBudgetItemStatus(item, appointments) === 'pendente').map(item => {
+                const isManualItem = !item.serviceId;
+                return (
+                <label key={item.id} className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs ${isManualItem ? 'border-amber-500/20 bg-amber-500/5 text-amber-200' : 'border-slate-800 bg-slate-950/60 text-slate-300'}`}>
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      disabled={isManualItem}
+                      checked={conversionItemIds.includes(item.id)}
+                      onChange={event => setConversionItemIds(current => event.target.checked
+                        ? [...current, item.id]
+                        : current.filter(id => id !== item.id)
+                      )}
+                    />
+                    <span>
+                      {item.description}
+                      {isManualItem && (
+                        <span className="block text-[10px] text-amber-300/80">
+                          Item manual sem servico cadastrado. Vincule a um servico antes de agendar.
+                        </span>
+                      )}
+                    </span>
+                  </span>
+                  <span className="font-mono text-emerald-400">R$ {item.total.toFixed(2)}</span>
+                </label>
+                );
+              })}
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-4">
+              <label className="text-xs text-slate-300">Data
+                <input type="date" value={conversionDate} onChange={event => setConversionDate(event.target.value)} className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white" />
+              </label>
+              <label className="text-xs text-slate-300">Horario
+                <input type="time" value={conversionTime} onChange={event => setConversionTime(event.target.value)} className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white" />
+              </label>
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+                <div className="text-xs text-slate-400">Duracao estimada</div>
+                <div className="text-xl font-bold text-white">{Math.max(conversionDuration, 60)} min</div>
+              </div>
+            </div>
+
+            {conversionAvailableTimes.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {conversionAvailableTimes.slice(0, 12).map(time => (
+                  <button key={time} type="button" onClick={() => setConversionTime(time)} className={`px-2.5 py-1 rounded-lg border text-[10px] font-mono ${conversionTime === time ? 'border-sky-400 bg-sky-500/20 text-sky-200' : 'border-slate-700 text-slate-400'}`}>
+                    {time}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConversionBudget(null)} className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-sm">Cancelar</button>
+              <button disabled={busy} onClick={() => void convertBudget()} className="px-4 py-2.5 rounded-xl bg-sky-500 text-white text-sm font-semibold flex items-center gap-2 disabled:opacity-50">
+                <Calendar size={15} /> Criar agendamento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
