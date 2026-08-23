@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Clock } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { CheckCircle2, Clock, Copy, Edit3, MessageCircle, MoreVertical, Repeat } from 'lucide-react';
 import { AgendaConfig, Appointment, AppointmentStatus, Customer, Service, Vehicle } from '../types';
 import { dbInstance, renderTemplateText } from '../db/localDb';
 import { getStatusBadgeStyles, getStatusLabel } from './AppointmentGridCard';
@@ -76,6 +76,7 @@ export default function DailyTimeline({
   canEdit = true,
   className = ''
 }: DailyTimelineProps) {
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const dayConfig = useMemo(() => {
     const dayOfWeek = new Date(`${date}T00:00:00`).getDay();
     return agenda.days.find(day => day.dayOfWeek === dayOfWeek);
@@ -167,13 +168,13 @@ export default function DailyTimeline({
   }
 
   return (
-    <div className={`relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/40 ${className}`}>
-      <div className="grid grid-cols-[64px_1fr]">
+    <div className={`relative overflow-hidden rounded-xl sm:rounded-2xl border border-slate-800 bg-slate-950/40 ${className}`}>
+      <div className="grid grid-cols-[48px_1fr] sm:grid-cols-[64px_1fr] pt-3">
         <div className="relative border-r border-slate-800 bg-slate-950/70" style={{ height: timelineHeight }}>
           {ticks.map(minute => (
             <div
               key={minute}
-              className="absolute left-0 right-0 -translate-y-2 pr-2 text-right font-mono text-[10px] font-bold text-slate-500"
+              className="absolute left-0 right-0 -translate-y-1 pr-1.5 sm:pr-2 text-right font-mono text-[10px] font-bold text-slate-500"
               style={{ top: (minute - openMinutes) * PIXELS_PER_MINUTE }}
             >
               {minutesToTime(minute)}
@@ -225,24 +226,40 @@ export default function DailyTimeline({
                   event.stopPropagation();
                   if (canEdit) onEditAppointment(appointment.id);
                 }}
-                className={`group absolute z-10 rounded-xl border bg-slate-950 p-3 shadow-lg transition-all ${
+                className={`group absolute z-10 rounded-lg sm:rounded-xl border bg-slate-950 p-2.5 sm:p-3 shadow-xl transition-all ${
                   canEdit ? 'cursor-pointer' : 'cursor-default'
                 } ${
                   isRunning
-                    ? 'border-amber-500/50 ring-1 ring-amber-500/20 shadow-amber-500/10'
+                    ? 'border-amber-400/70 ring-1 ring-amber-400/25 shadow-amber-500/15'
                     : isNext
-                      ? 'border-sky-500/40 shadow-sky-500/10'
-                      : 'border-slate-800 hover:border-slate-700'
+                      ? 'border-sky-400/60 shadow-sky-500/15'
+                      : 'border-slate-700/90 shadow-black/30 hover:border-slate-500'
                 }`}
                 style={{ top, height, left, width }}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="font-mono text-[11px] font-black text-white">
+                  <div className="flex items-center gap-1.5 font-mono text-[11px] font-black text-white">
                     {minutesToTime(start)} -&gt; {minutesToTime(end)}
+                    {appointment.recurrenceId && (
+                      <Repeat size={11} className="text-sky-300" aria-label="Agendamento recorrente" />
+                    )}
                   </div>
-                  <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${getStatusBadgeStyles(appointment.status)}`}>
-                    {getStatusLabel(appointment.status)}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${getStatusBadgeStyles(appointment.status)}`}>
+                      {getStatusLabel(appointment.status)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenActionMenuId(current => current === appointment.id ? null : appointment.id);
+                      }}
+                      className="sm:hidden rounded-md border border-slate-700 bg-slate-900 p-1 text-slate-300 hover:text-white"
+                      title="Acoes"
+                    >
+                      <MoreVertical size={14} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-2 space-y-1 overflow-hidden">
@@ -274,7 +291,7 @@ export default function DailyTimeline({
                   </span>
                 </div>
 
-                <div className="absolute inset-x-2 bottom-2 z-20 hidden justify-center gap-1 rounded-lg bg-slate-950/95 p-1 shadow-xl group-hover:flex">
+                <div className="absolute inset-x-2 bottom-2 z-20 hidden justify-center gap-1 rounded-lg bg-slate-950/95 p-1 shadow-xl sm:group-hover:flex">
                   {canEdit && (
                     <button
                       type="button"
@@ -282,9 +299,10 @@ export default function DailyTimeline({
                         event.stopPropagation();
                         onEditAppointment(appointment.id);
                       }}
-                      className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[9px] font-bold text-sky-400 hover:bg-sky-500 hover:text-slate-950"
+                      className="flex items-center gap-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[9px] font-bold text-sky-400 hover:bg-sky-500 hover:text-slate-950"
                     >
-                      Editar
+                      <Edit3 size={11} />
+                      <span>Editar</span>
                     </button>
                   )}
                   {canCreate && (
@@ -294,9 +312,10 @@ export default function DailyTimeline({
                         event.stopPropagation();
                         onDuplicateAppointment(appointment.id);
                       }}
-                      className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[9px] font-bold text-violet-400 hover:bg-violet-500 hover:text-white"
+                      className="flex items-center gap-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[9px] font-bold text-violet-400 hover:bg-violet-500 hover:text-white"
                     >
-                      Clonar
+                      <Copy size={11} />
+                      <span>Clonar</span>
                     </button>
                   )}
                   <a
@@ -304,9 +323,10 @@ export default function DailyTimeline({
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(event) => event.stopPropagation()}
-                    className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[9px] font-bold text-emerald-400 hover:bg-emerald-500 hover:text-white"
+                    className="flex items-center gap-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[9px] font-bold text-emerald-400 hover:bg-emerald-500 hover:text-white"
                   >
-                    Whats
+                    <MessageCircle size={11} />
+                    <span>Whats</span>
                   </a>
                   {canEdit && appointment.status !== 'finalizado' && (
                     <button
@@ -315,12 +335,38 @@ export default function DailyTimeline({
                         event.stopPropagation();
                         onUpdateStatus(appointment.id, 'finalizado');
                       }}
-                      className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[9px] font-bold text-emerald-400 hover:bg-emerald-500 hover:text-slate-950"
+                      className="flex items-center gap-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[9px] font-bold text-emerald-400 hover:bg-emerald-500 hover:text-slate-950"
                     >
-                      Ok
+                      <CheckCircle2 size={11} />
+                      <span>Ok</span>
                     </button>
                   )}
                 </div>
+                {openActionMenuId === appointment.id && (
+                  <div
+                    className="absolute right-2 top-9 z-30 flex min-w-36 flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-950 shadow-2xl sm:hidden"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {canEdit && (
+                      <button type="button" onClick={() => onEditAppointment(appointment.id)} className="flex items-center gap-2 px-3 py-2 text-left text-[11px] font-bold text-sky-300 hover:bg-slate-900">
+                        <Edit3 size={13} /> Editar
+                      </button>
+                    )}
+                    {canCreate && (
+                      <button type="button" onClick={() => onDuplicateAppointment(appointment.id)} className="flex items-center gap-2 px-3 py-2 text-left text-[11px] font-bold text-violet-300 hover:bg-slate-900">
+                        <Copy size={13} /> Clonar
+                      </button>
+                    )}
+                    <a href={getWhatsAppUrl(appointment)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 text-left text-[11px] font-bold text-emerald-300 hover:bg-slate-900">
+                      <MessageCircle size={13} /> WhatsApp
+                    </a>
+                    {canEdit && appointment.status !== 'finalizado' && (
+                      <button type="button" onClick={() => onUpdateStatus(appointment.id, 'finalizado')} className="flex items-center gap-2 px-3 py-2 text-left text-[11px] font-bold text-emerald-300 hover:bg-slate-900">
+                        <CheckCircle2 size={13} /> Finalizar
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

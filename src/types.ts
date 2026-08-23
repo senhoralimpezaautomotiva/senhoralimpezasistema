@@ -82,6 +82,7 @@ export interface Service {
 }
 
 export type AppointmentStatus = 'agendado' | 'confirmado' | 'cliente_chegou' | 'em_andamento' | 'aguardando_aprovacao' | 'aguardando_peca' | 'finalizado' | 'entregue' | 'cancelado';
+export type AppointmentRecurrenceFrequency = 'weekly' | 'biweekly' | 'monthly';
 
 export interface Appointment {
   id: string;
@@ -104,6 +105,10 @@ export interface Appointment {
   reminderSent?: boolean;
   budgetId?: string;
   budgetItemIds?: string[];
+  recurrenceId?: string;
+  recurrenceSequence?: number;
+  recurrenceFrequency?: AppointmentRecurrenceFrequency;
+  recurrenceTotal?: number;
   changelog?: Array<{
     date: string;
     user: string;

@@ -108,7 +108,9 @@ test('supabase/migrations é a única fonte oficial e contém a baseline remota 
     '20260818193000_portal_social_location_links.sql',
     '20260822203000_orcamento_vivo_itens_agendamentos.sql',
     '20260823110000_fix_orcamento_vivo_rpc_uuid_service_selection.sql',
-    '20260823123000_fix_orcamento_protection_sent_status_stability.sql'
+    '20260823123000_fix_orcamento_protection_sent_status_stability.sql',
+    '20260823150000_agenda_recurring_appointments.sql',
+    '20260823170000_fix_recurring_rpc_agenda_json_string.sql'
   ]);
 
   const pattern = new RegExp(manifest.expectedBaselineFilenamePattern);

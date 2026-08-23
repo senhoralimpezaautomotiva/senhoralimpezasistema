@@ -944,6 +944,14 @@ export function mapDbAppointmentToFrontend(row: any): Appointment {
   let reminderSent = false;
   let budgetId: string | undefined = undefined;
   let budgetItemIds: string[] | undefined = undefined;
+  let recurrenceId: string | undefined = row.recurrence_id || undefined;
+  let recurrenceSequence: number | undefined = row.recurrence_sequence !== undefined && row.recurrence_sequence !== null
+    ? Number(row.recurrence_sequence)
+    : undefined;
+  let recurrenceFrequency = row.recurrence_frequency || undefined;
+  let recurrenceTotal: number | undefined = row.recurrence_total !== undefined && row.recurrence_total !== null
+    ? Number(row.recurrence_total)
+    : undefined;
 
   const metaRegex = /\[meta:([\s\S]*?)\]\s*$/;
   const match = notes.match(metaRegex);
@@ -959,6 +967,10 @@ export function mapDbAppointmentToFrontend(row: any): Appointment {
       if (meta.reminderSent !== undefined) reminderSent = !!meta.reminderSent;
       if (meta.budgetId) budgetId = meta.budgetId;
       if (Array.isArray(meta.budgetItemIds)) budgetItemIds = meta.budgetItemIds;
+      if (!recurrenceId && meta.recurrenceId) recurrenceId = meta.recurrenceId;
+      if (recurrenceSequence === undefined && meta.recurrenceSequence !== undefined) recurrenceSequence = Number(meta.recurrenceSequence);
+      if (!recurrenceFrequency && meta.recurrenceFrequency) recurrenceFrequency = meta.recurrenceFrequency;
+      if (recurrenceTotal === undefined && meta.recurrenceTotal !== undefined) recurrenceTotal = Number(meta.recurrenceTotal);
       notes = notes.replace(metaRegex, '').trim();
     } catch (e) {
       safeLog('error', 'appointment.metadata.parse', 'error', {
@@ -988,7 +1000,11 @@ export function mapDbAppointmentToFrontend(row: any): Appointment {
     concludedAt,
     reminderSent,
     budgetId: row.orcamento_id || budgetId,
-    budgetItemIds: Array.isArray(row.orcamento_item_ids) ? row.orcamento_item_ids : budgetItemIds
+    budgetItemIds: Array.isArray(row.orcamento_item_ids) ? row.orcamento_item_ids : budgetItemIds,
+    recurrenceId,
+    recurrenceSequence,
+    recurrenceFrequency,
+    recurrenceTotal
   };
 }
 
@@ -1029,9 +1045,13 @@ export function mapFrontendAppointmentToDb(a: Partial<Appointment>): any {
   if (a.durationTotal !== undefined) row.tempo_real = a.durationTotal;
   if (a.budgetId !== undefined) row.orcamento_id = a.budgetId || null;
   if (a.budgetItemIds !== undefined) row.orcamento_item_ids = a.budgetItemIds;
+  if (a.recurrenceId !== undefined) row.recurrence_id = a.recurrenceId || null;
+  if (a.recurrenceSequence !== undefined) row.recurrence_sequence = a.recurrenceSequence || null;
+  if (a.recurrenceFrequency !== undefined) row.recurrence_frequency = a.recurrenceFrequency || null;
+  if (a.recurrenceTotal !== undefined) row.recurrence_total = a.recurrenceTotal || null;
   
   let notes = a.notes || '';
-  const hasExtra = a.employeeId || a.discount !== undefined || a.addition !== undefined || a.serviceIds || a.startedAt || a.concludedAt || a.reminderSent !== undefined || a.budgetId || a.budgetItemIds;
+  const hasExtra = a.employeeId || a.discount !== undefined || a.addition !== undefined || a.serviceIds || a.startedAt || a.concludedAt || a.reminderSent !== undefined || a.budgetId || a.budgetItemIds || a.recurrenceId || a.recurrenceSequence !== undefined || a.recurrenceFrequency || a.recurrenceTotal !== undefined;
   if (hasExtra) {
     const meta: any = {};
     if (a.employeeId) meta.employeeId = a.employeeId;
@@ -1043,6 +1063,10 @@ export function mapFrontendAppointmentToDb(a: Partial<Appointment>): any {
     if (a.reminderSent !== undefined) meta.reminderSent = a.reminderSent;
     if (a.budgetId) meta.budgetId = a.budgetId;
     if (a.budgetItemIds) meta.budgetItemIds = a.budgetItemIds;
+    if (a.recurrenceId) meta.recurrenceId = a.recurrenceId;
+    if (a.recurrenceSequence !== undefined) meta.recurrenceSequence = a.recurrenceSequence;
+    if (a.recurrenceFrequency) meta.recurrenceFrequency = a.recurrenceFrequency;
+    if (a.recurrenceTotal !== undefined) meta.recurrenceTotal = a.recurrenceTotal;
     notes = `${notes} [meta:${JSON.stringify(meta)}]`.trim();
   }
   row.observacoes = notes;
@@ -2066,6 +2090,63 @@ class LocalDatabase {
     }
 
     return newAppointment;
+  }
+
+  async addRecurringAppointments(appointments: Array<Omit<Appointment, 'id'>>): Promise<Appointment[]> {
+    if (appointments.length === 0) return [];
+    const [first] = appointments;
+    if (!first.recurrenceId || !first.recurrenceFrequency || !first.recurrenceTotal) {
+      throw new Error('Dados de recorrencia incompletos.');
+    }
+
+    if (this.config.useRealSupabase) {
+      const supabase = this.getSupabaseClient();
+      const occurrences = appointments.map(appointment => {
+        const [date, time = '09:00'] = appointment.dateTime.split('T');
+        return {
+          date,
+          time: time.slice(0, 5),
+          sequence: appointment.recurrenceSequence
+        };
+      });
+      const { error } = await supabase.rpc('fn_criar_agendamentos_recorrentes', {
+        p_cliente_id: first.customerId,
+        p_veiculo_id: first.vehicleId,
+        p_servico_id: first.serviceId,
+        p_recurrence_id: first.recurrenceId,
+        p_recurrence_frequency: first.recurrenceFrequency,
+        p_recurrence_total: first.recurrenceTotal,
+        p_occurrences: occurrences,
+        p_valor_servico: first.value,
+        p_tempo_real: first.durationTotal || 60,
+        p_observacoes: first.notes || ''
+      });
+      if (error) {
+        safeLog('error', 'appointment.recurrence.create', 'error', { entityId: first.recurrenceId, error });
+        throw error;
+      }
+      await this.syncWithSupabase();
+      return this.appointments
+        .filter(appointment => appointment.recurrenceId === first.recurrenceId)
+        .sort((a, b) => (a.recurrenceSequence || 0) - (b.recurrenceSequence || 0));
+    }
+
+    const created: Appointment[] = [];
+    const startCount = this.appointments.length;
+    try {
+      for (const appointment of appointments) {
+        created.push(await this.addAppointment(appointment));
+      }
+      return created;
+    } catch (error) {
+      const createdIds = new Set(created.map(appointment => appointment.id));
+      this.appointments = this.appointments.filter(appointment => !createdIds.has(appointment.id));
+      this.save();
+      if (this.appointments.length !== startCount) {
+        safeLog('warn', 'appointment.recurrence.local_rollback', 'success', { entityId: first.recurrenceId });
+      }
+      throw error;
+    }
   }
 
   private markBudgetItemsScheduled(appointment: Appointment): void {
@@ -3097,6 +3178,10 @@ CREATE TABLE IF NOT EXISTS public.agendamentos (
     employee_id VARCHAR(100),
     notes TEXT,
     reminder_sent BOOLEAN DEFAULT false,
+    recurrence_id UUID,
+    recurrence_sequence INTEGER,
+    recurrence_frequency TEXT,
+    recurrence_total INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );

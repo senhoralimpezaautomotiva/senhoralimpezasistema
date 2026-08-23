@@ -506,6 +506,16 @@ export default function App() {
     }
   };
 
+  const handleAddRecurringAppointments = async (appointments: Array<Omit<Appointment, 'id'>>) => {
+    try {
+      await dbInstance.addRecurringAppointments(appointments);
+      syncWithDatabase();
+    } catch (e) {
+      safeLog('error', 'appointment.recurrence.create', 'error', { error: e });
+      throw e;
+    }
+  };
+
   const handleSaveBudget = async (draft: BudgetDraft) => {
     const budget = await dbInstance.saveBudget(draft);
     syncWithDatabase();
@@ -771,6 +781,7 @@ export default function App() {
             config={config}
             currentUser={user}
             onAddAppointment={handleAddAppointment}
+            onAddRecurringAppointments={handleAddRecurringAppointments}
             onUpdateStatus={handleUpdateAppointmentStatus}
             onDeleteAppointment={handleDeleteAppointment}
             onUpdateAppointment={async (id, updated) => {

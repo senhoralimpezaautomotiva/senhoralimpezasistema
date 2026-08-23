@@ -16,7 +16,8 @@ import {
   X, 
   Play,
   Check,
-  AlertTriangle
+  AlertTriangle,
+  Repeat
 } from 'lucide-react';
 import { Appointment, Customer, Vehicle, Service, AppointmentStatus, SystemConfig, User as SystemUser } from '../types';
 import { getServicePrice, hasModulePermission } from '../db/localDb';
@@ -25,6 +26,11 @@ import { safeLog } from '../security/safeOutput';
 import DailyTimeline from './DailyTimeline';
 import { createAppointmentFormDraft } from '../utils/servicePricing';
 import { getAvailableAgendaStartTimes, isAgendaStartTimeAvailable } from '../utils/agendaAvailability';
+import {
+  AppointmentRecurrenceOptions,
+  buildRecurringAppointments,
+  validateRecurringAppointments
+} from '../utils/appointmentRecurrence';
 
 interface AgendaModuleProps {
   appointments: Appointment[];
@@ -35,6 +41,7 @@ interface AgendaModuleProps {
   config?: SystemConfig;
   currentUser?: any;
   onAddAppointment: (appointment: Omit<Appointment, 'id'>) => Promise<any>;
+  onAddRecurringAppointments?: (appointments: Array<Omit<Appointment, 'id'>>) => Promise<any>;
   onUpdateStatus: (id: string, status: AppointmentStatus, notes?: string) => Promise<any>;
   onDeleteAppointment: (id: string) => Promise<any>;
   onUpdateAppointment?: (id: string, updated: Partial<Appointment>) => Promise<any>;
@@ -49,6 +56,7 @@ export default function AgendaModule({
   config,
   currentUser,
   onAddAppointment, 
+  onAddRecurringAppointments,
   onUpdateStatus, 
   onDeleteAppointment,
   onUpdateAppointment
@@ -58,10 +66,14 @@ export default function AgendaModule({
   const canDelete = hasModulePermission(currentUser, 'agenda', 'delete');
   // Dynamic Calendar Anchor
   const todayDateObj = getCurrentDate();
-  const currentYear = todayDateObj.getFullYear();
-  const currentMonthIdx = todayDateObj.getMonth(); // 0-indexed month
+  const [visibleMonth, setVisibleMonth] = useState(() => ({
+    year: todayDateObj.getFullYear(),
+    month: todayDateObj.getMonth()
+  }));
+  const currentYear = visibleMonth.year;
+  const currentMonthIdx = visibleMonth.month; // 0-indexed month
   const monthName = (() => {
-    const rawName = todayDateObj.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    const rawName = new Date(currentYear, currentMonthIdx, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
     return rawName.charAt(0).toUpperCase() + rawName.slice(1);
   })();
   const daysInMonth = new Date(currentYear, currentMonthIdx + 1, 0).getDate();
@@ -74,6 +86,13 @@ export default function AgendaModule({
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeStatusTransitionId, setActiveStatusTransitionId] = useState<string | null>(null);
+  const [recurrenceForm, setRecurrenceForm] = useState<AppointmentRecurrenceOptions>({
+    enabled: false,
+    frequency: 'weekly',
+    endMode: 'count',
+    count: 4,
+    endDate: ''
+  });
 
   // Load agenda settings or use defaults
   const agenda = config?.agenda || {
@@ -154,8 +173,27 @@ export default function AgendaModule({
     if (!canCreate) return;
     setEditingApptId(null);
     setErrorMessage(null);
+    setRecurrenceForm({
+      enabled: false,
+      frequency: 'weekly',
+      endMode: 'count',
+      count: 4,
+      endDate: selectedDayStr
+    });
     setFormData(createAppointmentFormDraft(customers, vehicles, services, time));
     setIsAddOpen(true);
+  };
+
+  const handleMonthChange = (delta: number) => {
+    setVisibleMonth(prev => {
+      const next = new Date(prev.year, prev.month + delta, 1);
+      const nextDaysInMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+      setSelectedDay(day => Math.min(day, nextDaysInMonth));
+      return {
+        year: next.getFullYear(),
+        month: next.getMonth()
+      };
+    });
   };
 
   // Calculate day-by-day counts dynamically
@@ -427,16 +465,50 @@ export default function AgendaModule({
         }
         setEditingApptId(null);
       } else {
-        await onAddAppointment({
+        const baseAppointment: Omit<Appointment, 'id'> = {
           customerId: formData.customerId,
           vehicleId: formData.vehicleId,
           serviceId: formData.serviceId,
+          serviceIds: [formData.serviceId],
           dateTime: dateTimeStr,
           status: 'agendado',
           value: formData.value,
+          durationTotal: serviceDuration,
           employeeId: formData.employeeId,
-          notes: formData.notes
+          notes: formData.notes,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        const occurrences = buildRecurringAppointments(baseAppointment, recurrenceForm);
+
+        if (recurrenceForm.enabled && occurrences.length < 2) {
+          setErrorMessage('Configure uma recorrencia com pelo menos duas ocorrencias ou desative a repeticao.');
+          setIsSaving(false);
+          return;
+        }
+
+        const recurrenceConflicts = validateRecurringAppointments({
+          agenda,
+          existingAppointments: appointments,
+          occurrences,
+          services,
+          serviceDuration
         });
+
+        if (recurrenceConflicts.length > 0) {
+          setErrorMessage(`Recorrencia bloqueada por conflito: ${recurrenceConflicts.slice(0, 4).map(conflict => `${conflict.date} ${conflict.time}`).join(', ')}. Nenhum agendamento da serie foi criado.`);
+          setIsSaving(false);
+          return;
+        }
+
+        if (recurrenceForm.enabled) {
+          if (!onAddRecurringAppointments) {
+            throw new Error('Criacao transacional de recorrencia indisponivel.');
+          }
+          await onAddRecurringAppointments(occurrences);
+        } else {
+          await onAddAppointment(occurrences[0]);
+        }
       }
       setIsAddOpen(false);
     } catch (err: any) {
@@ -505,7 +577,9 @@ export default function AgendaModule({
   for (let d = 1; d <= daysInMonth; d++) {
     const dayAppts = getDayAppointments(d);
     const isSelected = selectedDay === d;
-    const isToday = d === todayDateObj.getDate();
+    const isToday = d === todayDateObj.getDate()
+      && currentMonthIdx === todayDateObj.getMonth()
+      && currentYear === todayDateObj.getFullYear();
 
     calendarCells.push(
       <button
@@ -555,8 +629,8 @@ export default function AgendaModule({
   const bookingVehicles = vehicles.filter(v => v.customerId === formData.customerId);
 
   const addModalElement = isAddOpen && (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-scaleUp">
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
+      <div className="bg-slate-900 border border-slate-800 w-full sm:max-w-md max-h-[92vh] sm:max-h-[90vh] rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-2xl animate-scaleUp flex flex-col">
         <div className="px-5 py-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
           <div>
             <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
@@ -569,7 +643,7 @@ export default function AgendaModule({
           </button>
         </div>
         
-        <form onSubmit={handleAddSubmit} className="p-5 space-y-4 text-xs">
+        <form onSubmit={handleAddSubmit} className="p-4 sm:p-5 space-y-4 text-xs overflow-y-auto">
           {errorMessage && (
             <div className="bg-red-500/10 text-red-400 border border-red-500/20 px-4 py-2.5 rounded-xl text-xs font-mono">
               {errorMessage}
@@ -695,6 +769,82 @@ export default function AgendaModule({
               placeholder="Ex: Carro com muito piche na saia lateral, etc..."
             />
           </div>
+
+          {!editingApptId && (
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-3">
+              <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-200">
+                <span className="flex items-center gap-2">
+                  <Repeat size={14} className="text-sky-400" />
+                  Repetir este agendamento
+                </span>
+                <input
+                  type="checkbox"
+                  checked={recurrenceForm.enabled}
+                  onChange={(event) => setRecurrenceForm(prev => ({ ...prev, enabled: event.target.checked }))}
+                  disabled={isSaving}
+                  className="h-4 w-4 accent-sky-500"
+                />
+              </label>
+
+              {recurrenceForm.enabled && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Frequencia</label>
+                      <select
+                        value={recurrenceForm.frequency}
+                        onChange={(event) => setRecurrenceForm(prev => ({ ...prev, frequency: event.target.value as AppointmentRecurrenceOptions['frequency'] }))}
+                        disabled={isSaving}
+                        className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white disabled:opacity-50"
+                      >
+                        <option value="weekly">Semanal</option>
+                        <option value="biweekly">A cada 2 semanas</option>
+                        <option value="monthly">Mensal</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Termino</label>
+                      <select
+                        value={recurrenceForm.endMode}
+                        onChange={(event) => setRecurrenceForm(prev => ({ ...prev, endMode: event.target.value as AppointmentRecurrenceOptions['endMode'] }))}
+                        disabled={isSaving}
+                        className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white disabled:opacity-50"
+                      >
+                        <option value="count">Por quantidade</option>
+                        <option value="date">Por data final</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {recurrenceForm.endMode === 'count' ? (
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Quantidade total</label>
+                      <input
+                        type="number"
+                        min="2"
+                        max="52"
+                        value={recurrenceForm.count}
+                        onChange={(event) => setRecurrenceForm(prev => ({ ...prev, count: Number(event.target.value) }))}
+                        disabled={isSaving}
+                        className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white font-mono disabled:opacity-50"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Data final</label>
+                      <input
+                        type="date"
+                        value={recurrenceForm.endDate}
+                        onChange={(event) => setRecurrenceForm(prev => ({ ...prev, endDate: event.target.value }))}
+                        disabled={isSaving}
+                        className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-white font-mono disabled:opacity-50"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
             <button 
@@ -842,10 +992,20 @@ export default function AgendaModule({
               <h2 className="text-base font-bold text-white tracking-tight">{monthName}</h2>
             </div>
             <div className="flex items-center gap-1">
-              <button disabled className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 cursor-not-allowed">
+              <button
+                type="button"
+                onClick={() => handleMonthChange(-1)}
+                className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                title="Mes anterior"
+              >
                 <ChevronLeft size={16} />
               </button>
-              <button disabled className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 cursor-not-allowed">
+              <button
+                type="button"
+                onClick={() => handleMonthChange(1)}
+                className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                title="Proximo mes"
+              >
                 <ChevronRight size={16} />
               </button>
             </div>
@@ -904,6 +1064,9 @@ export default function AgendaModule({
                       <div className="flex items-center gap-2 font-mono font-bold text-white text-xs">
                         <Clock size={12} className="text-sky-400" />
                         <span>{hour}</span>
+                        {appt.recurrenceId && (
+                          <Repeat size={12} className="text-sky-300" aria-label="Agendamento recorrente" />
+                        )}
                       </div>
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${getStatusBadgeClass(appt.status)}`}>
                         {getStatusLabel(appt.status)}

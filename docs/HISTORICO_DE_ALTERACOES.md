@@ -5589,3 +5589,264 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Nao executar rollback destrutivo sem backup e janela controlada.
 - Para reversao futura, criar nova migration controlada com `CREATE OR REPLACE FUNCTION` restaurando a definicao anterior da RPC e/ou da trigger, conforme decisao aprovada.
 - Como as migrations ja constam no ledger remoto, nao remover manualmente entradas de `schema_migrations` sem plano explicito de reconciliacao.
+
+---
+
+## 2026-08-23-015 - Evolucao mobile da Agenda administrativa com recorrencia local
+
+**Etapa relacionada:** Evolucao controlada do fluxo administrativo de Agenda, sem deploy e sem aplicacao de migration em producao.
+
+**Objetivo:** Melhorar a usabilidade da Agenda administrativa em smartphone, corrigir navegacao mensal e corte visual da primeira hora, e preparar criacao de agendamentos recorrentes com metadados estruturados.
+
+### Trabalho realizado
+
+- Corrigida a navegacao mensal da Agenda: o mes exibido deixou de ficar preso ao dia atual e as setas anterior/proximo foram habilitadas.
+- Preservada a selecao do dia ao trocar de mes, com ajuste automatico quando o dia selecionado nao existe no mes destino.
+- Ajustada a linha do tempo diaria para evitar corte visual da primeira hora configurada, sem alterar o calculo real de topo/duracao.
+- Reduzida a coluna de horarios no mobile e ajustados paddings para dar mais largura aos cards da timeline.
+- Reforcado contraste, borda e sombra dos cards da timeline, preservando horario, cliente, veiculo, placa, servicos, status, valor e duracao.
+- Substituidas acoes grandes da timeline no mobile por menu compacto de tres pontos, mantendo edicao, clonagem, WhatsApp e finalizacao.
+- Mantido o comportamento desktop de acoes por hover.
+- O clique no card no smartphone continua abrindo o mesmo fluxo de edicao/criacao, agora em modal/sheet responsivo sobre a timeline.
+- Adicionado controle "Repetir este agendamento" no fluxo de novo agendamento administrativo.
+- Implementadas frequencias semanal, a cada 2 semanas e mensal.
+- Implementados terminos por quantidade total ou data final, sem recorrencia infinita.
+- Cada ocorrencia recebe `recurrenceId`, sequencia e total da serie; edicao/cancelamento continuam individuais por agendamento.
+- A validacao de recorrencia usa a disponibilidade existente da agenda, bloqueia a serie inteira quando alguma ocorrencia conflita e tambem respeita antecedencia maxima em cada ocorrencia.
+- Adicionado icone lucide `Repeat` para identificar agendamentos recorrentes na timeline e na fila mensal.
+- Criada migration local aditiva para metadados estruturados de recorrencia em `public.agendamentos`.
+- Atualizado o manifesto DB-001 para inventariar a nova migration local.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/components/AgendaModule.tsx`.
+- Alterado: `src/components/DailyTimeline.tsx`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `src/types.ts`.
+- Criado: `src/utils/appointmentRecurrence.ts`.
+- Criado: `tests/agenda-recurrence.test.ts`.
+- Criado: `supabase/migrations/20260823150000_agenda_recurring_appointments.sql`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Nenhuma migration foi aplicada em producao.
+- Nenhum SQL foi executado em banco local ou remoto.
+- Nenhum dado permanente foi criado, alterado ou removido em ambiente externo.
+- Nenhuma alteracao foi feita no Portal do Cliente.
+- Nenhum deploy, commit ou push foi executado.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/agenda-recurrence.test.ts`: aprovado, 5 testes.
+- `npx tsx --test tests/agenda-availability.test.ts`: aprovado, 3 testes.
+- `npm run test:db001`: aprovado, 11 testes.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A migration `20260823150000_agenda_recurring_appointments.sql` ainda nao foi aplicada em producao por orientacao explicita.
+- A criacao recorrente em ambiente Supabase real depende da aplicacao previa dessa migration; antes disso, um deploy com uso da recorrencia gravaria colunas ainda inexistentes.
+- A criacao de serie e prevalidada no frontend e gravada ocorrencia a ocorrencia pelo contrato atual de `onAddAppointment`; nao ha RPC transacional especifica para criar toda a serie em uma unica transacao de banco.
+- Nao foi feito teste visual por navegador automatizado; a validacao executada foi por build, typecheck e testes unitarios/focados.
+- Permanecem alteracoes antigas e nao relacionadas no worktree fora desta tarefa.
+
+### Como desfazer
+
+- Reverter os arquivos listados nesta entrada.
+- Como nada foi aplicado em producao, nao ha rollback externo nesta etapa.
+- Se a migration for aplicada futuramente e precisar ser desfeita, criar nova migration controlada removendo constraints, indice e colunas de recorrencia somente apos decidir o tratamento dos agendamentos ja vinculados a series.
+
+---
+
+## 2026-08-23-016 - Persistencia transacional de agendamentos recorrentes
+
+**Etapa relacionada:** Correcao dos bloqueadores de atomicidade, concorrencia e confirmacoes imediatas da recorrencia administrativa.
+
+**Objetivo:** Tornar a criacao de series recorrentes segura antes de migration, commit, push ou deploy, preservando a interface e melhorias visuais ja implementadas.
+
+### Trabalho realizado
+
+- Ajustada localmente a migration ainda nao aplicada `20260823150000_agenda_recurring_appointments.sql`.
+- Mantidas as colunas nullable de recorrencia em `public.agendamentos`.
+- Adicionado indice unico parcial `idx_agendamentos_recurrence_sequence` sobre `(recurrence_id, recurrence_sequence)` para proteger retry/idempotencia da mesma serie.
+- Criada RPC administrativa `public.fn_criar_agendamentos_recorrentes(UUID, UUID, UUID, UUID, TEXT, INTEGER, JSONB, NUMERIC, INTEGER, TEXT)`.
+- A RPC valida usuario autenticado via `auth.uid()`, usuario ativo em `public.usuarios` e permissao efetiva `agenda.create`.
+- A RPC usa `SECURITY DEFINER`, `SET search_path = ''`, objetos qualificados e grants/revokes explicitos.
+- A RPC recebe as ocorrencias da serie, adquire locks transacionais por data com `pg_advisory_xact_lock` em ordem deterministica e revalida disponibilidade dentro da transacao.
+- A revalidacao no banco verifica cliente, veiculo do cliente, servico, agenda configurada, dia ativo, expediente, intervalo de almoco, antecedencia minima/maxima, capacidade por slots e conflitos com agendamentos ativos.
+- Qualquer conflito ou erro levanta exception e a transacao inteira reverte, impedindo serie parcial.
+- A trigger `public.fn_trigger_enfileirar_agendamento()` foi ajustada para enfileirar `novo_agendamento` em insert apenas para agendamento comum ou primeira ocorrencia da serie.
+- As ocorrencias com `recurrence_sequence > 1` deixam de disparar confirmacao imediata de criacao, sem alterar lembretes, inicio, finalizacao ou cancelamento.
+- O frontend administrativo passou a usar a RPC somente quando recorrencia esta ativa.
+- Agendamento comum continua usando o fluxo atual `addAppointment`.
+- O fallback local de `addRecurringAppointments` remove ocorrencias ja criadas se uma falha local ocorrer no meio.
+- Preservados edicao/cancelamento individuais por `id`, sem edicao/cancelamento em massa.
+- Ampliada cobertura de testes para recorrencia mensal, quantidade, data final, rollback local, sucesso completo, edicao/cancelamento individual e contrato SQL da RPC/trigger.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/App.tsx`.
+- Alterado: `src/components/AgendaModule.tsx`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `tests/agenda-recurrence.test.ts`.
+- Alterado: `supabase/migrations/20260823150000_agenda_recurring_appointments.sql`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Nenhuma migration foi aplicada em producao.
+- Nenhum SQL foi executado em banco local ou remoto.
+- Nenhum dado permanente foi criado, alterado ou removido em ambiente externo.
+- Nenhuma alteracao foi feita no Portal do Cliente ou no Orcamento Vivo.
+- Nenhum deploy, commit ou push foi executado.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/agenda-recurrence.test.ts`: aprovado, 14 testes.
+- `npx tsx --test tests/agenda-availability.test.ts`: aprovado, 3 testes.
+- `npx tsx --test tests/automation-behavior.test.ts`: aprovado, 41 testes.
+- `npm run test:db001`: aprovado, 11 testes.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A migration corrigida ainda precisa ser revisada e aplicada em producao em etapa separada.
+- Nao foi executado teste de concorrencia real contra PostgreSQL; a protecao foi implementada na migration e validada por teste de contrato SQL.
+- A RPC depende da configuracao de agenda estar presente em `public.configuracoes_empresa.agenda`.
+- Retry com o mesmo `recurrence_id` e idempotente; uma nova requisicao com outro `recurrence_id` representa nova serie.
+- Permanecem alteracoes antigas e nao relacionadas no worktree fora desta tarefa.
+
+### Como desfazer
+
+- Reverter os arquivos listados nesta entrada.
+- Como nada foi aplicado em producao, nao ha rollback externo nesta etapa.
+- Se a migration for aplicada futuramente e precisar ser revertida, criar nova migration controlada removendo a RPC, restaurando a definicao anterior da trigger de agendamentos e tratando as colunas/indices de recorrencia conforme o estado dos dados.
+
+---
+
+## 2026-08-23-017 - Aplicacao da migration recorrente e bloqueio no smoke test
+
+**Etapa relacionada:** Aplicacao controlada da migration `20260823150000_agenda_recurring_appointments.sql` no Supabase de producao e validacao final antes de commit/deploy.
+
+**Objetivo:** Aplicar a migration de agendamentos recorrentes, validar objetos instalados e executar smoke test transacional sem deixar dados permanentes.
+
+### Trabalho realizado
+
+- Revisada localmente a seguranca da migration antes da aplicacao.
+- Confirmado projeto Supabase vinculado: `ansrnnydksrjwefnntaw`.
+- Confirmado no ledger remoto que `20260823150000` era a unica migration pendente.
+- Aplicada em producao somente a migration `20260823150000_agenda_recurring_appointments.sql`.
+- Validado no banco real que as colunas `recurrence_id`, `recurrence_sequence`, `recurrence_frequency` e `recurrence_total` existem em `public.agendamentos`, todas nullable e sem default.
+- Validado no banco real o indice unico parcial `idx_agendamentos_recurrence_sequence` sobre `(recurrence_id, recurrence_sequence)` com `recurrence_id IS NOT NULL`.
+- Validada a existencia real da RPC `public.fn_criar_agendamentos_recorrentes(uuid, uuid, uuid, uuid, text, integer, jsonb, numeric, integer, text) returns jsonb`.
+- Validado que a RPC instalada usa `SECURITY DEFINER`, `SET search_path TO ''`, `auth.uid()`, usuario ativo, permissao `agenda.create`, locks transacionais e retorno `jsonb`.
+- Validado que `anon` nao possui `EXECUTE` na RPC e que `authenticated` e `service_role` possuem conforme padrao do projeto.
+- Validada a funcao `public.fn_trigger_enfileirar_agendamento()` instalada, incluindo supressao de `novo_agendamento` para ocorrencias recorrentes posteriores.
+- Antes do smoke test, identificado bloqueio estrutural: em producao, `public.configuracoes_empresa.agenda` esta armazenado como JSONB do tipo `string`, nao como objeto JSONB.
+- Como a RPC exige `jsonb_typeof(v_agenda) = 'object'`, o smoke test transacional foi bloqueado para evitar falsa validacao e investigacao incompleta.
+- Confirmado que nenhum agendamento recorrente foi criado e nenhum evento/execucao de automacao foi gerado por smoke test.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Producao Supabase: migration `20260823150000_agenda_recurring_appointments` aplicada.
+- Nenhum SQL manual corretivo foi executado.
+- Nenhum smoke test de criacao de recorrencia foi executado devido ao bloqueio da configuracao de agenda.
+- Contagens finais consultadas: `agendamentos=72`, `agendamentos recorrentes=0`, `automacoes_eventos=78`, `automacoes_execucoes=126`.
+- Nenhum deploy, commit ou push foi executado.
+
+### Verificacoes e resultados
+
+- `npx supabase projects list`: projeto vinculado `ansrnnydksrjwefnntaw`, `ACTIVE_HEALTHY`, regiao `sa-east-1`.
+- `npx supabase migration list --linked`: `20260823150000` era a unica pendente antes da aplicacao.
+- `npx supabase db push --linked`: concluiu aplicando somente `20260823150000_agenda_recurring_appointments.sql`.
+- Validacao remota pos-aplicacao: ledger contem `20260823150000`.
+- Validacao remota pos-aplicacao: RPC, colunas, indice, grants e trigger existem conforme esperado.
+- Validacao remota pre-smoke: `jsonb_typeof(configuracoes_empresa.agenda) = 'string'`, incompatibilidade com a RPC instalada.
+
+### Riscos, limitacoes e pendencias
+
+- Nao fazer deploy enquanto a RPC nao aceitar/normalizar o formato real de `configuracoes_empresa.agenda` ou enquanto a configuracao de producao nao for migrada com seguranca para JSONB objeto.
+- Nao foi feito commit/push porque o smoke test transacional nao passou.
+- A migration ja consta no ledger remoto; qualquer correcao deve ser feita por nova migration controlada, nao por edicao retroativa do ledger.
+- A funcionalidade de recorrencia ainda nao deve ser usada em producao.
+
+### Como desfazer
+
+- Nao remover manualmente `20260823150000` de `supabase_migrations.schema_migrations`.
+- Para corrigir, criar nova migration controlada recompilando a RPC para tratar `agenda` como objeto ou string JSON parseavel, ou migrar `configuracoes_empresa.agenda` para objeto JSONB apos validacao.
+- Se for necessario reverter completamente, criar migration controlada removendo RPC, indice/colunas de recorrencia e restaurando a trigger anterior, considerando que atualmente nao ha agendamentos com `recurrence_id` preenchido.
+
+---
+
+## 2026-08-23-018 - Correcao da RPC recorrente para agenda JSON string e smoke validado
+
+**Etapa relacionada:** Correcao controlada do bloqueio encontrado apos a aplicacao da migration de agendamentos recorrentes.
+
+**Objetivo:** Recompilar a RPC de criacao recorrente para aceitar o formato real de `public.configuracoes_empresa.agenda` em producao, mantendo o dado salvo intacto e validando o fluxo com rollback.
+
+### Trabalho realizado
+
+- Confirmado que o projeto Supabase vinculado era `ansrnnydksrjwefnntaw`, ativo e saudavel na regiao `sa-east-1`.
+- Confirmado antes da aplicacao que `20260823170000_fix_recurring_rpc_agenda_json_string.sql` era a unica migration pendente.
+- Criada nova migration corretiva, sem editar nem reaplicar `20260823150000_agenda_recurring_appointments.sql`.
+- A migration recompila somente `public.fn_criar_agendamentos_recorrentes(UUID, UUID, UUID, UUID, TEXT, INTEGER, JSONB, NUMERIC, INTEGER, TEXT)`.
+- A RPC passou a normalizar `configuracoes_empresa.agenda` quando o valor e JSONB objeto ou JSONB string parseavel para objeto.
+- Preservados `SECURITY DEFINER`, `SET search_path TO ''`, `auth.uid()`, usuario ativo, permissao efetiva de criacao de agenda, locks transacionais por data, validacao de disponibilidade, status inicial `Agendado`, retorno `jsonb`, `REVOKE`/`GRANT` e atomicidade por exception.
+- Validado que os triggers de `public.agendamentos` seguem ativos, incluindo `trigger_enfileirar_agendamento`.
+- Executado smoke test transacional em producao com rollback forcado: a RPC criou internamente 3 ocorrencias semanais, sequencias `{1,2,3}`, status `{Agendado,Agendado,Agendado}` e 1 evento `novo_agendamento` da operacao recorrente.
+- O smoke terminou com exception controlada `SMOKE_OK_FORCE_ROLLBACK`, revertendo todos os inserts do teste.
+- Confirmado apos o rollback que as contagens de producao permaneceram `agendamentos=72`, `agendamentos recorrentes=0`, `automacoes_eventos=78`, `automacoes_execucoes=126`.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260823170000_fix_recurring_rpc_agenda_json_string.sql`.
+- Alterado: `tests/agenda-recurrence.test.ts`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+- Criado e removido durante a validacao: `tmp_recurring_smoke.sql`.
+
+### Banco, hospedagem e servicos externos
+
+- Producao Supabase: migration `20260823170000_fix_recurring_rpc_agenda_json_string.sql` aplicada em `2026-08-23 12:18 -03:00` aproximadamente.
+- A migration alterou somente a definicao da RPC `public.fn_criar_agendamentos_recorrentes`.
+- Nenhum dado permanente foi criado, alterado ou removido pelo smoke test.
+- Nenhuma alteracao manual adicional foi feita no banco.
+- Nenhuma atualizacao de schema cache foi necessaria.
+- Nenhum deploy foi executado.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/agenda-recurrence.test.ts`: aprovado, 16 testes.
+- `npx tsx --test tests/agenda-availability.test.ts`: aprovado, 3 testes.
+- `npx tsx --test tests/automation-behavior.test.ts`: aprovado, 41 testes.
+- `npm run test:db001`: aprovado, 11 testes.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+- `npx supabase migration list --linked`: antes da aplicacao, somente `20260823170000` estava pendente; apos a aplicacao, todas as migrations locais constavam tambem no remoto.
+- `npx supabase db push --linked`: concluiu aplicando somente `20260823170000_fix_recurring_rpc_agenda_json_string.sql`.
+- Validacao remota da RPC instalada: assinatura publica preservada, `SECURITY DEFINER` preservado, `SET search_path TO ''` preservado, grants para `authenticated` e `service_role` preservados e `anon` sem execute.
+- Validacao remota da definicao instalada: encontrado o trecho `jsonb_typeof(v_agenda_raw) = 'string'` com parse `(v_agenda_raw #>> '{}')::jsonb` e guarda final `jsonb_typeof(v_agenda) <> 'object'`.
+- Smoke transacional: aprovado com rollback forcado e contadores finais inalterados.
+
+### Riscos, limitacoes e pendencias
+
+- O smoke validou a criacao recorrente no banco, mas a validacao visual pelo sistema ainda deve ser feita manualmente antes de deploy.
+- A funcao aceita string JSON parseavel para compatibilidade com o dado real de producao; uma eventual normalizacao fisica do dado deve ser planejada em tarefa separada.
+- Permanece sem edicao/cancelamento em massa de series recorrentes; a entrega preserva edicao e cancelamento individual por agendamento.
+- Permanecem alteracoes antigas e nao relacionadas no worktree fora desta tarefa.
+
+### Como desfazer
+
+- Para desfazer a correcao da RPC, criar nova migration controlada restaurando a definicao anterior de `public.fn_criar_agendamentos_recorrentes`.
+- Como o smoke foi revertido por exception controlada, nao ha dados de teste a limpar.
+- Para desfazer o codigo local da funcionalidade recorrente, reverter seletivamente os arquivos listados nesta e nas entradas anteriores relacionadas a recorrencia, sem remover manualmente registros do ledger remoto.
