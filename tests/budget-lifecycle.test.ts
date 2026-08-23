@@ -6,6 +6,22 @@ import { dbInstance } from '../src/db/localDb';
 import { Appointment, AutomationExecution, Budget } from '../src/types';
 import { readFileSync } from 'node:fs';
 
+const originalLiveBudgetMigration = 'supabase/migrations/20260822203000_orcamento_vivo_itens_agendamentos.sql';
+const correctiveLiveBudgetMigration = 'supabase/migrations/20260823110000_fix_orcamento_vivo_rpc_uuid_service_selection.sql';
+const correctiveBudgetProtectionMigration = 'supabase/migrations/20260823123000_fix_orcamento_protection_sent_status_stability.sql';
+
+type BudgetProtectionStatus = Budget['status'];
+
+const applyBudgetProtectionRule = (oldStatus: BudgetProtectionStatus, newStatus: BudgetProtectionStatus): BudgetProtectionStatus => {
+  if (oldStatus !== 'rascunho' && newStatus === 'rascunho') {
+    throw new Error('Um orcamento enviado nao pode voltar ao estado inicial');
+  }
+  if (!['rascunho', 'enviado'].includes(oldStatus) && newStatus !== oldStatus) {
+    throw new Error('Um orcamento encerrado nao pode mudar de estado');
+  }
+  return newStatus;
+};
+
 const baseBudget = (items: Budget['items']): Budget => ({
   id: 'budget-live-1',
   number: 154,
@@ -256,8 +272,45 @@ test('item manual isolado ou misturado nao pode ser convertido automaticamente',
   }
 });
 
+test('conversao permite multiplos servicos e preserva o primeiro como principal', async () => {
+  const originalBudgets = dbInstance.budgets;
+  const originalAppointments = dbInstance.appointments;
+  const originalConfig = dbInstance.config;
+  try {
+    dbInstance.config = { ...dbInstance.config, useRealSupabase: false };
+    dbInstance.appointments = [];
+    dbInstance.budgets = [baseBudget([
+      { id: 'item-farol', budgetId: 'budget-live-1', serviceId: 'svc-farol', description: 'Farol', quantity: 1, unitPrice: 100, total: 100 },
+      { id: 'item-polimento', budgetId: 'budget-live-1', serviceId: 'svc-polimento', description: 'Polimento', quantity: 1, unitPrice: 200, total: 200 }
+    ])];
+
+    const appointment = await dbInstance.convertBudgetItemsToAppointment('budget-live-1', ['item-polimento', 'item-farol'], {
+      customerId: 'customer-1',
+      vehicleId: 'vehicle-1',
+      serviceId: 'svc-polimento',
+      serviceIds: ['svc-polimento', 'svc-farol'],
+      dateTime: '2026-08-27T10:00',
+      status: 'agendado',
+      value: 300,
+      durationTotal: 120,
+      employeeId: 'Gabriel',
+      notes: ''
+    });
+
+    assert.equal(appointment.serviceId, 'svc-polimento');
+    assert.deepEqual(appointment.serviceIds, ['svc-polimento', 'svc-farol']);
+    assert.deepEqual(appointment.budgetItemIds, ['item-polimento', 'item-farol']);
+    assert.equal(dbInstance.budgets[0].items[0].appointmentId, appointment.id);
+    assert.equal(dbInstance.budgets[0].items[1].appointmentId, appointment.id);
+  } finally {
+    dbInstance.budgets = originalBudgets;
+    dbInstance.appointments = originalAppointments;
+    dbInstance.config = originalConfig;
+  }
+});
+
 test('migration de conversao usa RPC transacional com lock e rollback implicito', () => {
-  const migration = readFileSync('supabase/migrations/20260822203000_orcamento_vivo_itens_agendamentos.sql', 'utf8');
+  const migration = readFileSync(originalLiveBudgetMigration, 'utf8');
   assert.match(migration, /CREATE OR REPLACE FUNCTION public\.fn_converter_itens_orcamento_em_agendamento/);
   assert.match(migration, /BEGIN;/);
   assert.match(migration, /COMMIT;/);
@@ -270,7 +323,7 @@ test('migration de conversao usa RPC transacional com lock e rollback implicito'
 });
 
 test('RPC de conversao exige usuario ativo com permissoes de orcamento e agenda', () => {
-  const migration = readFileSync('supabase/migrations/20260822203000_orcamento_vivo_itens_agendamentos.sql', 'utf8');
+  const migration = readFileSync(correctiveLiveBudgetMigration, 'utf8');
   assert.match(migration, /SECURITY DEFINER/);
   assert.match(migration, /SET search_path = ''/);
   assert.match(migration, /auth\.uid\(\) IS NULL/);
@@ -284,7 +337,7 @@ test('RPC de conversao exige usuario ativo com permissoes de orcamento e agenda'
 });
 
 test('RPC de conversao nao aceita status arbitrario do cliente', () => {
-  const migration = readFileSync('supabase/migrations/20260822203000_orcamento_vivo_itens_agendamentos.sql', 'utf8');
+  const migration = readFileSync(correctiveLiveBudgetMigration, 'utf8');
   const functionSignature = migration.slice(
     migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_converter_itens_orcamento_em_agendamento'),
     migration.indexOf('RETURNS UUID')
@@ -296,7 +349,58 @@ test('RPC de conversao nao aceita status arbitrario do cliente', () => {
 });
 
 test('RPC de conversao preserva menor privilegio no execute', () => {
-  const migration = readFileSync('supabase/migrations/20260822203000_orcamento_vivo_itens_agendamentos.sql', 'utf8');
+  const migration = readFileSync(correctiveLiveBudgetMigration, 'utf8');
   assert.match(migration, /REVOKE ALL ON FUNCTION public\.fn_converter_itens_orcamento_em_agendamento\(\s*UUID, UUID\[\], UUID, UUID, DATE, TIME, NUMERIC, INTEGER, TEXT\s*\) FROM PUBLIC, anon;/);
   assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.fn_converter_itens_orcamento_em_agendamento\(\s*UUID, UUID\[\], UUID, UUID, DATE, TIME, NUMERIC, INTEGER, TEXT\s*\) TO authenticated, service_role;/);
+});
+
+test('RPC corretiva seleciona servico principal pela ordem de p_item_ids sem MIN(uuid)', () => {
+  const migration = readFileSync(correctiveLiveBudgetMigration, 'utf8');
+  assert.doesNotMatch(migration, /min\s*\(\s*servico_id\s*\)/i);
+  assert.match(migration, /array_agg\(\s*servico_id\s+ORDER BY array_position\(p_item_ids,\s*id\)\s*\)\)\[1\]/);
+  assert.match(migration, /SELECT count\(\*\),\s*\(array_agg/);
+  assert.match(migration, /INTO v_item_count, v_first_service_id/);
+});
+
+test('trigger corretiva permite enviado permanecer enviado e bloqueia regressao para rascunho', () => {
+  const migration = readFileSync(correctiveBudgetProtectionMigration, 'utf8');
+  assert.doesNotMatch(migration, /NEW\.status\s+IN\s*\(\s*'rascunho'\s*,\s*'enviado'\s*\)/i);
+  assert.match(migration, /OLD\.status <> 'rascunho' AND NEW\.status = 'rascunho'/);
+  assert.equal(applyBudgetProtectionRule('enviado', 'enviado'), 'enviado');
+  assert.throws(
+    () => applyBudgetProtectionRule('enviado', 'rascunho'),
+    /voltar ao estado inicial/
+  );
+});
+
+test('trigger corretiva permite transicoes validas a partir de enviado', () => {
+  for (const status of ['aceito', 'recusado', 'cancelado', 'vencido', 'convertido'] as const) {
+    assert.equal(applyBudgetProtectionRule('enviado', status), status);
+  }
+});
+
+test('trigger corretiva preserva estados encerrados e permite conversao total', () => {
+  assert.equal(applyBudgetProtectionRule('enviado', 'convertido'), 'convertido');
+  assert.equal(applyBudgetProtectionRule('convertido', 'convertido'), 'convertido');
+  assert.throws(
+    () => applyBudgetProtectionRule('convertido', 'enviado'),
+    /encerrado/
+  );
+});
+
+test('trigger de envio nao duplica automacao em permanencia enviado', () => {
+  const originalMigration = readFileSync('supabase/migrations/20260805234000_orcamentos_automacoes.sql', 'utf8');
+  assert.match(originalMigration, /CREATE TRIGGER trigger_orcamento_enviado\s+AFTER UPDATE OF status ON public\.orcamentos/);
+  assert.match(originalMigration, /IF OLD\.status = 'rascunho' AND NEW\.status = 'enviado' THEN/);
+  assert.doesNotMatch(originalMigration, /OLD\.status = 'enviado' AND NEW\.status = 'enviado'[\s\S]*fn_registrar_evento_orcamento/);
+});
+
+test('RPC de conversao parcial mantem orcamento enviado compativel com trigger corretiva', () => {
+  const budget = baseBudget([
+    { id: 'item-farol', budgetId: 'budget-live-1', serviceId: 'svc-farol', description: 'Farol', quantity: 1, unitPrice: 100, total: 100, status: 'agendado', appointmentId: 'appt-farol' },
+    { id: 'item-polimento', budgetId: 'budget-live-1', serviceId: 'svc-polimento', description: 'Polimento', quantity: 1, unitPrice: 200, total: 200 }
+  ]);
+  const progress = getBudgetProgress(budget, [{ id: 'appt-farol', status: 'agendado' } as Appointment]);
+  assert.equal(progress.status, 'enviado');
+  assert.equal(applyBudgetProtectionRule('enviado', progress.status), 'enviado');
 });

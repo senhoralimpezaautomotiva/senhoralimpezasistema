@@ -5303,3 +5303,289 @@ As alterações funcionais e migrations estão relacionadas na entrada
 
 - Nao executar rollback destrutivo sem backup e janela controlada.
 - Para reversao futura, planejar migration de rollback especifica removendo RPC, indices, constraints e colunas aditivas somente apos confirmar que nao ha dados reais usando os vinculos do Orcamento Vivo.
+
+---
+
+## 2026-08-23-010 - Auditoria do erro MIN(uuid) na RPC de conversao
+
+**Etapa relacionada:** Diagnostico do erro `function min(uuid) does not exist` observado ao converter orcamento em agendamento em producao.
+
+**Objetivo:** Investigar somente a causa do erro dentro da implementacao local da RPC `public.fn_converter_itens_orcamento_em_agendamento`, sem alterar banco de producao, migration aplicada, codigo funcional, deploy, commit ou push.
+
+### Trabalho realizado
+
+- Revisada a migration `20260822203000_orcamento_vivo_itens_agendamentos.sql`.
+- Localizado o uso de `min(servico_id)` dentro da RPC de conversao.
+- Conferidos os demais agregadores da RPC.
+- Conferido o modelo local de `agendamentos`, `orcamento_itens` e o fluxo TypeScript de conversao para entender a intencao funcional do UUID.
+- Nao foi aplicada correcao nesta etapa.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo de codigo, migration, configuracao ou teste foi alterado.
+
+### Banco, hospedagem e servicos externos
+
+- Nenhuma alteracao foi feita em banco local ou de producao.
+- Nenhuma migration foi reaplicada.
+- Nenhum SQL corretivo foi executado.
+- Nenhum deploy, commit ou push foi executado.
+
+### Verificacoes e resultados
+
+- `rg` confirmou agregadores na RPC: `count(*)`, `min(servico_id)` e `count(*) FILTER (...)`.
+- `psql --version`: indisponivel neste ambiente, portanto nao houve reproducao local em banco real.
+- Diagnostico estatico: `orcamento_itens.servico_id` e `agendamentos.servico_id` sao `UUID`; PostgreSQL nao oferece `min(uuid)` nativo, causando a falha antes do `INSERT`.
+
+### Riscos, limitacoes e pendencias
+
+- A correcao ainda precisa ser implementada em uma nova migration corretiva, pois a migration original ja foi aplicada em producao.
+- Depois da correcao, sera necessario validar a RPC em banco real com um item, multiplos itens do mesmo servico e multiplos itens de servicos diferentes.
+- Nao ha evidencia de outro agregador incompatível na RPC analisada.
+
+### Como desfazer
+
+- Reverter apenas esta entrada de documentacao, se necessario.
+- Como nenhum codigo, banco ou ambiente externo foi modificado, nao ha rollback tecnico adicional nesta etapa.
+
+---
+
+## 2026-08-23-011 - Correcao local da RPC de conversao do Orcamento Vivo
+
+**Etapa relacionada:** Correcao do erro `function min(uuid) does not exist` na RPC `public.fn_converter_itens_orcamento_em_agendamento`.
+
+**Objetivo:** Criar uma migration corretiva local, sem alterar producao, para substituir `MIN(servico_id)` por uma selecao deterministica do servico principal conforme a ordem de `p_item_ids`.
+
+### Trabalho realizado
+
+- Confirmado no fluxo atual que o servico principal do agendamento vem do primeiro item selecionado no frontend.
+- Confirmado que a lista de multiplos servicos segue representada em `serviceIds` nos metadados do agendamento e que multiplos itens de servicos diferentes sao permitidos.
+- Criada migration corretiva com `CREATE OR REPLACE FUNCTION` preservando assinatura, `SECURITY DEFINER`, `SET search_path = ''`, validacoes, `FOR UPDATE`, status inicial `Agendado`, grants e revokes.
+- Substituida a selecao incompatível `min(servico_id)` por `array_agg(servico_id ORDER BY array_position(p_item_ids, id))[1]`.
+- Adicionada cobertura de teste para multiplos servicos e regressao contra retorno de `MIN(uuid)`.
+- Atualizado manifesto DB-001 e teste correspondente para inventariar a nova migration oficial.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260823110000_fix_orcamento_vivo_rpc_uuid_service_selection.sql`.
+- Alterado: `tests/budget-lifecycle.test.ts`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Nenhuma migration foi aplicada em producao.
+- Nenhum SQL corretivo foi executado em banco local ou remoto.
+- Nenhuma alteracao foi feita em Auth, RLS existente, credenciais, hospedagem ou configuracoes externas.
+- Nenhum deploy, commit ou push foi executado.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/budget-lifecycle.test.ts`: aprovado, 14 testes.
+- `npx tsx --test tests/automation-behavior.test.ts`: aprovado, 41 testes.
+- `npm run test:db001`: aprovado, 11 testes.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A migration corretiva ainda precisa ser revisada e aplicada em producao em etapa separada.
+- A validacao contra banco real nao foi executada nesta etapa por orientacao explicita de nao aplicar migration em producao.
+- Depois da aplicacao controlada, validar conversao real com 1 item, 2 itens do mesmo servico e 2 itens de servicos diferentes.
+- Permanecem alteracoes antigas e nao relacionadas no worktree fora desta tarefa.
+
+### Como desfazer
+
+- Reverter os arquivos listados nesta entrada.
+- Como nada foi aplicado em producao, nao ha rollback externo nesta etapa.
+- Se a migration vier a ser aplicada futuramente, desfazer por nova migration controlada que substitua novamente a definicao da RPC apos backup e validacao.
+
+---
+
+## 2026-08-23-012 - Aplicacao da migration corretiva MIN(uuid) em producao
+
+**Etapa relacionada:** Aplicacao controlada da migration corretiva `20260823110000_fix_orcamento_vivo_rpc_uuid_service_selection.sql`.
+
+**Objetivo:** Aplicar em producao somente a correcao da RPC `public.fn_converter_itens_orcamento_em_agendamento`, substituindo a selecao invalida `min(servico_id)` pela selecao deterministica por `array_position(p_item_ids, id)`.
+
+### Trabalho realizado
+
+- Confirmado projeto Supabase vinculado: `ansrnnydksrjwefnntaw`.
+- Conferido antes da aplicacao que a migration `20260823110000` era a unica migration local pendente no ledger remoto.
+- Aplicada em producao somente a migration `20260823110000_fix_orcamento_vivo_rpc_uuid_service_selection.sql` com `supabase db push --linked`.
+- Conferido depois da aplicacao que `20260823110000` passou a constar no ledger remoto.
+- Validada no catalogo remoto a assinatura da RPC, `SECURITY DEFINER`, `search_path`, grants, revokes e corpo real instalado.
+- Confirmado no corpo real instalado que `min(servico_id)` nao existe mais e que a selecao usa `array_agg(servico_id ORDER BY array_position(p_item_ids, id))[1]`.
+- Executado smoke test transacional com rollback; a RPC avancou alem do trecho corrigido, mas foi bloqueada por regra existente de protecao de orcamento ao atualizar `orcamentos.status`.
+- Confirmado apos o smoke test que nenhum agendamento de validacao foi persistido.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+- Nenhum arquivo de codigo, migration, configuracao ou teste foi alterado nesta etapa.
+- Um arquivo temporario em `.tmp` foi criado para a consulta transacional e removido ao final.
+
+### Banco, hospedagem e servicos externos
+
+- Producao Supabase: migration `20260823110000_fix_orcamento_vivo_rpc_uuid_service_selection` aplicada.
+- Nenhuma outra migration foi aplicada.
+- Nenhuma alteracao manual adicional foi feita no banco.
+- Nenhuma alteracao foi feita em Auth, RLS existente, credenciais, hospedagem ou configuracoes externas.
+- Nenhum deploy foi executado.
+- Nenhum commit ou push foi executado.
+
+### Verificacoes e resultados
+
+- Ledger remoto antes da aplicacao: `20260823110000` pendente e nenhuma outra migration pendente.
+- `supabase db push --linked`: concluido com `migrations=["20260823110000_fix_orcamento_vivo_rpc_uuid_service_selection.sql"]`.
+- Ledger remoto depois da aplicacao: `20260823110000` presente como aplicada.
+- RPC presente com assinatura `p_orcamento_id uuid, p_item_ids uuid[], p_cliente_id uuid, p_veiculo_id uuid, p_data_agendamento date, p_hora_agendamento time without time zone, p_valor_servico numeric, p_tempo_real integer, p_observacoes text`.
+- Resultado da RPC: `uuid`.
+- Linguagem: `plpgsql`.
+- `SECURITY DEFINER`: `true`.
+- `search_path`: `search_path=""`.
+- Privilegios reais: `PUBLIC=false`, `anon=false`, `authenticated=true`, `service_role=true`.
+- Corpo instalado: `min(servico_id)` ausente.
+- Corpo instalado: `array_agg(servico_id ORDER BY array_position(p_item_ids, id))[1]` presente.
+- Corpo instalado: `auth.uid()`, autorizacao interna, `FOR UPDATE`, status inicial `Agendado`, insert em `agendamentos`, update em `orcamento_itens` e recalculo de `orcamentos` preservados.
+- Smoke test transacional: nao persistiu dados; `agendamentos` permaneceu com 68 registros e zero registros com a observacao de validacao.
+- Smoke test transacional retornou erro de regra existente: `Um orçamento enviado não pode voltar ao estado inicial`, originado em `public.fn_proteger_orcamento()` durante o `UPDATE public.orcamentos`.
+
+### Riscos, limitacoes e pendencias
+
+- A correcao do erro `MIN(uuid)` foi aplicada e validada estruturalmente no banco real.
+- O smoke test nao validou conversao funcional completa porque encontrou uma regra existente de protecao de status de orcamento apos o ponto corrigido.
+- Antes de considerar o fluxo funcional totalmente liberado, investigar se a RPC deve preservar o status atual do orcamento quando ainda existem itens pendentes, em vez de sempre atualizar para `enviado`.
+- Nao houve validacao via HTTP PostgREST autenticado por ausencia de credenciais REST locais nesta sessao; como a assinatura nao mudou e a funcao/grants estao no catalogo remoto, nao foi executado reload de schema cache.
+
+### Como desfazer
+
+- Nao executar rollback destrutivo sem backup e janela controlada.
+- Para reversao futura, criar nova migration controlada com `CREATE OR REPLACE FUNCTION` restaurando a definicao anterior da RPC ou a definicao ajustada aprovada.
+- Como a migration ja consta no ledger remoto, nao remover manualmente a entrada do historico de migrations sem plano explicito de reconciliacao.
+
+---
+
+## 2026-08-23-013 - Correcao local da protecao de status enviado em orcamentos
+
+**Etapa relacionada:** Correcao local do bloqueio `Um orcamento enviado nao pode voltar ao estado inicial` durante conversao do Orcamento Vivo.
+
+**Objetivo:** Criar uma migration corretiva local para permitir atualizacoes legitimas em que `OLD.status = 'enviado'` e `NEW.status = 'enviado'`, preservando a protecao contra regressao real para `rascunho`.
+
+### Trabalho realizado
+
+- Confirmado que a intencao original da trigger `fn_proteger_orcamento` e impedir que orcamentos que ja sairam de `rascunho` voltem para `rascunho`.
+- Criada migration corretiva recompilando apenas `public.fn_proteger_orcamento()`.
+- Alterada somente a regra de transicao inicial: de `NEW.status IN ('rascunho', 'enviado')` para `NEW.status = 'rascunho'`.
+- Preservadas as triggers `trigger_proteger_orcamento_update` e `trigger_proteger_orcamento_delete`; a migration nao remove nem recria triggers.
+- Preservadas as protecoes de exclusao, imutabilidade de conteudo, `sent_at`, `updated_at` e bloqueio de mudanca de orcamentos encerrados.
+- Adicionada cobertura de testes para permanencia em `enviado`, regressao proibida para `rascunho`, transicoes validas, conversao parcial, conversao total e ausencia de duplicidade na trigger de envio.
+- Atualizado manifesto DB-001 e teste correspondente para inventariar a nova migration oficial.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260823123000_fix_orcamento_protection_sent_status_stability.sql`.
+- Alterado: `tests/budget-lifecycle.test.ts`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Nenhuma migration foi aplicada em producao nesta etapa.
+- Nenhum SQL corretivo foi executado em banco local ou remoto.
+- Nenhuma alteracao foi feita em Auth, RLS existente, credenciais, hospedagem ou configuracoes externas.
+- Nenhum deploy, commit ou push foi executado.
+
+### Verificacoes e resultados
+
+- `npx tsx --test tests/budget-lifecycle.test.ts`: aprovado, 19 testes.
+- `npx tsx --test tests/automation-behavior.test.ts`: aprovado, 41 testes.
+- `npm run test:db001`: aprovado, 11 testes.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- A migration corretiva ainda precisa ser revisada e aplicada em producao em etapa separada.
+- A validacao contra banco real nao foi executada nesta etapa por orientacao explicita de nao aplicar migration em producao.
+- Depois da aplicacao controlada, repetir smoke test transacional da RPC de conversao e validar o fluxo funcional pelo sistema.
+- Permanecem alteracoes antigas e nao relacionadas no worktree fora desta tarefa.
+
+### Como desfazer
+
+- Reverter os arquivos listados nesta entrada.
+- Como nada foi aplicado em producao, nao ha rollback externo nesta etapa.
+- Se a migration vier a ser aplicada futuramente, desfazer por nova migration controlada recompilando `public.fn_proteger_orcamento()` com a definicao anterior ou outra definicao aprovada.
+
+---
+
+## 2026-08-23-014 - Fechamento em producao do fluxo Orcamento Vivo para agendamento
+
+**Etapa relacionada:** Aplicacao controlada da segunda migration corretiva e validacao final transacional da RPC de conversao.
+
+**Objetivo:** Finalizar a correcao do fluxo Orcamento Vivo -> Agendamento em producao, garantindo que a RPC nao use mais `MIN(uuid)` e que a protecao de orcamento permita `enviado -> enviado` sem permitir retorno para `rascunho`.
+
+### Trabalho realizado
+
+- Confirmado projeto Supabase vinculado: `ansrnnydksrjwefnntaw`.
+- Conferido antes da aplicacao que `20260823110000` ja constava como aplicada no ledger remoto.
+- Conferido antes da aplicacao que `20260823123000` era a unica migration local pendente.
+- Aplicada em producao somente a migration `20260823123000_fix_orcamento_protection_sent_status_stability.sql` com `supabase db push --linked`.
+- Conferido depois da aplicacao que `20260823123000` passou a constar no ledger remoto.
+- Validado no catalogo remoto que `public.fn_proteger_orcamento()` contem a regra `OLD.status <> 'rascunho' AND NEW.status = 'rascunho'`.
+- Confirmado no corpo real de `public.fn_proteger_orcamento()` que a regra antiga `NEW.status IN ('rascunho', 'enviado')` nao existe mais.
+- Confirmado que as triggers `trigger_proteger_orcamento_update`, `trigger_proteger_orcamento_delete` e `trigger_orcamento_enviado` permanecem existentes e habilitadas.
+- Reexecutado smoke test transacional com rollback na RPC `public.fn_converter_itens_orcamento_em_agendamento`.
+- Confirmado que a RPC avancou por autorizacao, locks, selecao do servico principal, criacao do agendamento, atualizacao dos itens e atualizacao do orcamento dentro da transacao.
+- Confirmado apos rollback que nenhuma alteracao permanente de teste ficou em producao.
+- Reexecutadas validacoes locais finais antes de commit.
+
+### Arquivos criados, alterados ou removidos
+
+- Criado: `supabase/migrations/20260823110000_fix_orcamento_vivo_rpc_uuid_service_selection.sql`.
+- Criado: `supabase/migrations/20260823123000_fix_orcamento_protection_sent_status_stability.sql`.
+- Alterado: `tests/budget-lifecycle.test.ts`.
+- Alterado: `tests/db001-baseline.test.ts`.
+- Alterado: `docs/database/db001-manifest.json`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e servicos externos
+
+- Producao Supabase: migration `20260823123000_fix_orcamento_protection_sent_status_stability` aplicada.
+- A migration `20260823110000_fix_orcamento_vivo_rpc_uuid_service_selection` ja havia sido aplicada na etapa anterior e foi revalidada.
+- Nenhuma outra migration foi aplicada nesta etapa.
+- Nenhuma alteracao manual de dados foi feita no banco.
+- O smoke test foi executado dentro de transacao com `ROLLBACK`.
+- Nenhuma alteracao foi feita em Auth, RLS fora das migrations, credenciais, hospedagem ou configuracoes externas.
+- Nenhum deploy foi executado.
+
+### Verificacoes e resultados
+
+- Ledger remoto antes da aplicacao: `20260823110000` aplicada; `20260823123000` unica pendente.
+- `supabase db push --linked`: concluido com `migrations=["20260823123000_fix_orcamento_protection_sent_status_stability.sql"]`.
+- Ledger remoto depois da aplicacao: `20260823123000` presente como aplicada.
+- RPC `fn_converter_itens_orcamento_em_agendamento`: `min(servico_id)` ausente e `array_agg(servico_id ORDER BY array_position(p_item_ids, id))` presente.
+- `fn_proteger_orcamento`: regra nova presente e regra antiga ausente.
+- Triggers de orcamento: `trigger_proteger_orcamento_update`, `trigger_proteger_orcamento_delete` e `trigger_orcamento_enviado` presentes com `tgenabled='O'`.
+- Contagens antes e depois do smoke test permaneceram iguais: `agendamentos=68`, `orcamento_itens agendados=0`, `orcamento_itens pendentes=6`, `orcamentos enviados=1`, `orcamentos convertidos=0`.
+- Registros permanentes do smoke test: `0`.
+- `npx tsx --test tests/budget-lifecycle.test.ts`: aprovado, 19 testes.
+- `npx tsx --test tests/automation-behavior.test.ts`: aprovado, 41 testes.
+- `npm run test:db001`: aprovado, 11 testes.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+
+### Riscos, limitacoes e pendencias
+
+- O fluxo foi validado por smoke test transacional com rollback; o teste funcional real pelo sistema ainda deve ser feito apos deploy manual.
+- O deploy nao foi executado nesta etapa por decisao operacional.
+- Permanecem no worktree alteracoes antigas e nao relacionadas fora do commit desta correcao.
+
+### Como desfazer
+
+- Nao executar rollback destrutivo sem backup e janela controlada.
+- Para reversao futura, criar nova migration controlada com `CREATE OR REPLACE FUNCTION` restaurando a definicao anterior da RPC e/ou da trigger, conforme decisao aprovada.
+- Como as migrations ja constam no ledger remoto, nao remover manualmente entradas de `schema_migrations` sem plano explicito de reconciliacao.
