@@ -22,7 +22,8 @@ interface DailyTimelineProps {
 }
 
 const PIXELS_PER_MINUTE = 1.6;
-const MIN_CARD_HEIGHT = 64;
+const TIMELINE_VERTICAL_PADDING = 14;
+const TIME_ACCENT_CLASS = 'text-[#F0B86A]';
 
 const timeToMinutes = (time: string): number => {
   const [hours, minutes] = time.slice(0, 5).split(':').map(Number);
@@ -87,6 +88,7 @@ export default function DailyTimeline({
   const closeMinutes = timeToMinutes(dayConfig?.closeTime || agenda.timeSlots.at(-1)?.time || '18:00');
   const timelineMinutes = Math.max(intervalMinutes, closeMinutes - openMinutes);
   const timelineHeight = timelineMinutes * PIXELS_PER_MINUTE;
+  const timelineCanvasHeight = timelineHeight + TIMELINE_VERTICAL_PADDING * 2;
 
   const ticks = useMemo(() => {
     const result: number[] = [];
@@ -168,24 +170,24 @@ export default function DailyTimeline({
   }
 
   return (
-    <div className={`relative overflow-hidden rounded-xl sm:rounded-2xl border border-slate-800 bg-slate-950/40 ${className}`}>
-      <div className="grid grid-cols-[48px_1fr] sm:grid-cols-[64px_1fr] pt-3">
-        <div className="relative border-r border-slate-800 bg-slate-950/70" style={{ height: timelineHeight }}>
+    <div className={`relative overflow-x-hidden rounded-xl sm:rounded-2xl border border-slate-800 bg-slate-950/40 ${className}`}>
+      <div className="grid grid-cols-[52px_1fr] sm:grid-cols-[68px_1fr]">
+        <div className="relative border-r border-slate-800 bg-slate-950/70" style={{ height: timelineCanvasHeight }}>
           {ticks.map(minute => (
             <div
               key={minute}
-              className="absolute left-0 right-0 -translate-y-1 pr-1.5 sm:pr-2 text-right font-mono text-[10px] font-bold text-slate-500"
-              style={{ top: (minute - openMinutes) * PIXELS_PER_MINUTE }}
+              className={`absolute left-0 right-0 -translate-y-1/2 pr-1.5 sm:pr-2 text-right font-mono text-[10px] font-bold leading-none ${TIME_ACCENT_CLASS}`}
+              style={{ top: TIMELINE_VERTICAL_PADDING + (minute - openMinutes) * PIXELS_PER_MINUTE }}
             >
               {minutesToTime(minute)}
             </div>
           ))}
         </div>
 
-        <div className="relative" style={{ height: timelineHeight }}>
+        <div className="relative" style={{ height: timelineCanvasHeight }}>
           {ticks.slice(0, -1).map((minute, index) => {
             const nextMinute = ticks[index + 1] || minute + intervalMinutes;
-            const top = (minute - openMinutes) * PIXELS_PER_MINUTE;
+            const top = TIMELINE_VERTICAL_PADDING + (minute - openMinutes) * PIXELS_PER_MINUTE;
             const height = Math.max((nextMinute - minute) * PIXELS_PER_MINUTE, 28);
             const time = minutesToTime(minute);
             return (
@@ -212,12 +214,13 @@ export default function DailyTimeline({
             const serviceNames = serviceIds
               .map(id => services.find(service => service.id === id)?.name)
               .filter(Boolean);
-            const top = Math.max(0, (start - openMinutes) * PIXELS_PER_MINUTE);
-            const height = Math.max(MIN_CARD_HEIGHT, duration * PIXELS_PER_MINUTE);
+            const top = TIMELINE_VERTICAL_PADDING + Math.max(0, (start - openMinutes) * PIXELS_PER_MINUTE);
+            const height = Math.max(1, duration * PIXELS_PER_MINUTE);
             const width = `calc(${100 / columnCount}% - 8px)`;
             const left = `calc(${(100 / columnCount) * column}% + 4px)`;
             const isNext = appointment.id === nextAppointmentId;
             const isRunning = appointment.status === 'em_andamento';
+            const isCompact = height < 58;
 
             return (
               <div
@@ -226,26 +229,27 @@ export default function DailyTimeline({
                   event.stopPropagation();
                   if (canEdit) onEditAppointment(appointment.id);
                 }}
-                className={`group absolute z-10 rounded-lg sm:rounded-xl border bg-slate-950 p-2.5 sm:p-3 shadow-xl transition-all ${
+                className={`group absolute z-10 overflow-hidden rounded-lg border border-l-4 bg-slate-900/95 p-2 shadow-lg transition-all sm:p-2.5 ${
                   canEdit ? 'cursor-pointer' : 'cursor-default'
                 } ${
                   isRunning
                     ? 'border-amber-400/70 ring-1 ring-amber-400/25 shadow-amber-500/15'
                     : isNext
                       ? 'border-sky-400/60 shadow-sky-500/15'
-                      : 'border-slate-700/90 shadow-black/30 hover:border-slate-500'
+                      : 'border-slate-700/90 shadow-black/25 hover:border-slate-500'
                 }`}
                 style={{ top, height, left, width }}
+                title={`${minutesToTime(start)} -> ${minutesToTime(end)} | ${customer?.name || 'Cliente desconhecido'} | ${vehicle ? `${vehicle.brand} ${vehicle.model}${vehicle.plate ? ` ${vehicle.plate}` : ''}` : 'Veiculo nao cadastrado'} | ${serviceNames.join(', ') || 'Servico'} | R$ ${appointment.value.toFixed(2)} | ${duration} min`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-1.5 font-mono text-[11px] font-black text-white">
+                  <div className={`flex min-w-0 items-center gap-1.5 font-mono text-[11px] font-black leading-none ${TIME_ACCENT_CLASS}`}>
                     {minutesToTime(start)} -&gt; {minutesToTime(end)}
                     {appointment.recurrenceId && (
                       <Repeat size={11} className="text-sky-300" aria-label="Agendamento recorrente" />
                     )}
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${getStatusBadgeStyles(appointment.status)}`}>
+                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${isCompact ? 'hidden md:inline-block' : ''} ${getStatusBadgeStyles(appointment.status)}`}>
                       {getStatusLabel(appointment.status)}
                     </span>
                     <button
@@ -262,34 +266,37 @@ export default function DailyTimeline({
                   </div>
                 </div>
 
-                <div className="mt-2 space-y-1 overflow-hidden">
-                  <div className="truncate text-xs font-bold text-white" title={customer?.name}>
+                <div className="mt-1.5 space-y-0.5 overflow-hidden">
+                  <div
+                    className="truncate text-[11px] font-bold leading-tight text-white"
+                    title={[customer?.name || 'Cliente desconhecido', vehicle ? `${vehicle.brand} ${vehicle.model}` : 'Veiculo nao cadastrado', vehicle?.plate].filter(Boolean).join(' - ')}
+                  >
                     {customer ? customer.name : 'Cliente desconhecido'}
-                  </div>
-                  <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                    <span className="truncate">
-                      {vehicle ? `${vehicle.brand} ${vehicle.model}` : 'Veiculo nao cadastrado'}
-                    </span>
+                    <span className="px-1 text-slate-500">•</span>
+                    {vehicle ? `${vehicle.brand} ${vehicle.model}` : 'Veiculo nao cadastrado'}
                     {vehicle?.plate && (
-                      <span className="shrink-0 rounded border border-slate-800 bg-slate-900 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-sky-400">
-                        {vehicle.plate}
-                      </span>
+                      <>
+                        <span className="px-1 text-slate-500">•</span>
+                        <span className="font-mono uppercase text-slate-300">{vehicle.plate}</span>
+                      </>
                     )}
                   </div>
-                  <div className="truncate text-[10px] font-semibold text-slate-300" title={serviceNames.join(', ')}>
+                  <div className="truncate text-[10px] font-semibold leading-tight text-slate-300" title={serviceNames.join(', ')}>
                     {serviceNames.length > 0 ? serviceNames.join(', ') : 'Servico'}
                   </div>
                 </div>
 
-                <div className="mt-2 flex items-center justify-between border-t border-slate-850 pt-2">
-                  <span className="font-mono text-xs font-bold text-emerald-400">
-                    R$ {appointment.value.toFixed(2)}
-                  </span>
-                  <span className="flex items-center gap-1 font-mono text-[10px] text-slate-400">
-                    <Clock size={11} />
-                    {duration} min
-                  </span>
-                </div>
+                {!isCompact && (
+                  <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-slate-800/80 pt-1.5">
+                    <span className="truncate font-mono text-[10px] font-bold text-emerald-400">
+                      R$ {appointment.value.toFixed(2)}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1 font-mono text-[10px] text-slate-400">
+                      <Clock size={11} />
+                      {duration} min
+                    </span>
+                  </div>
+                )}
 
                 <div className="absolute inset-x-2 bottom-2 z-20 hidden justify-center gap-1 rounded-lg bg-slate-950/95 p-1 shadow-xl sm:group-hover:flex">
                   {canEdit && (

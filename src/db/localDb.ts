@@ -512,6 +512,8 @@ export function mapDbCustomerToFrontend(row: any): Customer {
   let notes = '';
   let status: 'ativo' | 'inativo' = 'ativo';
   let origin = 'Outros';
+  let paidTrafficSource: Customer['paidTrafficSource'] = null;
+  let originDetail = '';
   
   let referralCode = '';
   let referredBy = '';
@@ -530,6 +532,10 @@ export function mapDbCustomerToFrontend(row: any): Customer {
       if (meta.notes) notes = meta.notes;
       if (meta.status) status = meta.status;
       if (meta.origin) origin = meta.origin;
+      if (meta.paidTrafficSource === 'google_ads' || meta.paidTrafficSource === 'facebook_ads') {
+        paidTrafficSource = meta.paidTrafficSource;
+      }
+      if (meta.originDetail) originDetail = meta.originDetail;
       
       if (meta.referralCode) referralCode = meta.referralCode;
       if (meta.referredBy) referredBy = meta.referredBy;
@@ -565,6 +571,8 @@ export function mapDbCustomerToFrontend(row: any): Customer {
     lastServiceDate: null,
     status: status,
     origin: origin,
+    paidTrafficSource,
+    originDetail,
     referralCode,
     referredBy,
     referralCreatedAt
@@ -576,7 +584,7 @@ export function mapFrontendCustomerToDb(c: Partial<Customer>): any {
   if (c.id) row.id = c.id;
   
   let name = c.name || '';
-  const hasExtra = c.email || c.cpf || c.address || c.neighborhood || c.city || c.notes || c.status || c.origin || c.referralCode || c.referredBy || c.referralCreatedAt;
+  const hasExtra = c.email || c.cpf || c.address || c.neighborhood || c.city || c.notes || c.status || c.origin || c.paidTrafficSource || c.originDetail || c.referralCode || c.referredBy || c.referralCreatedAt;
   if (hasExtra && name) {
     const meta: any = {};
     if (c.email) meta.email = c.email;
@@ -587,6 +595,8 @@ export function mapFrontendCustomerToDb(c: Partial<Customer>): any {
     if (c.notes) meta.notes = c.notes;
     if (c.status) meta.status = c.status;
     if (c.origin) meta.origin = c.origin;
+    if (c.paidTrafficSource) meta.paidTrafficSource = c.paidTrafficSource;
+    if (c.originDetail) meta.originDetail = c.originDetail;
     
     if (c.referralCode) meta.referralCode = c.referralCode;
     if (c.referredBy) meta.referredBy = c.referredBy;

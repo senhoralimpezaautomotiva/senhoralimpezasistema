@@ -5850,3 +5850,61 @@ As alterações funcionais e migrations estão relacionadas na entrada
 - Para desfazer a correcao da RPC, criar nova migration controlada restaurando a definicao anterior de `public.fn_criar_agendamentos_recorrentes`.
 - Como o smoke foi revertido por exception controlada, nao ha dados de teste a limpar.
 - Para desfazer o codigo local da funcionalidade recorrente, reverter seletivamente os arquivos listados nesta e nas entradas anteriores relacionadas a recorrencia, sem remover manualmente registros do ledger remoto.
+
+---
+
+## 2026-08-27-001 - Ajustes pontuais de origem interna e visual diário da agenda
+
+**Etapa relacionada:** Ajustes solicitados no cadastro administrativo de clientes e na visualização diária da agenda, sem commit, push ou deploy.
+
+**Objetivo:** Incluir Facebook e classificação interna de tráfego pago, preservar o Portal do Cliente sem campos internos, corrigir o corte do horário inicial na régua diária e melhorar a legibilidade dos cards de agendamento.
+
+### Trabalho realizado
+
+- Adicionada a opção Facebook ao cadastro administrativo de cliente.
+- Adicionados campos estruturados de metadados do cliente para `paidTrafficSource` (`google_ads` ou `facebook_ads`) e `originDetail`.
+- Criada normalização para gravar Google Ads somente quando a origem base for Google e Facebook Ads somente quando a origem base for Facebook.
+- Mantido campo livre apenas para origem base Outros.
+- Mantido o Portal do Cliente sem Google Ads, Facebook Ads ou origem detalhada.
+- Corrigida a causa estrutural do horário 08:00 cortado na timeline diária: os labels da régua eram posicionados no topo do canvas com deslocamento vertical negativo dentro de um container com overflow, sem folga própria para o primeiro item.
+- A timeline diária passou a ter padding vertical interno calculado e aplicado tanto à régua quanto à área de cards, preservando o cálculo real de duração/posição.
+- Definida a cor exclusiva de horário `#F0B86A`, aplicada na régua lateral e no horário dentro dos cards.
+- Cards da agenda receberam borda lateral, fundo com mais contraste, sombra discreta e `overflow-hidden`.
+- Conteúdo dos cards foi reorganizado para horário, cliente/veículo/placa, serviço e valor/duração.
+- Cards compactos, como serviços de 30 minutos, omitem informações secundárias visuais e mantêm o conteúdo completo no `title`, sem aumentar artificialmente a altura real do card.
+
+### Arquivos criados, alterados ou removidos
+
+- Alterado: `src/types.ts`.
+- Alterado: `src/db/localDb.ts`.
+- Alterado: `src/components/ClientesModule.tsx`.
+- Alterado: `src/components/DailyTimeline.tsx`.
+- Criado: `tests/customer-origin-classification.test.ts`.
+- Alterado: `docs/HISTORICO_DE_ALTERACOES.md`.
+
+### Banco, hospedagem e serviços externos
+
+- Nenhuma migration foi criada.
+- Nenhuma migration foi aplicada.
+- Nenhuma alteração foi aplicada em banco de dados, hospedagem ou serviço externo.
+- Nenhum commit, push ou deploy foi executado.
+
+### Verificações e resultados
+
+- `npx tsx --test tests/customer-origin-classification.test.ts`: aprovado, 2 testes.
+- `npx tsx --test tests/agenda-availability.test.ts tests/agenda-recurrence.test.ts`: aprovado, 19 testes.
+- `npm run lint`: aprovado.
+- `npm run build`: aprovado, incluindo `security:artifact` e `pilot:artifact`.
+- Servidor local iniciado com `npm run dev` em `http://127.0.0.1:3000` e app aberto no painel Codex para checagem visual básica.
+
+### Riscos, limitações e pendências
+
+- A estrutura segue o padrão atual do projeto, que serializa metadados extras do cliente no campo `nome` em JSON `[meta:...]`; uma normalização física em colunas próprias pode ser planejada futuramente para relatórios SQL mais diretos.
+- A validação visual automatizada por screenshot não foi executada nesta sessão porque não havia ferramenta de captura/interação do navegador disponível, apenas abertura do app no painel.
+- Existem alterações não relacionadas já presentes no worktree; esta entrada descreve apenas os arquivos desta tarefa.
+
+### Como desfazer
+
+- Reverter seletivamente as alterações nos arquivos listados nesta entrada.
+- Remover `tests/customer-origin-classification.test.ts` se a classificação interna de origem for descartada.
+- Como não houve migration, banco ou deploy, não há ação externa a desfazer.

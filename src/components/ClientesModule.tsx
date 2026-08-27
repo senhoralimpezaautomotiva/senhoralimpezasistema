@@ -33,6 +33,54 @@ import { useVehicleCatalog } from '../hooks/useVehicleCatalog';
 import { resolveVehiclePorte } from '../utils/vehicleCatalog';
 import { getBudgetItemStatus, getBudgetProgress } from '../utils/budgetLifecycle';
 
+const CUSTOMER_ORIGINS = [
+  { value: 'Instagram', label: 'Instagram' },
+  { value: 'Indicação', label: 'Indicação de Amigo' },
+  { value: 'Google', label: 'Google Pesquisa' },
+  { value: 'Facebook', label: 'Facebook' },
+  { value: 'WhatsApp', label: 'WhatsApp' },
+  { value: 'Outros', label: 'Outros canais' }
+];
+
+const initialCustomerFormData = {
+  name: '',
+  phone: '',
+  whatsapp: '',
+  email: '',
+  cpf: '',
+  birthDate: '',
+  address: '',
+  neighborhood: '',
+  city: 'São Paulo',
+  notes: '',
+  status: 'ativo' as 'ativo' | 'inativo',
+  origin: 'Instagram',
+  paidTrafficSource: null as Customer['paidTrafficSource'],
+  originDetail: ''
+};
+
+const normalizeCustomerOriginDetails = (data: typeof initialCustomerFormData): typeof initialCustomerFormData => {
+  const paidTrafficSource =
+    data.origin === 'Google' && data.paidTrafficSource === 'google_ads'
+      ? 'google_ads' as const
+      : data.origin === 'Facebook' && data.paidTrafficSource === 'facebook_ads'
+        ? 'facebook_ads' as const
+        : null;
+
+  return {
+    ...data,
+    paidTrafficSource,
+    originDetail: data.origin === 'Outros' ? data.originDetail.trim() : ''
+  };
+};
+
+const getCustomerOriginLabel = (customer: Customer): string => {
+  if (customer.paidTrafficSource === 'google_ads') return 'Google Ads';
+  if (customer.paidTrafficSource === 'facebook_ads') return 'Facebook Ads';
+  if (customer.origin === 'Outros' && customer.originDetail) return `Outros - ${customer.originDetail}`;
+  return customer.origin;
+};
+
 interface ClientesModuleProps {
   customers: Customer[];
   vehicles: Vehicle[];
@@ -86,20 +134,7 @@ export default function ClientesModule({
   const [itemsPerPage, setItemsPerPage] = useState(15);
 
   // Form States for Customer
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    whatsapp: '',
-    email: '',
-    cpf: '',
-    birthDate: '',
-    address: '',
-    neighborhood: '',
-    city: 'São Paulo',
-    notes: '',
-    status: 'ativo' as 'ativo' | 'inativo',
-    origin: 'Instagram'
-  });
+  const [formData, setFormData] = useState(initialCustomerFormData);
 
   const [editId, setEditId] = useState('');
 
@@ -201,20 +236,7 @@ export default function ClientesModule({
 
   const handleOpenAddModal = () => {
     setErrorMessage(null);
-    setFormData({
-      name: '',
-      phone: '',
-      whatsapp: '',
-      email: '',
-      cpf: '',
-      birthDate: '',
-      address: '',
-      neighborhood: '',
-      city: 'São Paulo',
-      notes: '',
-      status: 'ativo',
-      origin: 'Instagram'
-    });
+    setFormData(initialCustomerFormData);
     setIsAddModalOpen(true);
   };
 
@@ -234,7 +256,9 @@ export default function ClientesModule({
       city: c.city,
       notes: c.notes,
       status: c.status,
-      origin: c.origin
+      origin: c.origin,
+      paidTrafficSource: c.paidTrafficSource || null,
+      originDetail: c.originDetail || ''
     });
     setIsEditModalOpen(true);
   };
@@ -246,7 +270,7 @@ export default function ClientesModule({
     setIsSaving(true);
     try {
       const added = await onAddCustomer({
-        ...formData,
+        ...normalizeCustomerOriginDetails(formData),
         whatsapp: formData.whatsapp || formData.phone.replace(/\D/g, '') // strip formatting
       });
       setIsAddModalOpen(false);
@@ -268,14 +292,14 @@ export default function ClientesModule({
     setIsSaving(true);
     try {
       await onUpdateCustomer(editId, {
-        ...formData,
+        ...normalizeCustomerOriginDetails(formData),
         whatsapp: formData.whatsapp || formData.phone.replace(/\D/g, '')
       });
       setIsEditModalOpen(false);
       if (selectedCustomer && selectedCustomer.id === editId) {
         setSelectedCustomer({
           ...selectedCustomer,
-          ...formData
+          ...normalizeCustomerOriginDetails(formData)
         });
       }
     } catch (err: any) {
@@ -468,6 +492,57 @@ export default function ClientesModule({
     finally { setIsSaving(false); }
   };
 
+  const renderCustomerOriginFields = () => (
+    <>
+      <div>
+        <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Origem do Cliente</label>
+        <select
+          value={formData.origin}
+          onChange={(e) => setFormData({
+            ...formData,
+            origin: e.target.value,
+            paidTrafficSource: null,
+            originDetail: ''
+          })}
+          className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-xs text-white"
+        >
+          {CUSTOMER_ORIGINS.map(origin => (
+            <option key={origin.value} value={origin.value}>{origin.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {(formData.origin === 'Google' || formData.origin === 'Facebook') && (
+        <label className="flex items-center gap-2 self-end rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-300">
+          <input
+            type="checkbox"
+            checked={formData.paidTrafficSource === (formData.origin === 'Google' ? 'google_ads' : 'facebook_ads')}
+            onChange={(e) => setFormData({
+              ...formData,
+              paidTrafficSource: e.target.checked
+                ? (formData.origin === 'Google' ? 'google_ads' : 'facebook_ads')
+                : null
+            })}
+            className="h-4 w-4 rounded border-slate-700 bg-slate-950 text-sky-500 focus:ring-sky-500"
+          />
+          <span>{formData.origin === 'Google' ? 'Google Ads' : 'Facebook Ads'}</span>
+        </label>
+      )}
+
+      {formData.origin === 'Outros' && (
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Origem detalhada</label>
+          <input
+            type="text"
+            value={formData.originDetail}
+            onChange={(e) => setFormData({ ...formData, originDetail: e.target.value })}
+            className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-xs text-white"
+            placeholder="Ex: feira, parceiro, fachada..."
+          />
+        </div>
+      )}
+    </>
+  );
   return (
     <div className="space-y-6 animate-fadeIn" id="clientes-module-view">
       {/* Search and Action Bar */}
@@ -723,7 +798,7 @@ export default function ClientesModule({
                 </div>
                 <div className="flex items-center gap-3">
                   <Tag size={14} className="text-sky-500 shrink-0" />
-                  <span>Origem de Atração: <strong className="text-white font-mono">{selectedCustomer.origin}</strong></span>
+                  <span>Origem de Atração: <strong className="text-white font-mono">{getCustomerOriginLabel(selectedCustomer)}</strong></span>
                 </div>
                 {selectedCustomer.notes && (
                   <div className="pt-3 border-t border-slate-800/80 flex gap-2 text-slate-400 text-xs">
@@ -1075,20 +1150,7 @@ export default function ClientesModule({
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Origem do Cliente</label>
-                  <select 
-                    value={formData.origin}
-                    onChange={(e) => setFormData({ ...formData, origin: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-xs text-white"
-                  >
-                    <option value="Instagram">Instagram</option>
-                    <option value="Indicação">Indicação de Amigo</option>
-                    <option value="Google">Google Pesquisa</option>
-                    <option value="WhatsApp">WhatsApp</option>
-                    <option value="Outros">Outros canais</option>
-                  </select>
-                </div>
+                {renderCustomerOriginFields()}
 
                 <div className="col-span-1 sm:col-span-2">
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Observações Internas</label>
@@ -1228,20 +1290,7 @@ export default function ClientesModule({
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Origem</label>
-                  <select 
-                    value={formData.origin}
-                    onChange={(e) => setFormData({ ...formData, origin: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-xl px-3 py-2 text-xs text-white"
-                  >
-                    <option value="Instagram">Instagram</option>
-                    <option value="Indicação">Indicação de Amigo</option>
-                    <option value="Google">Google Pesquisa</option>
-                    <option value="WhatsApp">WhatsApp</option>
-                    <option value="Outros">Outros canais</option>
-                  </select>
-                </div>
+                {renderCustomerOriginFields()}
 
                 <div className="col-span-1 sm:col-span-2">
                   <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Observações Internas</label>

@@ -18,7 +18,9 @@ export interface Customer {
   clientSince: string;
   lastServiceDate: string | null;
   status: 'ativo' | 'inativo';
-  origin: string; // 'Instagram', 'Indicação', 'Google', 'WhatsApp', 'Outros'
+  origin: string; // 'Instagram', 'Indicação', 'Google', 'Facebook', 'WhatsApp', 'Outros'
+  paidTrafficSource?: 'google_ads' | 'facebook_ads' | null;
+  originDetail?: string;
   
   // Referral Program Fields
   referralCode?: string;
